@@ -71,7 +71,7 @@ fn spawn_asteroids(
 
     let window = windows.single();
     let x = fastrand::f32() * window.width() - window.width() / 2.0;
-    let is_small = fastrand::bool();
+    let is_small = fastrand::f32() < 0.5; // 30% de petits
     let texture = textures.0[fastrand::usize(..textures.0.len())].clone();
 
     let transform = Transform::from_xyz(x, 500.0, 0.0).with_rotation(Quat::from_rotation_z(
@@ -79,9 +79,9 @@ fn spawn_asteroids(
     ));
 
     let side = if is_small {
-        fastrand::f32() * 40.0 + 35.0
+        fastrand::f32() * 30.0 + 60.0 // 60-90px
     } else {
-        fastrand::f32() * 60.0 + 120.0
+        fastrand::f32() * 60.0 + 120.0 // 120-180px
     };
     let size = Vec2::splat(side);
     let radius = side * 0.30;
