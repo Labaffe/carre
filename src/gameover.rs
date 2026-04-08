@@ -10,17 +10,42 @@ impl Plugin for GameOverPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             OnEnter(GameState::GameOver),
-            (setup_gameover_ui, start_gameover_music),
+            (setup_gameover_ui, stop_main_music),
         )
-        .add_systems(OnExit(GameState::GameOver), cleanup_gameover_ui)
-        .add_systems(Update, handle_restart.run_if(in_state(GameState::GameOver)));
+        .add_systems(
+            OnExit(GameState::GameOver),
+            (cleanup_gameover_ui, cleanup_gameover_anim),
+        )
+        .add_systems(
+            Update,
+            (animate_gameover, handle_restart).run_if(in_state(GameState::GameOver)),
+        );
     }
 }
+
+// --- Composants ---
 
 #[derive(Component)]
 struct GameOverUI;
 
-fn setup_gameover_ui(mut commands: Commands) {
+#[derive(Component)]
+struct GameOverText;
+
+#[derive(Component)]
+struct GameOverBackground;
+
+// --- Ressource d'animation ---
+
+#[derive(Resource)]
+struct GameOverAnim {
+    elapsed: f32,
+    music_spawned: bool,
+}
+
+// --- Setup ---
+
+fn setup_gameover_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let font = asset_server.load("fonts/optimus_princeps.ttf");
     commands
         .spawn((
             NodeBundle {
@@ -33,56 +58,114 @@ fn setup_gameover_ui(mut commands: Commands) {
                     row_gap: Val::Px(20.0),
                     ..default()
                 },
-                background_color: Color::rgba(0.0, 0.0, 0.0, 0.75).into(),
+                // fond entièrement noir au départ
+                background_color: Color::rgba(0.0, 0.0, 0.0, 1.0).into(),
                 ..default()
             },
             GameOverUI,
+            GameOverBackground,
         ))
         .with_children(|parent| {
-            parent.spawn(TextBundle::from_section(
-                "GAME OVER",
-                TextStyle {
-                    font_size: 90.0,
-                    color: Color::RED,
-                    ..default()
-                },
+            // texte invisible au départ (alpha = 0, scale réduit via Transform)
+            parent.spawn((
+                TextBundle::from_section(
+                    "VOUS ETES MORT",
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 90.0,
+                        color: Color::rgba(1.0, 0.0, 0.0, 0.0),
+                    },
+                ),
+                GameOverText,
             ));
-            parent.spawn(TextBundle::from_section(
-                "Appuyez sur R pour rejouer",
-                TextStyle {
-                    font_size: 32.0,
-                    color: Color::WHITE,
-                    ..default()
-                },
+            parent.spawn((
+                TextBundle::from_section(
+                    "Appuyez sur R pour rejouer",
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 32.0,
+                        color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                    },
+                ),
+                GameOverText,
             ));
         });
+
+    commands.insert_resource(GameOverAnim {
+        elapsed: 0.0,
+        music_spawned: false,
+    });
 }
 
-fn start_gameover_music(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    main_music_q: Query<Entity, With<MusicMain>>,
-) {
-    // arrêter la musique principale
+fn stop_main_music(mut commands: Commands, main_music_q: Query<Entity, With<MusicMain>>) {
     for entity in main_music_q.iter() {
         commands.entity(entity).despawn();
     }
-
-    // lancer la musique de game over
-    commands.spawn((
-        AudioBundle {
-            source: asset_server.load("you_died.ogg"),
-            settings: PlaybackSettings::ONCE,
-        },
-        MusicGameOver,
-    ));
 }
+
+const DELAY: f32 = 1.5;
+const ANIM_DURATION: f32 = 6.0;
+
+// --- Animation ---
+
+fn animate_gameover(
+    mut anim: ResMut<GameOverAnim>,
+    time: Res<Time>,
+    mut text_q: Query<(&mut Text, &mut Transform), With<GameOverText>>,
+    mut bg_q: Query<&mut BackgroundColor, With<GameOverBackground>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    anim.elapsed += time.delta_seconds();
+
+    // rien avant le délai de 2 secondes
+    if anim.elapsed < DELAY {
+        return;
+    }
+
+    // musique et animation démarrent ensemble à 2s
+    if !anim.music_spawned {
+        anim.music_spawned = true;
+        commands.spawn((
+            AudioBundle {
+                source: asset_server.load("you_died.ogg"),
+                settings: PlaybackSettings::ONCE,
+            },
+            MusicGameOver,
+        ));
+    }
+
+    // progression calculée depuis le début de l'animation (après le délai)
+    let progress = ((anim.elapsed - DELAY) / ANIM_DURATION).clamp(0.0, 1.0);
+
+    // fond : noir opaque → semi-transparent
+    if let Ok(mut bg) = bg_q.get_single_mut() {
+        bg.0.set_a(1.0 - progress * 0.25);
+    }
+
+    // texte : opacité 0 → 1, zoom 0.3 → 1.0
+    for (mut text, mut transform) in text_q.iter_mut() {
+        for section in text.sections.iter_mut() {
+            section.style.color.set_a(progress);
+        }
+        let scale = 0.3 + progress * 0.7;
+        transform.scale = Vec3::splat(scale);
+    }
+}
+
+// --- Cleanup ---
 
 fn cleanup_gameover_ui(mut commands: Commands, query: Query<Entity, With<GameOverUI>>) {
     for entity in query.iter() {
         commands.entity(entity).despawn_recursive();
     }
 }
+
+fn cleanup_gameover_anim(mut commands: Commands) {
+    commands.remove_resource::<GameOverAnim>();
+}
+
+// --- Restart ---
 
 fn handle_restart(
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -93,22 +176,15 @@ fn handle_restart(
     gameover_music_q: Query<Entity, With<MusicGameOver>>,
 ) {
     if keyboard.just_pressed(KeyCode::KeyR) {
-        // supprimer tous les astéroïdes restants
         for entity in asteroids.iter() {
             commands.entity(entity).despawn();
         }
-
-        // arrêter la musique de game over
         for entity in gameover_music_q.iter() {
             commands.entity(entity).despawn();
         }
 
-        // relancer la musique principale depuis le début
         spawn_main_music(&mut commands, &asset_server);
-
-        // respawn le joueur
         spawn_player(&mut commands, &asset_server);
-
         next_state.set(GameState::Playing);
     }
 }
