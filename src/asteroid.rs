@@ -1,5 +1,7 @@
+use crate::difficulty::Difficulty;
 use crate::state::GameState;
 use bevy::prelude::*;
+use std::time::Duration;
 
 pub struct AsteroidPlugin;
 
@@ -37,7 +39,10 @@ fn spawn_asteroids(
     mut spawner: ResMut<AsteroidSpawner>,
     time: Res<Time>,
     asset_server: Res<AssetServer>,
+    difficulty: Res<Difficulty>,
 ) {
+    // ajuster l'intervalle de spawn selon la difficulté
+    spawner.timer.set_duration(Duration::from_secs_f32(difficulty.spawn_interval()));
     spawner.timer.tick(time.delta());
 
     if spawner.timer.just_finished() {
@@ -51,7 +56,7 @@ fn spawn_asteroids(
             fastrand::f32() * std::f32::consts::TAU,
         ));
 
-        let (image, size, radius, velocity) = if is_small {
+        let (image, size, radius, base_velocity) = if is_small {
             (
                 "asteroid_1.png",
                 Vec2::new(24.0 * 2.0, 24.0 * 2.0),
@@ -66,6 +71,9 @@ fn spawn_asteroids(
                 Vec3::new(0.0, -100.0 * (fastrand::f32() + 1.0), 0.0),
             )
         };
+
+        // vitesse multipliée par le facteur de difficulté
+        let velocity = base_velocity * difficulty.factor;
 
         commands.spawn((
             SpriteBundle {

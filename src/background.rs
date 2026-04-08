@@ -1,3 +1,4 @@
+use crate::difficulty::Difficulty;
 use bevy::prelude::*;
 
 pub struct BackgroundPlugin;
@@ -27,9 +28,14 @@ fn setup_background(mut commands: Commands, asset_server: Res<AssetServer>) {
     }
 }
 
-fn scroll_background(mut query: Query<&mut Transform, With<Background>>, time: Res<Time>) {
-    let speed = 150.0;
+fn scroll_background(
+    mut query: Query<&mut Transform, With<Background>>,
+    time: Res<Time>,
+    difficulty: Res<Difficulty>,
+) {
+    let base_speed = 150.0;
     let image_height = 1536.0;
+    let speed = base_speed * difficulty.factor.powi(2);
 
     for mut transform in query.iter_mut() {
         transform.translation.y -= speed * time.delta_seconds();

@@ -5,6 +5,7 @@ mod background;
 mod collision;
 mod crosshair;
 mod debug;
+mod difficulty;
 mod gameover;
 mod player;
 mod state;
@@ -14,6 +15,7 @@ use background::BackgroundPlugin;
 use collision::CollisionPlugin;
 use crosshair::CrosshairPlugin;
 use debug::DebugPlugin;
+use difficulty::DifficultyPlugin;
 use gameover::GameOverPlugin;
 use player::PlayerPlugin;
 use state::GameState;
@@ -30,6 +32,7 @@ fn main() {
             CollisionPlugin,
             GameOverPlugin,
             DebugPlugin,
+            DifficultyPlugin,
         ))
         .add_systems(Startup, setup)
         .run();
