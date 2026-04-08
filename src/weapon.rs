@@ -49,6 +49,10 @@ pub struct WeaponDef {
     /// Un seul élément `[ShotAngle(0.0)]` = tir simple droit devant.
     /// Trois éléments = éventail style fusil à pompe.
     pub pattern: &'static [ShotAngle],
+    /// Dossier optionnel contenant les frames de mort du projectile.
+    /// Ex: "images/projectiles/death_missile/" avec frame_000.png, frame_001.png…
+    /// Si `None`, le projectile disparaît sans animation.
+    pub death_folder: Option<&'static str>,
 }
 
 // ─── Armes ───────────────────────────────────────────────────────────
@@ -60,6 +64,7 @@ pub const STANDARD_MISSILE: WeaponDef = WeaponDef {
     speed: 900.0,
     fire_rate: 0.2,
     pattern: &[ShotAngle(0.0)], // tir unique droit devant
+    death_folder: None,         // disparaît sans animation
 };
 
 pub const RED_PROJECTILE: WeaponDef = WeaponDef {
@@ -73,6 +78,7 @@ pub const RED_PROJECTILE: WeaponDef = WeaponDef {
         ShotAngle(0.18),        //   gauche (~10°)
         ShotAngle(-0.18),       //   droite (~10°)
     ],
+    death_folder: None,         // pas d'animation de mort pour l'instant
 };
 
 // ─── Composant ───────────────────────────────────────────────────────

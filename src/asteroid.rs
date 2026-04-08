@@ -23,6 +23,8 @@ pub struct Asteroid {
     pub radius: f32,
     pub health: i32,
     pub size: Vec2,
+    /// Index de la texture (0-16), utilisé pour trouver le dossier d'animation de mort.
+    pub texture_index: usize,
 }
 
 /// Inséré sur l'astéroïde au moment d'un hit. Le timer contrôle la durée du flash.
@@ -72,7 +74,8 @@ fn spawn_asteroids(
     let window = windows.single();
     let x = fastrand::f32() * window.width() - window.width() / 2.0;
     let is_small = fastrand::f32() < 0.5; // 30% de petits
-    let texture = textures.0[fastrand::usize(..textures.0.len())].clone();
+    let texture_index = fastrand::usize(..textures.0.len());
+    let texture = textures.0[texture_index].clone();
 
     let transform = Transform::from_xyz(x, 500.0, 0.0).with_rotation(Quat::from_rotation_z(
         fastrand::f32() * std::f32::consts::TAU,
@@ -112,6 +115,7 @@ fn spawn_asteroids(
             radius,
             health,
             size,
+            texture_index,
         },
     ));
 }

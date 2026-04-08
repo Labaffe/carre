@@ -1,6 +1,7 @@
 use crate::asteroid::{Asteroid, HitFlash};
 use crate::crosshair::Crosshair;
-use crate::explosion::spawn_explosion;
+use crate::difficulty::Difficulty;
+use crate::explosion::{spawn_explosion, spawn_projectile_death};
 use crate::player::Player;
 use crate::weapon::{HitboxShape, Weapon};
 use bevy::prelude::*;
@@ -32,6 +33,8 @@ fn reset_fire_rate(mut timer: ResMut<FireRateTimer>) {
 pub struct Missile {
     velocity: Vec3,
     pub hitbox: HitboxShape,
+    /// Dossier optionnel de frames de mort du projectile.
+    pub death_folder: Option<&'static str>,
 }
 
 // ─── Collision OBB vs Cercle ─────────────────────────────────────────
@@ -142,6 +145,7 @@ fn shoot(
             Missile {
                 velocity: dir.extend(0.0) * def.speed,
                 hitbox: def.hitbox.clone(),
+                death_folder: def.death_folder,
             },
         ));
     }
@@ -159,6 +163,7 @@ fn missile_asteroid_collision(
     missile_q: Query<(Entity, &Transform, &Missile)>,
     mut asteroid_q: Query<(Entity, &Transform, &mut Asteroid)>,
     asset_server: Res<AssetServer>,
+    difficulty: Res<Difficulty>,
 ) {
     let mut despawned_missiles = std::collections::HashSet::new();
     let mut despawned_asteroids = std::collections::HashSet::new();
@@ -181,6 +186,12 @@ fn missile_asteroid_collision(
             );
 
             if hit {
+                spawn_projectile_death(
+                    &mut commands,
+                    &asset_server,
+                    missile_transform.translation,
+                    missile.death_folder,
+                );
                 commands.entity(missile_entity).despawn();
                 despawned_missiles.insert(missile_entity);
                 asteroid.health -= 1;
@@ -191,6 +202,8 @@ fn missile_asteroid_collision(
                         &asset_server,
                         asteroid_transform.translation,
                         asteroid.size,
+                        asteroid.texture_index,
+                        asteroid.base_velocity * difficulty.factor,
                     );
                     commands.spawn(AudioBundle {
                         source: asset_server.load("audio/asteroid_die.ogg"),
