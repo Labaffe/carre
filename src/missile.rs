@@ -29,7 +29,46 @@ fn reset_fire_rate(mut timer: ResMut<FireRateTimer>) {
 #[derive(Component)]
 pub struct Missile {
     velocity: Vec3,
-    pub radius: f32,
+    /// Demi-longueur de la hitbox (axe du missile).
+    pub half_length: f32,
+    /// Demi-largeur de la hitbox (perpendiculaire).
+    pub half_width: f32,
+}
+
+/// Test de collision rectangle orienté (OBB) vs cercle.
+/// Projette le centre du cercle dans le repère local du rectangle,
+/// puis trouve le point le plus proche sur le rectangle.
+fn obb_circle_collision(
+    rect_pos: Vec3,
+    rect_rot: Quat,
+    half_length: f32,
+    half_width: f32,
+    circle_pos: Vec3,
+    circle_radius: f32,
+) -> bool {
+    // Vecteur du rectangle vers le cercle
+    let delta = circle_pos - rect_pos;
+    let delta2 = delta.truncate();
+
+    // Axes locaux du rectangle (le missile pointe vers le haut local = Y local)
+    let (axis_x, axis_y) = {
+        let angle = rect_rot.to_euler(EulerRot::ZYX).0;
+        let cos = angle.cos();
+        let sin = angle.sin();
+        // X local = droite du missile, Y local = avant du missile
+        (Vec2::new(cos, sin), Vec2::new(-sin, cos))
+    };
+
+    // Projection dans le repère local
+    let local_x = delta2.dot(axis_x);
+    let local_y = delta2.dot(axis_y);
+
+    // Point le plus proche sur le rectangle
+    let closest_x = local_x.clamp(-half_width, half_width);
+    let closest_y = local_y.clamp(-half_length, half_length);
+
+    let dist_sq = (local_x - closest_x).powi(2) + (local_y - closest_y).powi(2);
+    dist_sq <= circle_radius * circle_radius
 }
 
 fn shoot(
@@ -72,7 +111,7 @@ fn shoot(
 
     // Missile central
     let pos = Vec3::new(player_pos.x, player_pos.y, -0.1);
-    spawn_missile(&mut commands, asset_server.load(def.texture_path), pos, direction, angle, def.speed, def.radius);
+    spawn_missile(&mut commands, asset_server.load(def.texture_path), pos, direction, angle, def.speed, def.hitbox_half_length, def.hitbox_half_width);
 
     // Missiles latéraux si l'arme en a
     if def.projectile_count >= 3 {
@@ -90,8 +129,8 @@ fn shoot(
             -0.1,
         );
 
-        spawn_missile(&mut commands, asset_server.load(def.texture_path), pos_left, direction, angle, def.speed, def.radius);
-        spawn_missile(&mut commands, asset_server.load(def.texture_path), pos_right, direction, angle, def.speed, def.radius);
+        spawn_missile(&mut commands, asset_server.load(def.texture_path), pos_left, direction, angle, def.speed, def.hitbox_half_length, def.hitbox_half_width);
+        spawn_missile(&mut commands, asset_server.load(def.texture_path), pos_right, direction, angle, def.speed, def.hitbox_half_length, def.hitbox_half_width);
     }
 
     // son de tir
@@ -108,7 +147,8 @@ fn spawn_missile(
     direction: Vec2,
     angle: f32,
     speed: f32,
-    radius: f32,
+    half_length: f32,
+    half_width: f32,
 ) {
     commands.spawn((
         SpriteBundle {
@@ -122,7 +162,8 @@ fn spawn_missile(
         },
         Missile {
             velocity: direction.extend(0.0) * speed,
-            radius,
+            half_length,
+            half_width,
         },
     ));
 }
@@ -144,11 +185,17 @@ fn missile_asteroid_collision(
             if despawned_asteroids.contains(&asteroid_entity) {
                 continue;
             }
-            let distance = missile_transform
-                .translation
-                .distance(asteroid_transform.translation);
 
-            if distance < missile.radius + asteroid.radius {
+            let hit = obb_circle_collision(
+                missile_transform.translation,
+                missile_transform.rotation,
+                missile.half_length,
+                missile.half_width,
+                asteroid_transform.translation,
+                asteroid.radius,
+            );
+
+            if hit {
                 commands.entity(missile_entity).despawn();
                 despawned_missiles.insert(missile_entity);
                 asteroid.health -= 1;

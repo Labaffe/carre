@@ -94,6 +94,26 @@ fn draw_hitboxes(
     }
 
     for (transform, missile) in missile_q.iter() {
-        gizmos.circle_2d(transform.translation.truncate(), missile.radius, Color::YELLOW);
+        let pos = transform.translation.truncate();
+        let angle = transform.rotation.to_euler(EulerRot::ZYX).0;
+        let cos = angle.cos();
+        let sin = angle.sin();
+        // Axes locaux : X local = (cos, sin), Y local = (-sin, cos)
+        let ax = Vec2::new(cos, sin);
+        let ay = Vec2::new(-sin, cos);
+
+        let hw = missile.half_width;
+        let hl = missile.half_length;
+
+        let corners = [
+            pos + ax * hw + ay * hl,
+            pos - ax * hw + ay * hl,
+            pos - ax * hw - ay * hl,
+            pos + ax * hw - ay * hl,
+        ];
+
+        for i in 0..4 {
+            gizmos.line_2d(corners[i], corners[(i + 1) % 4], Color::YELLOW);
+        }
     }
 }

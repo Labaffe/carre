@@ -19,19 +19,21 @@ impl Plugin for WeaponPlugin {
 pub struct WeaponDef {
     pub name: &'static str,
     pub texture_path: &'static str,
-    pub radius: f32,
+    /// Demi-longueur de la hitbox (dans l'axe du missile).
+    pub hitbox_half_length: f32,
+    /// Demi-largeur de la hitbox (perpendiculaire à l'axe).
+    pub hitbox_half_width: f32,
     pub speed: f32,
     pub fire_rate: f32,
-    /// Nombre de projectiles par tir (1 = central seul, 3 = central + 2 latéraux).
     pub projectile_count: u32,
-    /// Écart latéral des projectiles secondaires (en pixels).
     pub side_offset: f32,
 }
 
 pub const STANDARD_MISSILE: WeaponDef = WeaponDef {
     name: "Standard Missile",
     texture_path: "images/missile.png",
-    radius: 6.0,
+    hitbox_half_length: 6.0,
+    hitbox_half_width: 6.0,
     speed: 600.0,
     fire_rate: 0.2,
     projectile_count: 1,
@@ -41,7 +43,8 @@ pub const STANDARD_MISSILE: WeaponDef = WeaponDef {
 pub const RED_PROJECTILE: WeaponDef = WeaponDef {
     name: "Red Projectile",
     texture_path: "images/red_projectile.png",
-    radius: 8.0,
+    hitbox_half_length: 32.0,  // 64px de long
+    hitbox_half_width: 4.0,    // étroit comme une fusée
     speed: 750.0,
     fire_rate: 0.15,
     projectile_count: 3,
