@@ -32,10 +32,24 @@ fn player_asteroid_collision(
             .distance(asteroid_transform.translation);
 
         if distance < PLAYER_RADIUS + asteroid.radius {
-            commands.entity(player_entity).despawn();
-            commands.entity(asteroid_entity).despawn();
-            next_state.set(GameState::GameOver);
+            game_over(
+                &mut commands,
+                &mut next_state,
+                player_entity,
+                asteroid_entity,
+            );
             break;
         }
     }
+}
+
+fn game_over(
+    commands: &mut Commands,
+    next_state: &mut ResMut<NextState<GameState>>,
+    player_entity: Entity,
+    asteroid_entity: Entity,
+) {
+    commands.entity(player_entity).despawn();
+    commands.entity(asteroid_entity).despawn();
+    next_state.set(GameState::GameOver);
 }
