@@ -83,27 +83,27 @@ fn spawn_gradient_rect(commands: &mut Commands, def: &RectDef, top_y: f32) -> Ve
 
 fn attach_thruster(mut commands: Commands, new_players: Query<Entity, Added<Player>>) {
     for player_entity in new_players.iter() {
-        // Rectangle extérieur : orange, large
+        // Rectangle extérieur : orange vif
         let outer = spawn_gradient_rect(
             &mut commands,
             &RectDef {
                 width: 28.0,
                 height: 48.0,
-                color_rgb: [1.0, 0.35, 0.0],
-                top_alpha: 0.55,
+                color_rgb: [1.0, 0.45, 0.0],
+                top_alpha: 0.40,
                 z: -0.2,
             },
             -32.0,
         );
 
-        // Rectangle intérieur : jaune-blanc, étroit
+        // Rectangle intérieur : jaune-blanc éclatant
         let inner = spawn_gradient_rect(
             &mut commands,
             &RectDef {
                 width: 10.0,
                 height: 36.0,
-                color_rgb: [1.0, 0.85, 0.3],
-                top_alpha: 0.95,
+                color_rgb: [1.0, 1.0, 0.4],
+                top_alpha: 0.7,
                 z: -0.1,
             },
             -32.0,
@@ -149,19 +149,22 @@ fn animate_thruster(
         // éteint
         0.0
     } else if elapsed < 10.0 {
-        // mise en route : scintillement violent + enveloppe montante
-        let ramp = (elapsed - 7.0) / 3.0; // 0→1 sur 3s
-        let flicker = (t * 11.0).sin() * 0.70   // basse fréquence : coupures brutales
-            + (t * 23.0).sin() * 0.50   // fréquence moyenne
-            + (t * 61.0).sin() * 0.35   // haute fréquence
-            + (t * 97.0).sin() * 0.20; // très haute : grain
-        let flicker_norm = (flicker * 0.45 + 0.55).clamp(0.0, 1.0);
-        // début très saccadé, fin proche de la pleine puissance
-        (ramp * ramp * 0.3 + flicker_norm * ramp * 1.1).clamp(0.0, 1.0)
+        // mise en route : clignotement très rapide et violent
+        let ramp = (elapsed - 7.0) / 3.0;
+        let flicker =
+              (t * 43.0).sin() * 0.90   // très rapide, amplitude max
+            + (t * 79.0).sin() * 0.70   // rapide
+            + (t * 137.0).sin() * 0.50  // grain fin
+            + (t * 19.0).sin() * 0.60;  // basse fréquence pour coupures noires
+        let flicker_norm = (flicker * 0.35 + 0.50).clamp(0.0, 1.0);
+        (ramp * ramp * 0.2 + flicker_norm * ramp * 1.3).clamp(0.0, 1.0)
     } else {
-        // pleine puissance : crépitement visible mais pas dominant
-        let crackle = (t * 31.0).sin() * 0.10 + (t * 59.0).sin() * 0.07 + (t * 97.0).sin() * 0.05;
-        (0.85 + crackle).clamp(0.0, 1.0)
+        // pleine puissance : crépitement fort et rapide
+        let crackle =
+              (t * 83.0).sin() * 0.18
+            + (t * 127.0).sin() * 0.14
+            + (t * 211.0).sin() * 0.10;
+        (0.80 + crackle).clamp(0.0, 1.0)
     };
 
     for (mut sprite, layer) in thruster_q.iter_mut() {
