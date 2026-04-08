@@ -1,12 +1,17 @@
 use bevy::prelude::*;
 use crate::crosshair::Crosshair;
+use crate::state::GameState;
 
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_player)
-            .add_systems(Update, (movement, rotate_towards_crosshair));
+            .add_systems(
+                Update,
+                (movement, rotate_towards_crosshair)
+                    .run_if(in_state(GameState::Playing)),
+            );
     }
 }
 
@@ -14,6 +19,10 @@ impl Plugin for PlayerPlugin {
 pub struct Player;
 
 fn setup_player(mut commands: Commands, asset_server: Res<AssetServer>) {
+    spawn_player(&mut commands, &asset_server);
+}
+
+pub fn spawn_player(commands: &mut Commands, asset_server: &Res<AssetServer>) {
     commands.spawn((
         SpriteBundle {
             texture: asset_server.load("vaisseau.png"),

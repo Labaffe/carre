@@ -1,17 +1,22 @@
 use bevy::prelude::*;
+use crate::state::GameState;
 
 pub struct AsteroidPlugin;
 
 impl Plugin for AsteroidPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(AsteroidSpawner::default())
-            .add_systems(Update, (spawn_asteroids, move_asteroids));
+            .add_systems(
+                Update,
+                (spawn_asteroids, move_asteroids).run_if(in_state(GameState::Playing)),
+            );
     }
 }
 
 #[derive(Component)]
-struct Asteroid {
-    velocity: Vec3,
+pub struct Asteroid {
+    pub velocity: Vec3,
+    pub radius: f32,
 }
 
 #[derive(Resource)]
@@ -47,16 +52,18 @@ fn spawn_asteroids(
             fastrand::f32() * std::f32::consts::TAU,
         ));
 
-        let (image, size, velocity) = if is_small {
+        let (image, size, radius, velocity) = if is_small {
             (
                 "asteroid_1.png",
                 Vec2::new(24.0 * 2.0, 24.0 * 2.0),
+                24.0,
                 Vec3::new(0.0, -200.0 * (fastrand::f32() + 1.0), 0.0),
             )
         } else {
             (
                 "asteroid_2.png",
                 Vec2::new(41.0 * 2.5, 41.0 * 2.5),
+                51.0,
                 Vec3::new(0.0, -100.0 * (fastrand::f32() + 1.0), 0.0),
             )
         };
@@ -71,7 +78,7 @@ fn spawn_asteroids(
                 transform,
                 ..default()
             },
-            Asteroid { velocity },
+            Asteroid { velocity, radius },
         ));
     }
 }
