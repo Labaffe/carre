@@ -4,6 +4,7 @@ mod asteroid;
 mod background;
 mod collision;
 mod crosshair;
+mod debug;
 mod gameover;
 mod player;
 mod state;
@@ -12,6 +13,7 @@ use asteroid::AsteroidPlugin;
 use background::BackgroundPlugin;
 use collision::CollisionPlugin;
 use crosshair::CrosshairPlugin;
+use debug::DebugPlugin;
 use gameover::GameOverPlugin;
 use player::PlayerPlugin;
 use state::GameState;
@@ -27,6 +29,7 @@ fn main() {
             AsteroidPlugin,
             CollisionPlugin,
             GameOverPlugin,
+            DebugPlugin,
         ))
         .add_systems(Startup, setup)
         .run();

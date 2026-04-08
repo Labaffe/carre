@@ -1,15 +1,14 @@
-use bevy::prelude::*;
 use crate::state::GameState;
+use bevy::prelude::*;
 
 pub struct AsteroidPlugin;
 
 impl Plugin for AsteroidPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(AsteroidSpawner::default())
-            .add_systems(
-                Update,
-                (spawn_asteroids, move_asteroids).run_if(in_state(GameState::Playing)),
-            );
+        app.insert_resource(AsteroidSpawner::default()).add_systems(
+            Update,
+            (spawn_asteroids, move_asteroids).run_if(in_state(GameState::Playing)),
+        );
     }
 }
 
@@ -56,14 +55,14 @@ fn spawn_asteroids(
             (
                 "asteroid_1.png",
                 Vec2::new(24.0 * 2.0, 24.0 * 2.0),
-                24.0,
+                20.0,
                 Vec3::new(0.0, -200.0 * (fastrand::f32() + 1.0), 0.0),
             )
         } else {
             (
                 "asteroid_2.png",
                 Vec2::new(41.0 * 2.5, 41.0 * 2.5),
-                51.0,
+                47.0,
                 Vec3::new(0.0, -100.0 * (fastrand::f32() + 1.0), 0.0),
             )
         };

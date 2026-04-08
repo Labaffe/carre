@@ -14,7 +14,7 @@ impl Plugin for CollisionPlugin {
     }
 }
 
-const PLAYER_RADIUS: f32 = 32.0;
+pub const PLAYER_RADIUS: f32 = 29.0;
 
 fn player_asteroid_collision(
     mut commands: Commands,
