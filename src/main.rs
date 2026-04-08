@@ -32,13 +32,26 @@ fn main() {
         .run();
 }
 
+#[derive(Component)]
+pub struct MusicMain;
+
+#[derive(Component)]
+pub struct MusicGameOver;
+
 fn setup(mut commands: Commands, mut windows: Query<&mut Window>, asset_server: Res<AssetServer>) {
     windows.single_mut().cursor.visible = false;
 
     commands.spawn(Camera2dBundle::default());
 
-    commands.spawn(AudioBundle {
-        source: asset_server.load("gradius.ogg"),
-        settings: PlaybackSettings::LOOP,
-    });
+    spawn_main_music(&mut commands, &asset_server);
+}
+
+pub fn spawn_main_music(commands: &mut Commands, asset_server: &Res<AssetServer>) {
+    commands.spawn((
+        AudioBundle {
+            source: asset_server.load("gradius.ogg"),
+            settings: PlaybackSettings::LOOP,
+        },
+        MusicMain,
+    ));
 }
