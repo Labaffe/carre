@@ -140,7 +140,7 @@ fn animate_thruster(
     if elapsed >= 10.0 && !sounds.boom_played {
         sounds.boom_played = true;
         commands.spawn(AudioBundle {
-            source: asset_server.load("boom.ogg"),
+            source: asset_server.load("boom.wav"),
             settings: PlaybackSettings::ONCE,
         });
     }
@@ -151,20 +151,16 @@ fn animate_thruster(
     } else if elapsed < 10.0 {
         // mise en route : scintillement violent + enveloppe montante
         let ramp = (elapsed - 7.0) / 3.0; // 0→1 sur 3s
-        let flicker =
-              (t * 11.0).sin() * 0.70   // basse fréquence : coupures brutales
+        let flicker = (t * 11.0).sin() * 0.70   // basse fréquence : coupures brutales
             + (t * 23.0).sin() * 0.50   // fréquence moyenne
             + (t * 61.0).sin() * 0.35   // haute fréquence
-            + (t * 97.0).sin() * 0.20;  // très haute : grain
+            + (t * 97.0).sin() * 0.20; // très haute : grain
         let flicker_norm = (flicker * 0.45 + 0.55).clamp(0.0, 1.0);
         // début très saccadé, fin proche de la pleine puissance
         (ramp * ramp * 0.3 + flicker_norm * ramp * 1.1).clamp(0.0, 1.0)
     } else {
         // pleine puissance : crépitement visible mais pas dominant
-        let crackle =
-              (t * 31.0).sin() * 0.10
-            + (t * 59.0).sin() * 0.07
-            + (t * 97.0).sin() * 0.05;
+        let crackle = (t * 31.0).sin() * 0.10 + (t * 59.0).sin() * 0.07 + (t * 97.0).sin() * 0.05;
         (0.85 + crackle).clamp(0.0, 1.0)
     };
 
