@@ -2,18 +2,34 @@ use crate::asteroid::Asteroid;
 use crate::crosshair::Crosshair;
 use crate::explosion::spawn_explosion;
 use crate::player::Player;
-use crate::state::GameState;
 use bevy::prelude::*;
 
 pub struct MissilePlugin;
 
 impl Plugin for MissilePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            (shoot, move_missiles, missile_asteroid_collision).run_if(in_state(GameState::Playing)),
-        );
+        app.insert_resource(FireRate::default())
+            .add_systems(OnEnter(crate::state::GameState::Playing), reset_fire_rate)
+            .add_systems(
+                Update,
+                (shoot, move_missiles, missile_asteroid_collision)
+                    .run_if(in_state(crate::state::GameState::Playing)),
+            );
     }
+}
+
+/// Cadence de tir : 1 tir toutes les 0.2 secondes (5 tirs/s).
+#[derive(Resource)]
+struct FireRate(Timer);
+
+impl Default for FireRate {
+    fn default() -> Self {
+        Self(Timer::from_seconds(0.2, TimerMode::Repeating))
+    }
+}
+
+fn reset_fire_rate(mut fire_rate: ResMut<FireRate>) {
+    fire_rate.0.reset();
 }
 
 #[derive(Component)]
@@ -23,12 +39,19 @@ pub struct Missile {
 
 fn shoot(
     mouse: Res<ButtonInput<MouseButton>>,
+    mut fire_rate: ResMut<FireRate>,
+    time: Res<Time>,
     player_q: Query<&Transform, With<Player>>,
     crosshair_q: Query<&Transform, With<Crosshair>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
-    if !mouse.just_pressed(MouseButton::Left) {
+    if !mouse.pressed(MouseButton::Left) {
+        return;
+    }
+
+    fire_rate.0.tick(time.delta());
+    if !fire_rate.0.just_finished() {
         return;
     }
 
