@@ -1,6 +1,7 @@
 use crate::asteroid::Asteroid;
 use crate::player::Player;
 use crate::state::GameState;
+use crate::thruster::Thruster;
 use bevy::prelude::*;
 
 pub struct CollisionPlugin;
@@ -21,11 +22,15 @@ fn player_asteroid_collision(
     mut next_state: ResMut<NextState<GameState>>,
     player_q: Query<(Entity, &Transform), With<Player>>,
     asteroid_q: Query<(Entity, &Transform, &Asteroid)>,
+    thruster_q: Query<Entity, With<Thruster>>,
 ) {
     let Ok((player_entity, player_transform)) = player_q.get_single() else {
         return;
     };
 
+    let Ok(thruster_entity) = thruster_q.get_single() else {
+        return;
+    };
     for (asteroid_entity, asteroid_transform, asteroid) in asteroid_q.iter() {
         let distance = player_transform
             .translation
@@ -37,6 +42,7 @@ fn player_asteroid_collision(
                 &mut next_state,
                 player_entity,
                 asteroid_entity,
+                thruster_entity,
             );
             break;
         }
@@ -48,8 +54,10 @@ fn game_over(
     next_state: &mut ResMut<NextState<GameState>>,
     player_entity: Entity,
     asteroid_entity: Entity,
+    thruster_entity: Entity,
 ) {
     commands.entity(player_entity).despawn();
+    commands.entity(thruster_entity).despawn();
     commands.entity(asteroid_entity).despawn();
     next_state.set(GameState::GameOver);
 }

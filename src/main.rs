@@ -9,6 +9,7 @@ mod difficulty;
 mod gameover;
 mod player;
 mod state;
+mod thruster;
 
 use asteroid::AsteroidPlugin;
 use background::BackgroundPlugin;
@@ -19,6 +20,7 @@ use difficulty::DifficultyPlugin;
 use gameover::GameOverPlugin;
 use player::PlayerPlugin;
 use state::GameState;
+use thruster::ThrusterPlugin;
 
 fn main() {
     App::new()
@@ -33,6 +35,7 @@ fn main() {
             GameOverPlugin,
             DebugPlugin,
             DifficultyPlugin,
+            ThrusterPlugin,
         ))
         .add_systems(Startup, setup)
         .run();
