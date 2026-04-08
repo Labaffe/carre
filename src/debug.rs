@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use crate::asteroid::Asteroid;
 use crate::collision::PLAYER_RADIUS;
 use crate::difficulty::Difficulty;
+use crate::missile::Missile;
 use crate::player::Player;
 
 pub struct DebugPlugin;
@@ -80,6 +81,7 @@ fn draw_hitboxes(
     mut gizmos: Gizmos,
     player_q: Query<&Transform, With<Player>>,
     asteroid_q: Query<(&Transform, &Asteroid)>,
+    missile_q: Query<(&Transform, &Missile)>,
 ) {
     if !debug.0 { return; }
 
@@ -89,5 +91,9 @@ fn draw_hitboxes(
 
     for (transform, asteroid) in asteroid_q.iter() {
         gizmos.circle_2d(transform.translation.truncate(), asteroid.radius, Color::RED);
+    }
+
+    for (transform, missile) in missile_q.iter() {
+        gizmos.circle_2d(transform.translation.truncate(), missile.radius, Color::YELLOW);
     }
 }

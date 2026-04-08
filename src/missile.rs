@@ -2,13 +2,14 @@ use crate::asteroid::{Asteroid, HitFlash};
 use crate::crosshair::Crosshair;
 use crate::explosion::spawn_explosion;
 use crate::player::Player;
+use crate::weapon::Weapon;
 use bevy::prelude::*;
 
 pub struct MissilePlugin;
 
 impl Plugin for MissilePlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(FireRate::default())
+        app.insert_resource(FireRateTimer(Timer::from_seconds(0.2, TimerMode::Repeating)))
             .add_systems(OnEnter(crate::state::GameState::Playing), reset_fire_rate)
             .add_systems(
                 Update,
@@ -18,30 +19,24 @@ impl Plugin for MissilePlugin {
     }
 }
 
-/// Cadence de tir : 1 tir toutes les 0.2 secondes (5 tirs/s).
 #[derive(Resource)]
-struct FireRate(Timer);
+struct FireRateTimer(Timer);
 
-impl Default for FireRate {
-    fn default() -> Self {
-        Self(Timer::from_seconds(0.2, TimerMode::Repeating))
-    }
-}
-
-fn reset_fire_rate(mut fire_rate: ResMut<FireRate>) {
-    fire_rate.0.reset();
+fn reset_fire_rate(mut timer: ResMut<FireRateTimer>) {
+    timer.0.reset();
 }
 
 #[derive(Component)]
 pub struct Missile {
     velocity: Vec3,
+    pub radius: f32,
 }
 
 fn shoot(
     mouse: Res<ButtonInput<MouseButton>>,
-    mut fire_rate: ResMut<FireRate>,
+    mut fire_timer: ResMut<FireRateTimer>,
     time: Res<Time>,
-    player_q: Query<&Transform, With<Player>>,
+    player_q: Query<(&Transform, &Weapon), With<Player>>,
     crosshair_q: Query<&Transform, With<Crosshair>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -50,17 +45,19 @@ fn shoot(
         return;
     }
 
-    fire_rate.0.tick(time.delta());
-    if !fire_rate.0.just_finished() {
-        return;
-    }
-
-    let Ok(player_transform) = player_q.get_single() else {
+    let Ok((player_transform, weapon)) = player_q.get_single() else {
         return;
     };
     let Ok(crosshair_transform) = crosshair_q.get_single() else {
         return;
     };
+
+    // Adapter la cadence de tir à l'arme actuelle
+    fire_timer.0.set_duration(std::time::Duration::from_secs_f32(weapon.def.fire_rate));
+    fire_timer.0.tick(time.delta());
+    if !fire_timer.0.just_finished() {
+        return;
+    }
 
     let player_pos = player_transform.translation;
     let crosshair_pos = crosshair_transform.translation;
@@ -71,21 +68,31 @@ fn shoot(
     }
 
     let angle = direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2;
+    let def = &weapon.def;
 
-    commands.spawn((
-        SpriteBundle {
-            texture: asset_server.load("images/missile.png"),
-            transform: Transform {
-                translation: Vec3::new(player_pos.x, player_pos.y, 0.5),
-                rotation: Quat::from_rotation_z(angle),
-                ..default()
-            },
-            ..default()
-        },
-        Missile {
-            velocity: direction.extend(0.0) * 600.0,
-        },
-    ));
+    // Missile central
+    let pos = Vec3::new(player_pos.x, player_pos.y, -0.1);
+    spawn_missile(&mut commands, asset_server.load(def.texture_path), pos, direction, angle, def.speed, def.radius);
+
+    // Missiles latéraux si l'arme en a
+    if def.projectile_count >= 3 {
+        let perpendicular = Vec2::new(-direction.y, direction.x);
+        let offset = def.side_offset;
+
+        let pos_left = Vec3::new(
+            player_pos.x + perpendicular.x * offset,
+            player_pos.y + perpendicular.y * offset,
+            -0.1,
+        );
+        let pos_right = Vec3::new(
+            player_pos.x - perpendicular.x * offset,
+            player_pos.y - perpendicular.y * offset,
+            -0.1,
+        );
+
+        spawn_missile(&mut commands, asset_server.load(def.texture_path), pos_left, direction, angle, def.speed, def.radius);
+        spawn_missile(&mut commands, asset_server.load(def.texture_path), pos_right, direction, angle, def.speed, def.radius);
+    }
 
     // son de tir
     commands.spawn(AudioBundle {
@@ -94,21 +101,45 @@ fn shoot(
     });
 }
 
-const MISSILE_RADIUS: f32 = 6.0;
+fn spawn_missile(
+    commands: &mut Commands,
+    texture: Handle<Image>,
+    position: Vec3,
+    direction: Vec2,
+    angle: f32,
+    speed: f32,
+    radius: f32,
+) {
+    commands.spawn((
+        SpriteBundle {
+            texture,
+            transform: Transform {
+                translation: position,
+                rotation: Quat::from_rotation_z(angle),
+                ..default()
+            },
+            ..default()
+        },
+        Missile {
+            velocity: direction.extend(0.0) * speed,
+            radius,
+        },
+    ));
+}
 
 fn missile_asteroid_collision(
     mut commands: Commands,
-    missile_q: Query<(Entity, &Transform), With<Missile>>,
+    missile_q: Query<(Entity, &Transform, &Missile)>,
     mut asteroid_q: Query<(Entity, &Transform, &mut Asteroid)>,
     asset_server: Res<AssetServer>,
 ) {
-    for (missile_entity, missile_transform) in missile_q.iter() {
+    for (missile_entity, missile_transform, missile) in missile_q.iter() {
         for (asteroid_entity, asteroid_transform, mut asteroid) in asteroid_q.iter_mut() {
             let distance = missile_transform
                 .translation
                 .distance(asteroid_transform.translation);
 
-            if distance < MISSILE_RADIUS + asteroid.radius {
+            if distance < missile.radius + asteroid.radius {
                 commands.entity(missile_entity).despawn();
                 asteroid.health -= 1;
 

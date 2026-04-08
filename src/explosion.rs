@@ -22,10 +22,10 @@ pub fn spawn_explosion(
     size: Vec2,
 ) {
     let frames = vec![
-        asset_server.load("images/explosion_1.png"),
-        asset_server.load("images/explosion_2.png"),
-        asset_server.load("images/explosion_3.png"),
-        asset_server.load("images/explosion_4.png"),
+        asset_server.load("images/explosion/explosion_1.png"),
+        asset_server.load("images/explosion/explosion_2.png"),
+        asset_server.load("images/explosion/explosion_3.png"),
+        asset_server.load("images/explosion/explosion_4.png"),
     ];
 
     commands.spawn((

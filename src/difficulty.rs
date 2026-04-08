@@ -18,6 +18,8 @@ impl Plugin for DifficultyPlugin {
 pub struct Difficulty {
     pub elapsed: f32,
     pub factor: f32,
+    pub charging_played: bool,
+    pub boom_played: bool,
 }
 
 impl Default for Difficulty {
@@ -25,6 +27,8 @@ impl Default for Difficulty {
         Self {
             elapsed: 0.0,
             factor: 1.0,
+            charging_played: false,
+            boom_played: false,
         }
     }
 }
@@ -41,8 +45,32 @@ fn reset_difficulty(mut difficulty: ResMut<Difficulty>) {
 }
 
 //
-fn update_difficulty(mut difficulty: ResMut<Difficulty>, time: Res<Time>) {
+fn update_difficulty(
+    mut difficulty: ResMut<Difficulty>,
+    time: Res<Time>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
     difficulty.elapsed += time.delta_seconds();
+
+    // Son charging à 7s
+    if difficulty.elapsed >= 7.0 && !difficulty.charging_played {
+        difficulty.charging_played = true;
+        commands.spawn(AudioBundle {
+            source: asset_server.load("audio/charging.ogg"),
+            settings: PlaybackSettings::DESPAWN,
+        });
+    }
+
+    // Son boom à 10s
+    if difficulty.elapsed >= 10.0 && !difficulty.boom_played {
+        difficulty.boom_played = true;
+        commands.spawn(AudioBundle {
+            source: asset_server.load("audio/boom.wav"),
+            settings: PlaybackSettings::DESPAWN,
+        });
+    }
+
     // 0-10s : facteur 1.0 fixe
     // après 10s : +1.0 toutes les 5 secondes (10s→2, 15s→3, 20s→4…)
     if difficulty.elapsed <= 10.0 {

@@ -11,7 +11,7 @@ mod gameover;
 mod missile;
 mod player;
 mod state;
-mod thruster;
+mod weapon;
 
 use asteroid::AsteroidPlugin;
 use background::BackgroundPlugin;
@@ -24,7 +24,7 @@ use gameover::GameOverPlugin;
 use missile::MissilePlugin;
 use player::PlayerPlugin;
 use state::GameState;
-use thruster::ThrusterPlugin;
+use weapon::WeaponPlugin;
 
 fn main() {
     App::new()
@@ -39,9 +39,9 @@ fn main() {
             GameOverPlugin,
             DebugPlugin,
             DifficultyPlugin,
-            ThrusterPlugin,
             MissilePlugin,
             ExplosionPlugin,
+            WeaponPlugin,
         ))
         .add_systems(Startup, setup)
         .run();
