@@ -25,7 +25,7 @@ fn setup_player(mut commands: Commands, asset_server: Res<AssetServer>) {
 pub fn spawn_player(commands: &mut Commands, asset_server: &Res<AssetServer>) {
     commands.spawn((
         SpriteBundle {
-            texture: asset_server.load("vaisseau.png"),
+            texture: asset_server.load("images/vaisseau.png"),
             sprite: Sprite {
                 custom_size: Some(Vec2::new(64.0, 64.0)),
                 ..default()

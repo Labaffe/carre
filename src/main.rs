@@ -58,7 +58,7 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>, asset_server: 
 pub fn spawn_main_music(commands: &mut Commands, asset_server: &Res<AssetServer>) {
     commands.spawn((
         AudioBundle {
-            source: asset_server.load("gradius.ogg"),
+            source: asset_server.load("audio/gradius.ogg"),
             settings: PlaybackSettings::LOOP,
         },
         MusicMain,

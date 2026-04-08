@@ -60,14 +60,14 @@ fn spawn_asteroids(
 
         let (image, size, radius, base_velocity) = if is_small {
             (
-                "asteroid_1.png",
+                "images/asteroid_1.png",
                 Vec2::new(24.0 * 2.0, 24.0 * 2.0),
                 20.0,
                 Vec3::new(0.0, -120.0 * (fastrand::f32() + 1.0), 0.0),
             )
         } else {
             (
-                "asteroid_2.png",
+                "images/asteroid_2.png",
                 Vec2::new(41.0 * 2.5, 41.0 * 2.5),
                 47.0,
                 Vec3::new(0.0, -100.0 * (fastrand::f32() + 1.0), 0.0),

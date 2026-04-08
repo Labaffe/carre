@@ -133,14 +133,14 @@ fn animate_thruster(
     if elapsed >= 7.0 && !sounds.charging_played {
         sounds.charging_played = true;
         commands.spawn(AudioBundle {
-            source: asset_server.load("charging.ogg"),
+            source: asset_server.load("audio/charging.ogg"),
             settings: PlaybackSettings::ONCE,
         });
     }
     if elapsed >= 10.0 && !sounds.boom_played {
         sounds.boom_played = true;
         commands.spawn(AudioBundle {
-            source: asset_server.load("boom.wav"),
+            source: asset_server.load("audio/boom.wav"),
             settings: PlaybackSettings::ONCE,
         });
     }

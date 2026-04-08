@@ -14,7 +14,7 @@ impl Plugin for BackgroundPlugin {
 struct Background;
 
 fn setup_background(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let bg = asset_server.load("space_background.png");
+    let bg = asset_server.load("images/space_background.png");
 
     for i in 0..2 {
         commands.spawn((
