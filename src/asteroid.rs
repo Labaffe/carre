@@ -11,7 +11,8 @@ impl Plugin for AsteroidPlugin {
             .add_systems(Startup, preload_asteroid_textures)
             .add_systems(
                 Update,
-                (spawn_asteroids, move_asteroids).run_if(in_state(GameState::Playing)),
+                (spawn_asteroids, move_asteroids, animate_hit_flash)
+                    .run_if(in_state(GameState::Playing)),
             );
     }
 }
@@ -23,6 +24,10 @@ pub struct Asteroid {
     pub health: i32,
     pub size: Vec2,
 }
+
+/// Inséré sur l'astéroïde au moment d'un hit. Le timer contrôle la durée du flash.
+#[derive(Component)]
+pub struct HitFlash(pub Timer);
 
 #[derive(Resource)]
 struct AsteroidTextures(Vec<Handle<Image>>);
@@ -55,9 +60,7 @@ fn spawn_asteroids(
     difficulty: Res<Difficulty>,
     textures: Res<AsteroidTextures>,
 ) {
-    spawner
-        .timer
-        .set_duration(Duration::from_secs_f32(difficulty.spawn_interval()));
+    spawner.timer.set_duration(Duration::from_secs_f32(difficulty.spawn_interval()));
     spawner.timer.tick(time.delta());
 
     if !spawner.timer.just_finished() {
@@ -66,35 +69,26 @@ fn spawn_asteroids(
 
     let window = windows.single();
     let x = fastrand::f32() * window.width() - window.width() / 2.0;
-
     let is_small = fastrand::bool();
     let texture = textures.0[fastrand::usize(..textures.0.len())].clone();
 
-    let transform = Transform::from_xyz(x, 500.0, 0.0).with_rotation(Quat::from_rotation_z(
-        fastrand::f32() * std::f32::consts::TAU,
-    ));
+    let transform = Transform::from_xyz(x, 500.0, 0.0)
+        .with_rotation(Quat::from_rotation_z(fastrand::f32() * std::f32::consts::TAU));
 
-    // 1. TAILLE générée en premier
     let side = if is_small {
-        fastrand::f32() * 40.0 + 35.0 // 35 → 75 px
+        fastrand::f32() * 40.0 + 35.0
     } else {
-        fastrand::f32() * 60.0 + 120.0 // 120 → 180 px
+        fastrand::f32() * 60.0 + 120.0
     };
     let size = Vec2::splat(side);
     let radius = side * 0.45;
 
-    // 2. PV dérivés de la taille
-    //    < 35px → toujours 1 PV, sinon interpolation linéaire 1→5 jusqu'à 180px, max 5
     let health = if side < 35.0 {
         1
     } else {
-        ((side - 35.0) / (180.0 - 35.0) * 4.0 + 1.0)
-            .round()
-            .clamp(1.0, 5.0) as i32
+        ((side - 35.0) / (180.0 - 35.0) * 4.0 + 1.0).round().clamp(1.0, 5.0) as i32
     };
 
-    // 3. VITESSE dérivée de la taille (inversement proportionnelle)
-    //    35px → ~300 px/s   |   180px → ~50 px/s
     let speed = 300.0 - (side - 35.0) / (180.0 - 35.0) * 250.0;
     let velocity = Vec3::new(0.0, -speed, 0.0) * difficulty.factor;
 
@@ -108,13 +102,34 @@ fn spawn_asteroids(
             transform,
             ..default()
         },
-        Asteroid {
-            velocity,
-            radius,
-            health,
-            size,
-        },
+        Asteroid { velocity, radius, health, size },
     ));
+}
+
+/// Flash au hit : alterne rapidement entre sprite visible et invisible.
+/// Note : dans Bevy, sprite.color est un multiplicateur de texture.
+/// Color::WHITE = apparence normale. Pour un flash visible, on joue sur l'alpha.
+fn animate_hit_flash(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut Sprite, &mut HitFlash), With<Asteroid>>,
+) {
+    for (entity, mut sprite, mut flash) in query.iter_mut() {
+        flash.0.tick(time.delta());
+
+        if flash.0.finished() {
+            sprite.color = Color::WHITE;
+            commands.entity(entity).remove::<HitFlash>();
+        } else {
+            // alterne entre blanc opaque et quasi-invisible à 35 Hz
+            let blink = (flash.0.elapsed_secs() * 35.0).sin();
+            sprite.color = if blink > 0.0 {
+                Color::WHITE               // sprite normal
+            } else {
+                Color::rgba(1.0, 1.0, 1.0, 0.0) // invisible → effet flash blanc
+            };
+        }
+    }
 }
 
 fn move_asteroids(mut query: Query<(&mut Transform, &Asteroid)>, time: Res<Time>) {

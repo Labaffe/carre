@@ -1,4 +1,4 @@
-use crate::asteroid::Asteroid;
+use crate::asteroid::{Asteroid, HitFlash};
 use crate::crosshair::Crosshair;
 use crate::explosion::spawn_explosion;
 use crate::player::Player;
@@ -125,6 +125,9 @@ fn missile_asteroid_collision(
                     });
                     commands.entity(asteroid_entity).despawn();
                 } else {
+                    // flash blanc + son de hit
+                    commands.entity(asteroid_entity)
+                        .insert(HitFlash(Timer::from_seconds(0.25, TimerMode::Once)));
                     commands.spawn(AudioBundle {
                         source: asset_server.load("audio/asteroid_hit.ogg"),
                         settings: PlaybackSettings::DESPAWN,
