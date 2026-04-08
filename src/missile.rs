@@ -133,14 +133,24 @@ fn missile_asteroid_collision(
     mut asteroid_q: Query<(Entity, &Transform, &mut Asteroid)>,
     asset_server: Res<AssetServer>,
 ) {
+    let mut despawned_missiles = std::collections::HashSet::new();
+    let mut despawned_asteroids = std::collections::HashSet::new();
+
     for (missile_entity, missile_transform, missile) in missile_q.iter() {
+        if despawned_missiles.contains(&missile_entity) {
+            continue;
+        }
         for (asteroid_entity, asteroid_transform, mut asteroid) in asteroid_q.iter_mut() {
+            if despawned_asteroids.contains(&asteroid_entity) {
+                continue;
+            }
             let distance = missile_transform
                 .translation
                 .distance(asteroid_transform.translation);
 
             if distance < missile.radius + asteroid.radius {
                 commands.entity(missile_entity).despawn();
+                despawned_missiles.insert(missile_entity);
                 asteroid.health -= 1;
 
                 if asteroid.health <= 0 {
@@ -155,8 +165,8 @@ fn missile_asteroid_collision(
                         settings: PlaybackSettings::DESPAWN,
                     });
                     commands.entity(asteroid_entity).despawn();
+                    despawned_asteroids.insert(asteroid_entity);
                 } else {
-                    // flash blanc + son de hit
                     commands.entity(asteroid_entity)
                         .insert(HitFlash(Timer::from_seconds(0.25, TimerMode::Once)));
                     commands.spawn(AudioBundle {
