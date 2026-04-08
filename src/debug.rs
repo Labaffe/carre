@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use crate::asteroid::Asteroid;
 use crate::collision::PLAYER_RADIUS;
+use crate::difficulty::Difficulty;
 use crate::player::Player;
 
 pub struct DebugPlugin;
@@ -8,17 +9,69 @@ pub struct DebugPlugin;
 impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DebugMode(false))
-            .add_systems(Update, (toggle_debug, draw_hitboxes));
+            .add_systems(Startup, setup_debug_ui)
+            .add_systems(Update, (toggle_debug, draw_hitboxes, update_debug_ui));
     }
 }
 
 #[derive(Resource)]
 pub struct DebugMode(pub bool);
 
-fn toggle_debug(keyboard: Res<ButtonInput<KeyCode>>, mut debug: ResMut<DebugMode>) {
+#[derive(Component)]
+struct DebugUI;
+
+fn setup_debug_ui(mut commands: Commands) {
+    commands.spawn((
+        TextBundle {
+            text: Text::from_sections([
+                TextSection::new("", TextStyle { font_size: 16.0, color: Color::WHITE, ..default() }),
+            ]),
+            style: Style {
+                position_type: PositionType::Absolute,
+                top: Val::Px(10.0),
+                left: Val::Px(10.0),
+                ..default()
+            },
+            visibility: Visibility::Hidden,
+            ..default()
+        },
+        DebugUI,
+    ));
+}
+
+fn toggle_debug(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut debug: ResMut<DebugMode>,
+    mut ui_q: Query<&mut Visibility, With<DebugUI>>,
+) {
     if keyboard.just_pressed(KeyCode::F1) {
         debug.0 = !debug.0;
-        println!("Debug mode : {}", if debug.0 { "ON" } else { "OFF" });
+        if let Ok(mut vis) = ui_q.get_single_mut() {
+            *vis = if debug.0 { Visibility::Visible } else { Visibility::Hidden };
+        }
+    }
+}
+
+fn update_debug_ui(
+    debug: Res<DebugMode>,
+    time: Res<Time>,
+    difficulty: Res<Difficulty>,
+    mut ui_q: Query<&mut Text, With<DebugUI>>,
+) {
+    if !debug.0 { return; }
+
+    let fps = 1.0 / time.delta_seconds();
+    let elapsed = difficulty.elapsed;
+    let factor = difficulty.factor;
+
+    let minutes = (elapsed / 60.0) as u32;
+    let seconds = (elapsed % 60.0) as u32;
+
+    if let Ok(mut text) = ui_q.get_single_mut() {
+        text.sections[0].value = format!(
+            "[DEBUG]\nFPS        : {:.0}\nTimer      : {:02}:{:02}\nDifficulté : x{:.2}",
+            fps, minutes, seconds, factor
+        );
     }
 }
 
@@ -28,25 +81,13 @@ fn draw_hitboxes(
     player_q: Query<&Transform, With<Player>>,
     asteroid_q: Query<(&Transform, &Asteroid)>,
 ) {
-    if !debug.0 {
-        return;
-    }
+    if !debug.0 { return; }
 
-    // hitbox du joueur (vert)
     for transform in player_q.iter() {
-        gizmos.circle_2d(
-            transform.translation.truncate(),
-            PLAYER_RADIUS,
-            Color::GREEN,
-        );
+        gizmos.circle_2d(transform.translation.truncate(), PLAYER_RADIUS, Color::GREEN);
     }
 
-    // hitbox des astéroïdes (rouge)
     for (transform, asteroid) in asteroid_q.iter() {
-        gizmos.circle_2d(
-            transform.translation.truncate(),
-            asteroid.radius,
-            Color::RED,
-        );
+        gizmos.circle_2d(transform.translation.truncate(), asteroid.radius, Color::RED);
     }
 }
