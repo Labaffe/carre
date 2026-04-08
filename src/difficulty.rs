@@ -17,8 +17,6 @@ impl Plugin for DifficultyPlugin {
 #[derive(Resource)]
 pub struct Difficulty {
     pub elapsed: f32,
-    /// Facteur de difficulté : 1.0 au départ, augmente avec le temps.
-    /// Après 60s → ~1.67x, après 120s → ~2.33x, etc.
     pub factor: f32,
 }
 

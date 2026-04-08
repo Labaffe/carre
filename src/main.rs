@@ -6,6 +6,7 @@ mod collision;
 mod crosshair;
 mod debug;
 mod difficulty;
+mod explosion;
 mod gameover;
 mod missile;
 mod player;
@@ -18,6 +19,7 @@ use collision::CollisionPlugin;
 use crosshair::CrosshairPlugin;
 use debug::DebugPlugin;
 use difficulty::DifficultyPlugin;
+use explosion::ExplosionPlugin;
 use gameover::GameOverPlugin;
 use missile::MissilePlugin;
 use player::PlayerPlugin;
@@ -39,6 +41,7 @@ fn main() {
             DifficultyPlugin,
             ThrusterPlugin,
             MissilePlugin,
+            ExplosionPlugin,
         ))
         .add_systems(Startup, setup)
         .run();

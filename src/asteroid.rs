@@ -18,6 +18,8 @@ impl Plugin for AsteroidPlugin {
 pub struct Asteroid {
     pub velocity: Vec3,
     pub radius: f32,
+    pub health: i32,
+    pub size: Vec2,
 }
 
 #[derive(Resource)]
@@ -58,11 +60,12 @@ fn spawn_asteroids(
             fastrand::f32() * std::f32::consts::TAU,
         ));
 
-        let (image, size, radius, base_velocity) = if is_small {
+        let (image, size, radius, health, base_velocity) = if is_small {
             (
                 "images/asteroid_1.png",
                 Vec2::new(24.0 * 2.0, 24.0 * 2.0),
                 20.0,
+                1,
                 Vec3::new(0.0, -120.0 * (fastrand::f32() + 1.0), 0.0),
             )
         } else {
@@ -70,11 +73,11 @@ fn spawn_asteroids(
                 "images/asteroid_2.png",
                 Vec2::new(41.0 * 2.5, 41.0 * 2.5),
                 47.0,
+                5,
                 Vec3::new(0.0, -100.0 * (fastrand::f32() + 1.0), 0.0),
             )
         };
 
-        // vitesse multipliée par le facteur de difficulté
         let velocity = base_velocity * difficulty.factor;
 
         commands.spawn((
@@ -87,7 +90,7 @@ fn spawn_asteroids(
                 transform,
                 ..default()
             },
-            Asteroid { velocity, radius },
+            Asteroid { velocity, radius, health, size },
         ));
     }
 }

@@ -1,7 +1,9 @@
-use bevy::prelude::*;
+use crate::asteroid::Asteroid;
 use crate::crosshair::Crosshair;
+use crate::explosion::spawn_explosion;
 use crate::player::Player;
 use crate::state::GameState;
+use bevy::prelude::*;
 
 pub struct MissilePlugin;
 
@@ -9,7 +11,7 @@ impl Plugin for MissilePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (shoot, move_missiles).run_if(in_state(GameState::Playing)),
+            (shoot, move_missiles, missile_asteroid_collision).run_if(in_state(GameState::Playing)),
         );
     }
 }
@@ -30,8 +32,12 @@ fn shoot(
         return;
     }
 
-    let Ok(player_transform) = player_q.get_single() else { return; };
-    let Ok(crosshair_transform) = crosshair_q.get_single() else { return; };
+    let Ok(player_transform) = player_q.get_single() else {
+        return;
+    };
+    let Ok(crosshair_transform) = crosshair_q.get_single() else {
+        return;
+    };
 
     let player_pos = player_transform.translation;
     let crosshair_pos = crosshair_transform.translation;
@@ -63,6 +69,48 @@ fn shoot(
         source: asset_server.load("audio/projectile.ogg"),
         settings: PlaybackSettings::DESPAWN,
     });
+}
+
+const MISSILE_RADIUS: f32 = 6.0;
+
+fn missile_asteroid_collision(
+    mut commands: Commands,
+    missile_q: Query<(Entity, &Transform), With<Missile>>,
+    mut asteroid_q: Query<(Entity, &Transform, &mut Asteroid)>,
+    asset_server: Res<AssetServer>,
+) {
+    for (missile_entity, missile_transform) in missile_q.iter() {
+        for (asteroid_entity, asteroid_transform, mut asteroid) in asteroid_q.iter_mut() {
+            let distance = missile_transform
+                .translation
+                .distance(asteroid_transform.translation);
+
+            if distance < MISSILE_RADIUS + asteroid.radius {
+                commands.entity(missile_entity).despawn();
+                asteroid.health -= 1;
+
+                if asteroid.health <= 0 {
+                    spawn_explosion(
+                        &mut commands,
+                        &asset_server,
+                        asteroid_transform.translation,
+                        asteroid.size,
+                    );
+                    commands.spawn(AudioBundle {
+                        source: asset_server.load("audio/asteroid_die.ogg"),
+                        settings: PlaybackSettings::DESPAWN,
+                    });
+                    commands.entity(asteroid_entity).despawn();
+                } else {
+                    commands.spawn(AudioBundle {
+                        source: asset_server.load("audio/asteroid_hit.ogg"),
+                        settings: PlaybackSettings::DESPAWN,
+                    });
+                }
+                break;
+            }
+        }
+    }
 }
 
 fn move_missiles(
