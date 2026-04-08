@@ -2,7 +2,7 @@ use crate::asteroid::{Asteroid, HitFlash};
 use crate::crosshair::Crosshair;
 use crate::explosion::spawn_explosion;
 use crate::player::Player;
-use crate::weapon::Weapon;
+use crate::weapon::{HitboxShape, Weapon};
 use bevy::prelude::*;
 
 pub struct MissilePlugin;
@@ -26,49 +26,65 @@ fn reset_fire_rate(mut timer: ResMut<FireRateTimer>) {
     timer.0.reset();
 }
 
+// ─── Composant Missile ───────────────────────────────────────────────
+
 #[derive(Component)]
 pub struct Missile {
     velocity: Vec3,
-    /// Demi-longueur de la hitbox (axe du missile).
-    pub half_length: f32,
-    /// Demi-largeur de la hitbox (perpendiculaire).
-    pub half_width: f32,
+    pub hitbox: HitboxShape,
 }
 
-/// Test de collision rectangle orienté (OBB) vs cercle.
-/// Projette le centre du cercle dans le repère local du rectangle,
-/// puis trouve le point le plus proche sur le rectangle.
+// ─── Collision OBB vs Cercle ─────────────────────────────────────────
+
 fn obb_circle_collision(
-    rect_pos: Vec3,
-    rect_rot: Quat,
+    rect_pos: Vec2,
+    rect_angle: f32,
     half_length: f32,
     half_width: f32,
-    circle_pos: Vec3,
+    circle_pos: Vec2,
     circle_radius: f32,
 ) -> bool {
-    // Vecteur du rectangle vers le cercle
     let delta = circle_pos - rect_pos;
-    let delta2 = delta.truncate();
+    let cos = rect_angle.cos();
+    let sin = rect_angle.sin();
+    let local_x = delta.dot(Vec2::new(cos, sin));
+    let local_y = delta.dot(Vec2::new(-sin, cos));
 
-    // Axes locaux du rectangle (le missile pointe vers le haut local = Y local)
-    let (axis_x, axis_y) = {
-        let angle = rect_rot.to_euler(EulerRot::ZYX).0;
-        let cos = angle.cos();
-        let sin = angle.sin();
-        // X local = droite du missile, Y local = avant du missile
-        (Vec2::new(cos, sin), Vec2::new(-sin, cos))
-    };
+    let cx = local_x.clamp(-half_width, half_width);
+    let cy = local_y.clamp(-half_length, half_length);
 
-    // Projection dans le repère local
-    let local_x = delta2.dot(axis_x);
-    let local_y = delta2.dot(axis_y);
+    (local_x - cx).powi(2) + (local_y - cy).powi(2) <= circle_radius * circle_radius
+}
 
-    // Point le plus proche sur le rectangle
-    let closest_x = local_x.clamp(-half_width, half_width);
-    let closest_y = local_y.clamp(-half_length, half_length);
+/// Teste la collision entre un missile (hitbox variable) et un cercle (astéroïde).
+fn missile_hits_circle(
+    missile_pos: Vec2,
+    missile_rot: Quat,
+    hitbox: &HitboxShape,
+    circle_pos: Vec2,
+    circle_radius: f32,
+) -> bool {
+    match hitbox {
+        HitboxShape::Circle(r) => {
+            missile_pos.distance(circle_pos) < *r + circle_radius
+        }
+        HitboxShape::Rect { half_length, half_width } => {
+            let angle = missile_rot.to_euler(EulerRot::ZYX).0;
+            obb_circle_collision(
+                missile_pos, angle,
+                *half_length, *half_width,
+                circle_pos, circle_radius,
+            )
+        }
+    }
+}
 
-    let dist_sq = (local_x - closest_x).powi(2) + (local_y - closest_y).powi(2);
-    dist_sq <= circle_radius * circle_radius
+// ─── Tir ─────────────────────────────────────────────────────────────
+
+fn rotate_direction(dir: Vec2, angle: f32) -> Vec2 {
+    let cos = angle.cos();
+    let sin = angle.sin();
+    Vec2::new(dir.x * cos - dir.y * sin, dir.x * sin + dir.y * cos)
 }
 
 fn shoot(
@@ -91,7 +107,6 @@ fn shoot(
         return;
     };
 
-    // Adapter la cadence de tir à l'arme actuelle
     fire_timer.0.set_duration(std::time::Duration::from_secs_f32(weapon.def.fire_rate));
     fire_timer.0.tick(time.delta());
     if !fire_timer.0.just_finished() {
@@ -100,73 +115,44 @@ fn shoot(
 
     let player_pos = player_transform.translation;
     let crosshair_pos = crosshair_transform.translation;
-    let direction = (crosshair_pos - player_pos).truncate().normalize_or_zero();
+    let base_dir = (crosshair_pos - player_pos).truncate().normalize_or_zero();
 
-    if direction == Vec2::ZERO {
+    if base_dir == Vec2::ZERO {
         return;
     }
 
-    let angle = direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2;
     let def = &weapon.def;
+    let origin = Vec3::new(player_pos.x, player_pos.y, -0.1);
 
-    // Missile central
-    let pos = Vec3::new(player_pos.x, player_pos.y, -0.1);
-    spawn_missile(&mut commands, asset_server.load(def.texture_path), pos, direction, angle, def.speed, def.hitbox_half_length, def.hitbox_half_width);
+    // Spawn un projectile par angle dans le pattern
+    for shot in def.pattern.iter() {
+        let dir = rotate_direction(base_dir, shot.0);
+        let angle = dir.y.atan2(dir.x) - std::f32::consts::FRAC_PI_2;
 
-    // Missiles latéraux si l'arme en a
-    if def.projectile_count >= 3 {
-        let perpendicular = Vec2::new(-direction.y, direction.x);
-        let offset = def.side_offset;
-
-        let pos_left = Vec3::new(
-            player_pos.x + perpendicular.x * offset,
-            player_pos.y + perpendicular.y * offset,
-            -0.1,
-        );
-        let pos_right = Vec3::new(
-            player_pos.x - perpendicular.x * offset,
-            player_pos.y - perpendicular.y * offset,
-            -0.1,
-        );
-
-        spawn_missile(&mut commands, asset_server.load(def.texture_path), pos_left, direction, angle, def.speed, def.hitbox_half_length, def.hitbox_half_width);
-        spawn_missile(&mut commands, asset_server.load(def.texture_path), pos_right, direction, angle, def.speed, def.hitbox_half_length, def.hitbox_half_width);
+        commands.spawn((
+            SpriteBundle {
+                texture: asset_server.load(def.texture_path),
+                transform: Transform {
+                    translation: origin,
+                    rotation: Quat::from_rotation_z(angle),
+                    ..default()
+                },
+                ..default()
+            },
+            Missile {
+                velocity: dir.extend(0.0) * def.speed,
+                hitbox: def.hitbox.clone(),
+            },
+        ));
     }
 
-    // son de tir
     commands.spawn(AudioBundle {
         source: asset_server.load("audio/projectile.ogg"),
         settings: PlaybackSettings::DESPAWN,
     });
 }
 
-fn spawn_missile(
-    commands: &mut Commands,
-    texture: Handle<Image>,
-    position: Vec3,
-    direction: Vec2,
-    angle: f32,
-    speed: f32,
-    half_length: f32,
-    half_width: f32,
-) {
-    commands.spawn((
-        SpriteBundle {
-            texture,
-            transform: Transform {
-                translation: position,
-                rotation: Quat::from_rotation_z(angle),
-                ..default()
-            },
-            ..default()
-        },
-        Missile {
-            velocity: direction.extend(0.0) * speed,
-            half_length,
-            half_width,
-        },
-    ));
-}
+// ─── Collision ───────────────────────────────────────────────────────
 
 fn missile_asteroid_collision(
     mut commands: Commands,
@@ -186,12 +172,11 @@ fn missile_asteroid_collision(
                 continue;
             }
 
-            let hit = obb_circle_collision(
-                missile_transform.translation,
+            let hit = missile_hits_circle(
+                missile_transform.translation.truncate(),
                 missile_transform.rotation,
-                missile.half_length,
-                missile.half_width,
-                asteroid_transform.translation,
+                &missile.hitbox,
+                asteroid_transform.translation.truncate(),
                 asteroid.radius,
             );
 
@@ -226,6 +211,8 @@ fn missile_asteroid_collision(
         }
     }
 }
+
+// ─── Mouvement ───────────────────────────────────────────────────────
 
 fn move_missiles(
     mut commands: Commands,

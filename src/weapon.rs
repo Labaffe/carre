@@ -14,42 +14,68 @@ impl Plugin for WeaponPlugin {
     }
 }
 
-/// Définition d'une arme : sprite, hitbox, vitesse, cadence, nombre de projectiles.
+// ─── Hitbox ──────────────────────────────────────────────────────────
+
+/// Forme de la hitbox d'un projectile.
+#[derive(Clone)]
+pub enum HitboxShape {
+    /// Cercle simple (rayon).
+    Circle(f32),
+    /// Rectangle orienté (demi-longueur dans l'axe, demi-largeur perpendiculaire).
+    Rect { half_length: f32, half_width: f32 },
+}
+
+// ─── Pattern de tir ──────────────────────────────────────────────────
+
+/// Un projectile dans le pattern : angle relatif (en radians) par rapport à la visée.
+/// 0.0 = droit devant, positif = gauche, négatif = droite.
+#[derive(Clone)]
+pub struct ShotAngle(pub f32);
+
+// ─── WeaponDef ───────────────────────────────────────────────────────
+
+/// Définition complète d'une arme.
+/// Pour créer une nouvelle arme il suffit de définir une `const WeaponDef`.
 #[derive(Clone)]
 pub struct WeaponDef {
     pub name: &'static str,
     pub texture_path: &'static str,
-    /// Demi-longueur de la hitbox (dans l'axe du missile).
-    pub hitbox_half_length: f32,
-    /// Demi-largeur de la hitbox (perpendiculaire à l'axe).
-    pub hitbox_half_width: f32,
+    pub hitbox: HitboxShape,
+    /// Vitesse des projectiles (px/s).
     pub speed: f32,
+    /// Intervalle entre deux tirs (secondes).
     pub fire_rate: f32,
-    pub projectile_count: u32,
-    pub side_offset: f32,
+    /// Pattern de tir : liste d'angles relatifs.
+    /// Un seul élément `[ShotAngle(0.0)]` = tir simple droit devant.
+    /// Trois éléments = éventail style fusil à pompe.
+    pub pattern: &'static [ShotAngle],
 }
+
+// ─── Armes ───────────────────────────────────────────────────────────
 
 pub const STANDARD_MISSILE: WeaponDef = WeaponDef {
     name: "Standard Missile",
     texture_path: "images/missile.png",
-    hitbox_half_length: 6.0,
-    hitbox_half_width: 6.0,
-    speed: 600.0,
+    hitbox: HitboxShape::Circle(6.0),
+    speed: 900.0,
     fire_rate: 0.2,
-    projectile_count: 1,
-    side_offset: 0.0,
+    pattern: &[ShotAngle(0.0)], // tir unique droit devant
 };
 
 pub const RED_PROJECTILE: WeaponDef = WeaponDef {
     name: "Red Projectile",
     texture_path: "images/red_projectile.png",
-    hitbox_half_length: 32.0,  // 64px de long
-    hitbox_half_width: 4.0,    // étroit comme une fusée
-    speed: 750.0,
+    hitbox: HitboxShape::Rect { half_length: 32.0, half_width: 4.0 },
+    speed: 1100.0,
     fire_rate: 0.15,
-    projectile_count: 3,
-    side_offset: 20.0,
+    pattern: &[                 // éventail fusil à pompe
+        ShotAngle(0.0),         //   central
+        ShotAngle(0.18),        //   gauche (~10°)
+        ShotAngle(-0.18),       //   droite (~10°)
+    ],
 };
+
+// ─── Composant ───────────────────────────────────────────────────────
 
 /// Composant attaché au joueur qui indique son arme actuelle.
 #[derive(Component, Clone)]
@@ -59,11 +85,11 @@ pub struct Weapon {
 
 impl Default for Weapon {
     fn default() -> Self {
-        Self {
-            def: STANDARD_MISSILE,
-        }
+        Self { def: STANDARD_MISSILE }
     }
 }
+
+// ─── Système ─────────────────────────────────────────────────────────
 
 /// Passe automatiquement à Red Projectile après 10 secondes.
 fn update_player_weapon(
