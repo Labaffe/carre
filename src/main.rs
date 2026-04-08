@@ -46,6 +46,12 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>, asset_server: 
     // masquer le curseur système
     windows.single_mut().cursor.visible = false;
 
+    // musique de fond en boucle
+    commands.spawn(AudioBundle {
+        source: asset_server.load("gradius.ogg"),
+        settings: PlaybackSettings::LOOP,
+    });
+
     // caméra
     commands.spawn(Camera2dBundle::default());
 
