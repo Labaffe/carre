@@ -11,7 +11,7 @@ impl Plugin for BackgroundPlugin {
 }
 
 #[derive(Component)]
-struct Background;
+pub struct Background;
 
 fn setup_background(mut commands: Commands, asset_server: Res<AssetServer>) {
     let bg = asset_server.load("images/space_background.png");

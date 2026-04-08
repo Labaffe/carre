@@ -1,4 +1,6 @@
 use crate::asteroid::Asteroid;
+use crate::background::Background;
+use crate::missile::Missile;
 use crate::player::spawn_player;
 use crate::state::GameState;
 use crate::{MusicGameOver, MusicMain, spawn_main_music};
@@ -10,7 +12,7 @@ impl Plugin for GameOverPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             OnEnter(GameState::GameOver),
-            (setup_gameover_ui, stop_main_music),
+            (cleanup_playing_entities, setup_gameover_ui, stop_main_music),
         )
         .add_systems(
             OnExit(GameState::GameOver),
@@ -43,6 +45,23 @@ struct GameOverAnim {
 }
 
 // --- Setup ---
+
+fn cleanup_playing_entities(
+    mut commands: Commands,
+    asteroids: Query<Entity, With<Asteroid>>,
+    missiles: Query<Entity, With<Missile>>,
+    mut backgrounds: Query<&mut Visibility, With<Background>>,
+) {
+    for entity in asteroids.iter() {
+        commands.entity(entity).despawn();
+    }
+    for entity in missiles.iter() {
+        commands.entity(entity).despawn();
+    }
+    for mut vis in backgrounds.iter_mut() {
+        *vis = Visibility::Hidden;
+    }
+}
 
 fn setup_gameover_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     let font = asset_server.load("fonts/optimus_princeps.ttf");
@@ -171,16 +190,16 @@ fn handle_restart(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut next_state: ResMut<NextState<GameState>>,
     mut commands: Commands,
-    asteroids: Query<Entity, With<Asteroid>>,
     asset_server: Res<AssetServer>,
     gameover_music_q: Query<Entity, With<MusicGameOver>>,
+    mut backgrounds: Query<&mut Visibility, With<Background>>,
 ) {
     if keyboard.just_pressed(KeyCode::KeyR) {
-        for entity in asteroids.iter() {
-            commands.entity(entity).despawn();
-        }
         for entity in gameover_music_q.iter() {
             commands.entity(entity).despawn();
+        }
+        for mut vis in backgrounds.iter_mut() {
+            *vis = Visibility::Visible;
         }
 
         spawn_main_music(&mut commands, &asset_server);
