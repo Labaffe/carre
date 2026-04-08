@@ -94,7 +94,7 @@ fn spawn_asteroids(
             .clamp(1.0, 5.0) as i32
     };
 
-    let speed = 300.0 - (side - 35.0) / (180.0 - 35.0) * 250.0;
+    let speed = 150.0 - (side - 35.0) / (180.0 - 35.0) * 100.0;
     let base_velocity = Vec3::new(0.0, -speed, 0.0);
 
     commands.spawn((
