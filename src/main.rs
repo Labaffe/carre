@@ -7,6 +7,7 @@ mod crosshair;
 mod debug;
 mod difficulty;
 mod gameover;
+mod missile;
 mod player;
 mod state;
 mod thruster;
@@ -18,6 +19,7 @@ use crosshair::CrosshairPlugin;
 use debug::DebugPlugin;
 use difficulty::DifficultyPlugin;
 use gameover::GameOverPlugin;
+use missile::MissilePlugin;
 use player::PlayerPlugin;
 use state::GameState;
 use thruster::ThrusterPlugin;
@@ -36,6 +38,7 @@ fn main() {
             DebugPlugin,
             DifficultyPlugin,
             ThrusterPlugin,
+            MissilePlugin,
         ))
         .add_systems(Startup, setup)
         .run();
