@@ -47,7 +47,7 @@ fn update_difficulty(mut difficulty: ResMut<Difficulty>, time: Res<Time>) {
     // après 10s : +1.0 toutes les 5 secondes (10s→2, 15s→3, 20s→4…)
     if difficulty.elapsed <= 10.0 {
         difficulty.factor = 1.0;
-    } else if difficulty.elapsed <= 20.0 {
+    } else if difficulty.elapsed <= 20.0 && difficulty.factor < 6.0 {
         difficulty.factor = 3.0 + (difficulty.elapsed - 10.0) / 5.0;
     }
 }

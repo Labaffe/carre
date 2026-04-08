@@ -60,7 +60,9 @@ fn spawn_asteroids(
     difficulty: Res<Difficulty>,
     textures: Res<AsteroidTextures>,
 ) {
-    spawner.timer.set_duration(Duration::from_secs_f32(difficulty.spawn_interval()));
+    spawner
+        .timer
+        .set_duration(Duration::from_secs_f32(difficulty.spawn_interval()));
     spawner.timer.tick(time.delta());
 
     if !spawner.timer.just_finished() {
@@ -72,8 +74,9 @@ fn spawn_asteroids(
     let is_small = fastrand::bool();
     let texture = textures.0[fastrand::usize(..textures.0.len())].clone();
 
-    let transform = Transform::from_xyz(x, 500.0, 0.0)
-        .with_rotation(Quat::from_rotation_z(fastrand::f32() * std::f32::consts::TAU));
+    let transform = Transform::from_xyz(x, 500.0, 0.0).with_rotation(Quat::from_rotation_z(
+        fastrand::f32() * std::f32::consts::TAU,
+    ));
 
     let side = if is_small {
         fastrand::f32() * 40.0 + 35.0
@@ -81,12 +84,14 @@ fn spawn_asteroids(
         fastrand::f32() * 60.0 + 120.0
     };
     let size = Vec2::splat(side);
-    let radius = side * 0.45;
+    let radius = side * 0.30;
 
     let health = if side < 35.0 {
         1
     } else {
-        ((side - 35.0) / (180.0 - 35.0) * 4.0 + 1.0).round().clamp(1.0, 5.0) as i32
+        ((side - 35.0) / (180.0 - 35.0) * 4.0 + 1.0)
+            .round()
+            .clamp(1.0, 5.0) as i32
     };
 
     let speed = 300.0 - (side - 35.0) / (180.0 - 35.0) * 250.0;
@@ -102,7 +107,12 @@ fn spawn_asteroids(
             transform,
             ..default()
         },
-        Asteroid { velocity, radius, health, size },
+        Asteroid {
+            velocity,
+            radius,
+            health,
+            size,
+        },
     ));
 }
 
@@ -124,7 +134,7 @@ fn animate_hit_flash(
             // alterne entre blanc opaque et quasi-invisible à 35 Hz
             let blink = (flash.0.elapsed_secs() * 35.0).sin();
             sprite.color = if blink > 0.0 {
-                Color::WHITE               // sprite normal
+                Color::WHITE // sprite normal
             } else {
                 Color::rgba(1.0, 1.0, 1.0, 0.0) // invisible → effet flash blanc
             };
