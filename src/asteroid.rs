@@ -55,7 +55,9 @@ fn spawn_asteroids(
     difficulty: Res<Difficulty>,
     textures: Res<AsteroidTextures>,
 ) {
-    spawner.timer.set_duration(Duration::from_secs_f32(difficulty.spawn_interval()));
+    spawner
+        .timer
+        .set_duration(Duration::from_secs_f32(difficulty.spawn_interval()));
     spawner.timer.tick(time.delta());
 
     if !spawner.timer.just_finished() {
@@ -68,26 +70,33 @@ fn spawn_asteroids(
     let is_small = fastrand::bool();
     let texture = textures.0[fastrand::usize(..textures.0.len())].clone();
 
-    let transform = Transform::from_xyz(x, 500.0, 0.0)
-        .with_rotation(Quat::from_rotation_z(fastrand::f32() * std::f32::consts::TAU));
+    let transform = Transform::from_xyz(x, 500.0, 0.0).with_rotation(Quat::from_rotation_z(
+        fastrand::f32() * std::f32::consts::TAU,
+    ));
 
-    let (size, radius, health, base_velocity) = if is_small {
-        (
-            Vec2::new(48.0, 48.0),
-            20.0,
-            1,
-            Vec3::new(0.0, -120.0 * (fastrand::f32() + 1.0), 0.0),
-        )
+    // 1. TAILLE générée en premier
+    let side = if is_small {
+        fastrand::f32() * 40.0 + 35.0 // 35 → 75 px
     } else {
-        (
-            Vec2::new(102.5, 102.5),
-            47.0,
-            5,
-            Vec3::new(0.0, -100.0 * (fastrand::f32() + 1.0), 0.0),
-        )
+        fastrand::f32() * 60.0 + 120.0 // 120 → 180 px
+    };
+    let size = Vec2::splat(side);
+    let radius = side * 0.45;
+
+    // 2. PV dérivés de la taille
+    //    < 35px → toujours 1 PV, sinon interpolation linéaire 1→5 jusqu'à 180px, max 5
+    let health = if side < 35.0 {
+        1
+    } else {
+        ((side - 35.0) / (180.0 - 35.0) * 4.0 + 1.0)
+            .round()
+            .clamp(1.0, 5.0) as i32
     };
 
-    let velocity = base_velocity * difficulty.factor;
+    // 3. VITESSE dérivée de la taille (inversement proportionnelle)
+    //    35px → ~300 px/s   |   180px → ~50 px/s
+    let speed = 300.0 - (side - 35.0) / (180.0 - 35.0) * 250.0;
+    let velocity = Vec3::new(0.0, -speed, 0.0) * difficulty.factor;
 
     commands.spawn((
         SpriteBundle {
@@ -99,7 +108,12 @@ fn spawn_asteroids(
             transform,
             ..default()
         },
-        Asteroid { velocity, radius, health, size },
+        Asteroid {
+            velocity,
+            radius,
+            health,
+            size,
+        },
     ));
 }
 
