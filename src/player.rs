@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use crate::crosshair::Crosshair;
+use crate::difficulty::Difficulty;
 use crate::state::GameState;
 
 pub struct PlayerPlugin;
@@ -36,9 +37,13 @@ pub fn spawn_player(commands: &mut Commands, asset_server: &Res<AssetServer>) {
     ));
 }
 
-fn movement(keyboard: Res<ButtonInput<KeyCode>>, mut query: Query<&mut Transform, With<Player>>) {
+fn movement(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut query: Query<&mut Transform, With<Player>>,
+    difficulty: Res<Difficulty>,
+) {
     let mut transform = query.single_mut();
-    let speed = 200.0;
+    let speed = if difficulty.elapsed >= 10.0 { 400.0 } else { 200.0 };
     let mut direction = Vec3::ZERO;
 
     if keyboard.pressed(KeyCode::KeyW) { direction.y += 1.0; }
@@ -46,7 +51,7 @@ fn movement(keyboard: Res<ButtonInput<KeyCode>>, mut query: Query<&mut Transform
     if keyboard.pressed(KeyCode::KeyA) { direction.x -= 1.0; }
     if keyboard.pressed(KeyCode::KeyD) { direction.x += 1.0; }
 
-    transform.translation += direction * speed * 0.016;
+    transform.translation += direction.normalize_or_zero() * speed * 0.016;
 }
 
 fn rotate_towards_crosshair(

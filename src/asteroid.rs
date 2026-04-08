@@ -19,7 +19,7 @@ impl Plugin for AsteroidPlugin {
 
 #[derive(Component)]
 pub struct Asteroid {
-    pub velocity: Vec3,
+    pub base_velocity: Vec3,
     pub radius: f32,
     pub health: i32,
     pub size: Vec2,
@@ -95,7 +95,7 @@ fn spawn_asteroids(
     };
 
     let speed = 300.0 - (side - 35.0) / (180.0 - 35.0) * 250.0;
-    let velocity = Vec3::new(0.0, -speed, 0.0) * difficulty.factor;
+    let base_velocity = Vec3::new(0.0, -speed, 0.0);
 
     commands.spawn((
         SpriteBundle {
@@ -108,7 +108,7 @@ fn spawn_asteroids(
             ..default()
         },
         Asteroid {
-            velocity,
+            base_velocity,
             radius,
             health,
             size,
@@ -142,8 +142,12 @@ fn animate_hit_flash(
     }
 }
 
-fn move_asteroids(mut query: Query<(&mut Transform, &Asteroid)>, time: Res<Time>) {
+fn move_asteroids(
+    mut query: Query<(&mut Transform, &Asteroid)>,
+    time: Res<Time>,
+    difficulty: Res<Difficulty>,
+) {
     for (mut transform, asteroid) in query.iter_mut() {
-        transform.translation += asteroid.velocity * time.delta_seconds();
+        transform.translation += asteroid.base_velocity * difficulty.factor * time.delta_seconds();
     }
 }
