@@ -42,7 +42,9 @@ fn spawn_asteroids(
     difficulty: Res<Difficulty>,
 ) {
     // ajuster l'intervalle de spawn selon la difficulté
-    spawner.timer.set_duration(Duration::from_secs_f32(difficulty.spawn_interval()));
+    spawner
+        .timer
+        .set_duration(Duration::from_secs_f32(difficulty.spawn_interval()));
     spawner.timer.tick(time.delta());
 
     if spawner.timer.just_finished() {
@@ -61,7 +63,7 @@ fn spawn_asteroids(
                 "asteroid_1.png",
                 Vec2::new(24.0 * 2.0, 24.0 * 2.0),
                 20.0,
-                Vec3::new(0.0, -200.0 * (fastrand::f32() + 1.0), 0.0),
+                Vec3::new(0.0, -120.0 * (fastrand::f32() + 1.0), 0.0),
             )
         } else {
             (
