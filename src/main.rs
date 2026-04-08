@@ -13,6 +13,7 @@ fn main() {
                 rotate_towards_crosshair,
                 spawn_asteroids,
                 move_asteroids,
+                scroll_background,
             ),
         )
         .run();
@@ -20,6 +21,9 @@ fn main() {
 
 #[derive(Component)]
 struct Player;
+
+#[derive(Component)]
+struct Background;
 
 #[derive(Component)]
 struct Crosshair;
@@ -54,6 +58,19 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>, asset_server: 
 
     // caméra
     commands.spawn(Camera2dBundle::default());
+
+    // fond d'espace scrollant : deux copies empilées verticalement
+    let bg = asset_server.load("space_background.png");
+    for i in 0..2 {
+        commands.spawn((
+            SpriteBundle {
+                texture: bg.clone(),
+                transform: Transform::from_xyz(0.0, 1536.0 * i as f32, -1.0),
+                ..default()
+            },
+            Background,
+        ));
+    }
 
     // initialiser le spawner d'astéroides
     commands.insert_resource(AsteroidSpawner::default());
@@ -97,6 +114,20 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>, asset_server: 
     commands
         .spawn((SpatialBundle::default(), Crosshair))
         .push_children(&[h_bar, v_bar]);
+}
+
+fn scroll_background(mut query: Query<&mut Transform, With<Background>>, time: Res<Time>) {
+    let speed = 150.0;
+    let image_height = 1536.0;
+
+    for mut transform in query.iter_mut() {
+        transform.translation.y -= speed * time.delta_seconds();
+
+        // quand une copie sort en bas, on la remet au-dessus de l'autre
+        if transform.translation.y <= -image_height {
+            transform.translation.y += image_height * 2.0;
+        }
+    }
 }
 
 fn movement(keyboard: Res<ButtonInput<KeyCode>>, mut query: Query<&mut Transform, With<Player>>) {
