@@ -43,13 +43,22 @@ fn spawn_asteroids(
 
         let is_small = fastrand::bool();
 
-        let transform = Transform::from_xyz(x, y, 0.0)
-            .with_rotation(Quat::from_rotation_z(fastrand::f32() * std::f32::consts::TAU));
+        let transform = Transform::from_xyz(x, y, 0.0).with_rotation(Quat::from_rotation_z(
+            fastrand::f32() * std::f32::consts::TAU,
+        ));
 
         let (image, size, velocity) = if is_small {
-            ("asteroid_1.png", Vec2::new(24.0, 24.0), Vec3::new(0.0, -300.0, 0.0))
+            (
+                "asteroid_1.png",
+                Vec2::new(24.0 * 2.0, 24.0 * 2.0),
+                Vec3::new(0.0, -200.0 * (fastrand::f32() + 1.0), 0.0),
+            )
         } else {
-            ("asteroid_2.png", Vec2::new(41.0, 41.0), Vec3::new(0.0, -100.0, 0.0))
+            (
+                "asteroid_2.png",
+                Vec2::new(41.0 * 2.5, 41.0 * 2.5),
+                Vec3::new(0.0, -100.0 * (fastrand::f32() + 1.0), 0.0),
+            )
         };
 
         commands.spawn((
