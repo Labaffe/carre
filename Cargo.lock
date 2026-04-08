@@ -1219,6 +1219,7 @@ name = "carre"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "fastrand",
 ]
 
 [[package]]
