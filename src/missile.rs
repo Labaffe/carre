@@ -204,6 +204,7 @@ fn missile_asteroid_collision(
                         asteroid.size,
                         asteroid.texture_index,
                         asteroid.base_velocity * difficulty.factor,
+                        asteroid_transform.rotation,
                     );
                     commands.spawn(AudioBundle {
                         source: asset_server.load("audio/asteroid_die.ogg"),

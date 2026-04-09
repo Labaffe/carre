@@ -54,6 +54,7 @@ fn spawn_anim(
     size: Vec2,
     velocity: Vec3,
     frame_duration: f32,
+    rotation: Quat,
 ) {
     commands.spawn((
         SpriteBundle {
@@ -62,7 +63,11 @@ fn spawn_anim(
                 custom_size: Some(size),
                 ..default()
             },
-            transform: Transform::from_translation(position),
+            transform: Transform {
+                translation: position,
+                rotation,
+                ..default()
+            },
             ..default()
         },
         Explosion {
@@ -92,12 +97,13 @@ pub fn spawn_explosion(
     size: Vec2,
     texture_index: usize,
     velocity: Vec3,
+    rotation: Quat,
 ) {
     let folder = format!("images/asteroids/death_x{:03}", texture_index);
     let frames = load_frames_from_folder(asset_server, &folder)
         .unwrap_or_else(|| load_default_frames(asset_server));
 
-    spawn_anim(commands, frames, position, size, velocity, 0.035);
+    spawn_anim(commands, frames, position, size, velocity, 0.035, rotation);
 }
 
 // ─── Mort projectile ─────────────────────────────────────────────────
@@ -114,7 +120,7 @@ pub fn spawn_projectile_death(
     let Some(folder) = death_folder else { return; };
     let Some(frames) = load_frames_from_folder(asset_server, folder) else { return; };
 
-    spawn_anim(commands, frames, position, Vec2::splat(32.0), Vec3::ZERO, 0.035);
+    spawn_anim(commands, frames, position, Vec2::splat(32.0), Vec3::ZERO, 0.035, Quat::IDENTITY);
 }
 
 // ─── Systèmes ────────────────────────────────────────────────────────
