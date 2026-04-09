@@ -40,6 +40,7 @@ fn main() {
             }),
             ..default()
         }))
+        .insert_resource(ClearColor(Color::BLACK))
         .init_state::<GameState>()
         .add_plugins((
             BackgroundPlugin,
