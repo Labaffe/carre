@@ -30,6 +30,14 @@ struct MainMenuUI;
 #[derive(Component)]
 struct MainMenuMusic;
 
+/// Tile de fond (world-space sprite).
+#[derive(Component)]
+struct MainMenuTile;
+
+/// NodeBundle racine (fond noir, animé en inverse : 1→0).
+#[derive(Component)]
+struct MainMenuRoot;
+
 #[derive(Component)]
 struct MenuOption {
     action: MenuAction,
@@ -66,7 +74,7 @@ fn setup_main_menu(
     windows: Query<&Window>,
 ) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
-    let tile_texture = asset_server.load("images/space_tile.png");
+    let tile_texture = asset_server.load("images/space_tile_1.png");
 
     // ── Tiles de fond (world-space sprites) ───────────────────────
     let window = windows.single();
@@ -88,6 +96,7 @@ fn setup_main_menu(
                     texture: tile_texture.clone(),
                     sprite: Sprite {
                         custom_size: Some(Vec2::splat(TILE_SIZE)),
+                        color: Color::rgba(1.0, 1.0, 1.0, 0.0),
                         ..default()
                     },
                     transform: Transform {
@@ -97,6 +106,7 @@ fn setup_main_menu(
                     },
                     ..default()
                 },
+                MainMenuTile,
                 MainMenuUI,
             ));
         }
@@ -129,6 +139,7 @@ fn setup_main_menu(
                 ..default()
             },
             MainMenuUI,
+            MainMenuRoot,
         ))
         .with_children(|parent| {
             // Logo (invisible au départ, alpha = 0)
@@ -191,11 +202,15 @@ fn setup_main_menu(
 fn animate_main_menu(
     mut anim: ResMut<MainMenuAnim>,
     time: Res<Time>,
-    mut image_q: Query<
+    // Fond noir du root (fade-out 1→0)
+    mut root_q: Query<&mut BackgroundColor, With<MainMenuRoot>>,
+    // Logo (fade-in 0→1, exclut le root)
+    mut logo_q: Query<
         &mut BackgroundColor,
-        (With<MainMenuUI>, Without<MenuOption>, Without<Text>),
+        (With<MainMenuUI>, Without<MainMenuRoot>, Without<MenuOption>, Without<Text>),
     >,
     mut text_q: Query<(&mut Text, &MenuOption)>,
+    mut tile_q: Query<&mut Sprite, With<MainMenuTile>>,
 ) {
     anim.elapsed += time.delta_seconds();
 
@@ -206,8 +221,18 @@ fn animate_main_menu(
         ((anim.elapsed - FADE_DELAY) / FADE_DURATION).clamp(0.0, 1.0)
     };
 
-    // Appliquer l'alpha au logo et aux images
-    for mut bg in image_q.iter_mut() {
+    // Tiles : alpha 0→1
+    for mut sprite in tile_q.iter_mut() {
+        sprite.color.set_a(alpha);
+    }
+
+    // Fond noir du root : 1→0 (se dissipe, révèle les tiles)
+    for mut bg in root_q.iter_mut() {
+        bg.0.set_a(1.0 - alpha);
+    }
+
+    // Logo : 0→1 (apparaît)
+    for mut bg in logo_q.iter_mut() {
         bg.0.set_a(alpha);
     }
 
