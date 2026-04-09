@@ -1,24 +1,38 @@
 //! Background spatial scrollant en boucle.
 //! Deux copies de l'image se suivent verticalement pour un défilement infini.
 //! La vitesse de scroll est proportionnelle au carré du facteur de difficulté.
-//! Caché au game over, réaffiché au restart.
+//! Spawné à l'entrée du Playing, caché au game over, réaffiché au restart.
 
 use crate::difficulty::Difficulty;
+use crate::state::GameState;
 use bevy::prelude::*;
 
 pub struct BackgroundPlugin;
 
 impl Plugin for BackgroundPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_background)
-            .add_systems(Update, scroll_background);
+        app.add_systems(OnEnter(GameState::Playing), setup_background)
+            .add_systems(
+                Update,
+                scroll_background.run_if(in_state(GameState::Playing)),
+            );
     }
 }
 
 #[derive(Component)]
 pub struct Background;
 
-fn setup_background(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup_background(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    existing: Query<Entity, With<Background>>,
+) {
+    // Ne pas re-spawner si le background existe déjà (cas du restart après game over)
+    if !existing.is_empty() {
+        // Réafficher les backgrounds cachés
+        return;
+    }
+
     let bg = asset_server.load("images/space_background.png");
 
     for i in 0..2 {

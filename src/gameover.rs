@@ -8,9 +8,8 @@
 use crate::asteroid::Asteroid;
 use crate::background::Background;
 use crate::missile::Missile;
-use crate::player::spawn_player;
 use crate::state::GameState;
-use crate::{MusicGameOver, MusicMain, spawn_main_music};
+use crate::{MusicGameOver, MusicMain};
 use bevy::prelude::*;
 
 pub struct GameOverPlugin;
@@ -197,7 +196,6 @@ fn handle_restart(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut next_state: ResMut<NextState<GameState>>,
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
     gameover_music_q: Query<Entity, With<MusicGameOver>>,
     mut backgrounds: Query<&mut Visibility, With<Background>>,
 ) {
@@ -208,9 +206,7 @@ fn handle_restart(
         for mut vis in backgrounds.iter_mut() {
             *vis = Visibility::Visible;
         }
-
-        spawn_main_music(&mut commands, &asset_server);
-        spawn_player(&mut commands, &asset_server);
+        // Le joueur et la musique sont spawnés par les systèmes OnEnter(Playing)
         next_state.set(GameState::Playing);
     }
 }

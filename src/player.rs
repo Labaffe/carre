@@ -13,7 +13,8 @@ pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (setup_player, preload_ship_textures))
+        app.add_systems(Startup, preload_ship_textures)
+            .add_systems(OnEnter(GameState::Playing), setup_player)
             .add_systems(
                 Update,
                 (movement, rotate_towards_crosshair, animate_ship)

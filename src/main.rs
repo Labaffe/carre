@@ -8,6 +8,7 @@ mod debug;
 mod difficulty;
 mod explosion;
 mod gameover;
+mod mainmenu;
 mod missile;
 mod player;
 mod state;
@@ -21,6 +22,7 @@ use debug::DebugPlugin;
 use difficulty::DifficultyPlugin;
 use explosion::ExplosionPlugin;
 use gameover::GameOverPlugin;
+use mainmenu::MainMenuPlugin;
 use missile::MissilePlugin;
 use player::PlayerPlugin;
 use state::GameState;
@@ -37,6 +39,7 @@ fn main() {
             AsteroidPlugin,
             CollisionPlugin,
             GameOverPlugin,
+            MainMenuPlugin,
             DebugPlugin,
             DifficultyPlugin,
             MissilePlugin,
@@ -44,6 +47,7 @@ fn main() {
             WeaponPlugin,
         ))
         .add_systems(Startup, setup)
+        .add_systems(OnEnter(GameState::Playing), start_game_music)
         .run();
 }
 
@@ -53,14 +57,17 @@ pub struct MusicMain;
 #[derive(Component)]
 pub struct MusicGameOver;
 
-fn setup(mut commands: Commands, mut windows: Query<&mut Window>, asset_server: Res<AssetServer>) {
+fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
     windows.single_mut().cursor.visible = false;
-
     commands.spawn(Camera2dBundle::default());
+}
 
+/// Système lancé à chaque entrée en Playing : démarre la musique de jeu.
+fn start_game_music(mut commands: Commands, asset_server: Res<AssetServer>) {
     spawn_main_music(&mut commands, &asset_server);
 }
 
+/// Spawn la musique de jeu en boucle.
 pub fn spawn_main_music(commands: &mut Commands, asset_server: &Res<AssetServer>) {
     commands.spawn((
         AudioBundle {
