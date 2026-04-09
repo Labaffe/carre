@@ -16,7 +16,7 @@ mod state;
 mod weapon;
 
 use asteroid::{Asteroid, AsteroidPlugin};
-use background::{Background, BackgroundPlugin};
+use background::{Background, BackgroundPlugin, Planet};
 use collision::CollisionPlugin;
 use crosshair::CrosshairPlugin;
 use debug::DebugPlugin;
@@ -86,6 +86,7 @@ fn cleanup_playing(
     missiles: Query<Entity, With<Missile>>,
     explosions: Query<Entity, With<Explosion>>,
     backgrounds: Query<Entity, With<Background>>,
+    planets: Query<Entity, With<Planet>>,
     music: Query<Entity, With<MusicMain>>,
 ) {
     for entity in players.iter() {
@@ -103,6 +104,9 @@ fn cleanup_playing(
     for entity in backgrounds.iter() {
         commands.entity(entity).despawn_recursive();
     }
+    for entity in planets.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
     for entity in music.iter() {
         commands.entity(entity).despawn_recursive();
     }
@@ -114,7 +118,7 @@ pub fn spawn_main_music(commands: &mut Commands, asset_server: &Res<AssetServer>
         AudioBundle {
             source: asset_server.load("audio/gradius.ogg"),
             settings: PlaybackSettings {
-                mode: bevy::audio::PlaybackMode::Loop,
+                mode: bevy::audio::PlaybackMode::Once,
                 volume: bevy::audio::Volume::new(0.6),
                 ..default()
             },

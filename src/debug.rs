@@ -65,7 +65,13 @@ fn toggle_debug(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut debug: ResMut<DebugMode>,
     mut ui_q: Query<&mut Visibility, With<DebugUI>>,
+    mut difficulty: ResMut<crate::difficulty::Difficulty>,
 ) {
+    // F2 : sauter à 31 secondes (début du "niveau 2")
+    if keyboard.just_pressed(KeyCode::F2) {
+        difficulty.elapsed = 31.0;
+    }
+
     if keyboard.just_pressed(KeyCode::F1) {
         debug.0 = !debug.0;
         if let Ok(mut vis) = ui_q.get_single_mut() {

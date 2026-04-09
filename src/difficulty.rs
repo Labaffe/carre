@@ -29,6 +29,11 @@ pub struct Difficulty {
     pub boom_14_played: bool,
     pub boom_18_played: bool,
     pub boom_22_played: bool,
+    /// À partir de 26.7s, les astéroïdes ne spawnent plus.
+    pub spawning_stopped: bool,
+    /// Vitesse du background indépendante de la difficulté après 26.7s.
+    /// None = utilise le calcul basé sur factor. Some(v) = vitesse fixe décroissante.
+    pub bg_speed_override: Option<f32>,
 }
 
 impl Default for Difficulty {
@@ -41,6 +46,8 @@ impl Default for Difficulty {
             boom_14_played: false,
             boom_18_played: false,
             boom_22_played: false,
+            spawning_stopped: false,
+            bg_speed_override: None,
         }
     }
 }
@@ -51,6 +58,13 @@ impl Difficulty {
         (1.0 / self.factor).max(0.15)
     }
 }
+
+/// Temps à partir duquel les astéroïdes ne spawnent plus.
+const SPAWN_STOP_TIME: f32 = 26.7;
+/// Durée de décélération du background après SPAWN_STOP_TIME (en secondes).
+const BG_DECEL_DURATION: f32 = 6.0;
+/// Vitesse finale du background après décélération.
+const BG_FINAL_SPEED: f32 = 20.0;
 
 fn reset_difficulty(mut difficulty: ResMut<Difficulty>) {
     *difficulty = Difficulty::default();
@@ -121,10 +135,22 @@ fn update_difficulty(
     } else if difficulty.elapsed < 14.3 {
         difficulty.factor = 3.0;
     } else if difficulty.elapsed < 18.3 {
-        difficulty.factor = 5.0;
+        difficulty.factor = 4.0;
     } else if difficulty.elapsed < 22.6 {
-        difficulty.factor = 7.0;
+        difficulty.factor = 6.0;
     } else {
-        difficulty.factor = 8.0;
+        difficulty.factor = 7.0;
+    }
+
+    // À 26.7s : arrêt du spawn + décélération du background vers 50 px/s en 6s
+    if difficulty.elapsed >= SPAWN_STOP_TIME {
+        difficulty.spawning_stopped = true;
+
+        let decel_elapsed = difficulty.elapsed - SPAWN_STOP_TIME;
+        let t = (decel_elapsed / BG_DECEL_DURATION).clamp(0.0, 1.0);
+        // Vitesse du background au moment de l'arrêt (basée sur la formule du background)
+        let bg_speed_at_stop = 150.0 * (1.0 + 8.0 * 3.0); // base_speed * (1 + factor * 3)
+        let current_speed = bg_speed_at_stop + (BG_FINAL_SPEED - bg_speed_at_stop) * t;
+        difficulty.bg_speed_override = Some(current_speed);
     }
 }

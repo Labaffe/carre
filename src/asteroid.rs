@@ -87,6 +87,11 @@ fn spawn_asteroids(
     difficulty: Res<Difficulty>,
     textures: Res<AsteroidTextures>,
 ) {
+    // Plus de spawn après 26.7s
+    if difficulty.spawning_stopped {
+        return;
+    }
+
     spawner
         .timer
         .set_duration(Duration::from_secs_f32(difficulty.spawn_interval()));
