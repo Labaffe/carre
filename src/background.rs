@@ -56,7 +56,9 @@ fn scroll_background(
 ) {
     let base_speed = 150.0;
     let image_height = 1536.0;
-    let speed = base_speed * difficulty.factor.powi(2);
+    // Scaling logarithmique : gros boost au passage à 3, puis accélérations
+    // de plus en plus discrètes. ln(1)=0, ln(3)≈1.1, ln(5)≈1.6, ln(7)≈1.9, ln(9)≈2.2
+    let speed = base_speed * (1.0 + difficulty.factor * 3.0);
 
     for mut transform in query.iter_mut() {
         transform.translation.y -= speed * time.delta_seconds();

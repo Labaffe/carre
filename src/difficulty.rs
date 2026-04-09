@@ -26,6 +26,9 @@ pub struct Difficulty {
     pub factor: f32,
     pub charging_played: bool,
     pub boom_played: bool,
+    pub boom_14_played: bool,
+    pub boom_18_played: bool,
+    pub boom_22_played: bool,
 }
 
 impl Default for Difficulty {
@@ -35,6 +38,9 @@ impl Default for Difficulty {
             factor: 1.0,
             charging_played: false,
             boom_played: false,
+            boom_14_played: false,
+            boom_18_played: false,
+            boom_22_played: false,
         }
     }
 }
@@ -77,11 +83,48 @@ fn update_difficulty(
         });
     }
 
-    // 0-10s : facteur 1.0 fixe
-    // après 10s : +1.0 toutes les 5 secondes (10s→2, 15s→3, 20s→4…)
-    if difficulty.elapsed <= 10.0 {
+    // Son boom à 14.3s
+    if difficulty.elapsed >= 14.3 && !difficulty.boom_14_played {
+        difficulty.boom_14_played = true;
+        commands.spawn(AudioBundle {
+            source: asset_server.load("audio/boom.wav"),
+            settings: PlaybackSettings::DESPAWN,
+        });
+    }
+
+    // Son boom à 18.3s
+    if difficulty.elapsed >= 18.3 && !difficulty.boom_18_played {
+        difficulty.boom_18_played = true;
+        commands.spawn(AudioBundle {
+            source: asset_server.load("audio/boom.wav"),
+            settings: PlaybackSettings::DESPAWN,
+        });
+    }
+
+    // Son boom à 22.6s
+    if difficulty.elapsed >= 22.6 && !difficulty.boom_22_played {
+        difficulty.boom_22_played = true;
+        commands.spawn(AudioBundle {
+            source: asset_server.load("audio/boom.wav"),
+            settings: PlaybackSettings::DESPAWN,
+        });
+    }
+
+    // Paliers de difficulté fixes :
+    // 0-10s    : facteur 1.0
+    // 10s      : facteur 3.0
+    // 14.3s    : facteur 5.0
+    // 18.3s    : facteur 7.0
+    // 22.6s    : facteur 9.0 (max)
+    if difficulty.elapsed < 10.0 {
         difficulty.factor = 1.0;
-    } else if difficulty.elapsed <= 20.0 && difficulty.factor < 6.0 {
-        difficulty.factor = 3.0 + (difficulty.elapsed - 10.0) / 5.0;
+    } else if difficulty.elapsed < 14.3 {
+        difficulty.factor = 3.0;
+    } else if difficulty.elapsed < 18.3 {
+        difficulty.factor = 5.0;
+    } else if difficulty.elapsed < 22.6 {
+        difficulty.factor = 7.0;
+    } else {
+        difficulty.factor = 8.0;
     }
 }

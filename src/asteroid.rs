@@ -130,7 +130,8 @@ fn spawn_asteroids(
 
     // Vitesse inversement proportionnelle à la taille (petits = rapides)
     // Stockée sans le facteur de difficulté (appliqué dans move_asteroids)
-    let speed = 150.0 - (side - 35.0) / (180.0 - 35.0) * 100.0;
+    // Petits ~250 px/s, gros ~100 px/s
+    let speed = 250.0 - (side - 35.0) / (180.0 - 35.0) * 150.0;
     let base_velocity = Vec3::new(0.0, -speed, 0.0);
 
     commands.spawn((
