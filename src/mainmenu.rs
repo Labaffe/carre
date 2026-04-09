@@ -72,23 +72,35 @@ fn setup_main_menu(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     windows: Query<&Window>,
+    camera_q: Query<(&Camera, &GlobalTransform, &OrthographicProjection)>,
 ) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     let tile_texture = asset_server.load("images/space_tile_1.png");
 
     // ── Tiles de fond (world-space sprites) ───────────────────────
-    let window = windows.single();
-    let half_w = window.width() / 2.0;
-    let half_h = window.height() / 2.0;
+    // Calcul de la zone visible via la projection de la caméra
+    let (half_w, half_h) = if let Ok((_cam, _gt, proj)) = camera_q.get_single() {
+        (proj.area.max.x, proj.area.max.y)
+    } else {
+        let window = windows.single();
+        (window.width() / 2.0, window.height() / 2.0)
+    };
+
     let rotations = [0.0_f32, 90.0, 180.0, 270.0];
 
-    let cols = (window.width() / TILE_SIZE).ceil() as i32 + 2;
-    let rows = (window.height() / TILE_SIZE).ceil() as i32 + 2;
+    // Marge supplémentaire pour les tiles pivotées (diagonale > côté)
+    let margin = TILE_SIZE;
+    let total_w = (half_w + margin) * 2.0;
+    let total_h = (half_h + margin) * 2.0;
+    let cols = (total_w / TILE_SIZE).ceil() as i32;
+    let rows = (total_h / TILE_SIZE).ceil() as i32;
+    let start_x = -(half_w + margin);
+    let start_y = -(half_h + margin);
 
     for row in 0..rows {
         for col in 0..cols {
-            let x = -half_w + col as f32 * TILE_SIZE + TILE_SIZE / 2.0;
-            let y = -half_h + row as f32 * TILE_SIZE + TILE_SIZE / 2.0;
+            let x = start_x + col as f32 * TILE_SIZE + TILE_SIZE / 2.0;
+            let y = start_y + row as f32 * TILE_SIZE + TILE_SIZE / 2.0;
             let angle_rad = rotations[fastrand::usize(0..4)].to_radians();
 
             commands.spawn((

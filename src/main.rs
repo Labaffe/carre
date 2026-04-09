@@ -32,7 +32,14 @@ use weapon::WeaponPlugin;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Carré".to_string(),
+                mode: bevy::window::WindowMode::BorderlessFullscreen,
+                ..default()
+            }),
+            ..default()
+        }))
         .init_state::<GameState>()
         .add_plugins((
             BackgroundPlugin,
