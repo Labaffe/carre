@@ -1,10 +1,10 @@
-use bevy::prelude::*;
 use crate::asteroid::Asteroid;
 use crate::collision::PLAYER_RADIUS;
 use crate::difficulty::Difficulty;
 use crate::missile::Missile;
 use crate::player::Player;
 use crate::weapon::HitboxShape;
+use bevy::prelude::*;
 
 pub struct DebugPlugin;
 
@@ -12,9 +12,20 @@ impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DebugMode(false))
             .add_systems(Startup, setup_debug_ui)
-            .add_systems(Update, (toggle_debug, draw_hitboxes, update_debug_ui));
+            .add_systems(
+                Update,
+                (
+                    toggle_debug,
+                    draw_hitboxes,
+                    update_debug_ui,
+                    manage_asteroid_labels,
+                ),
+            );
     }
 }
+
+#[derive(Component)]
+struct AsteroidLabel(Entity);
 
 #[derive(Resource)]
 pub struct DebugMode(pub bool);
@@ -25,9 +36,14 @@ struct DebugUI;
 fn setup_debug_ui(mut commands: Commands) {
     commands.spawn((
         TextBundle {
-            text: Text::from_sections([
-                TextSection::new("", TextStyle { font_size: 16.0, color: Color::WHITE, ..default() }),
-            ]),
+            text: Text::from_sections([TextSection::new(
+                "",
+                TextStyle {
+                    font_size: 16.0,
+                    color: Color::WHITE,
+                    ..default()
+                },
+            )]),
             style: Style {
                 position_type: PositionType::Absolute,
                 top: Val::Px(10.0),
@@ -49,7 +65,11 @@ fn toggle_debug(
     if keyboard.just_pressed(KeyCode::F1) {
         debug.0 = !debug.0;
         if let Ok(mut vis) = ui_q.get_single_mut() {
-            *vis = if debug.0 { Visibility::Visible } else { Visibility::Hidden };
+            *vis = if debug.0 {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            };
         }
     }
 }
@@ -60,7 +80,9 @@ fn update_debug_ui(
     difficulty: Res<Difficulty>,
     mut ui_q: Query<&mut Text, With<DebugUI>>,
 ) {
-    if !debug.0 { return; }
+    if !debug.0 {
+        return;
+    }
 
     let fps = 1.0 / time.delta_seconds();
     let elapsed = difficulty.elapsed;
@@ -77,6 +99,72 @@ fn update_debug_ui(
     }
 }
 
+fn manage_asteroid_labels(
+    mut commands: Commands,
+    debug: Res<DebugMode>,
+    asteroid_q: Query<(Entity, &Transform, &Asteroid)>,
+    mut label_q: Query<
+        (Entity, &AsteroidLabel, &mut Transform, &mut Visibility),
+        Without<Asteroid>,
+    >,
+) {
+    // Supprimer les labels dont l'astéroïde n'existe plus
+    for (label_entity, label, _, _) in label_q.iter() {
+        if asteroid_q.get(label.0).is_err() {
+            commands.entity(label_entity).despawn();
+        }
+    }
+
+    if !debug.0 {
+        // Cacher tous les labels
+        for (_, _, _, mut vis) in label_q.iter_mut() {
+            *vis = Visibility::Hidden;
+        }
+        return;
+    }
+
+    // Mettre à jour la position des labels existants
+    let mut labeled: std::collections::HashSet<Entity> = std::collections::HashSet::new();
+    for (_, label, mut label_transform, mut vis) in label_q.iter_mut() {
+        labeled.insert(label.0);
+        if let Ok((_, asteroid_transform, asteroid)) = asteroid_q.get(label.0) {
+            label_transform.translation = Vec3::new(
+                asteroid_transform.translation.x,
+                asteroid_transform.translation.y + asteroid.radius + 15.0,
+                10.0,
+            );
+            *vis = Visibility::Visible;
+        }
+    }
+
+    // Créer les labels pour les nouveaux astéroïdes
+    for (entity, transform, asteroid) in asteroid_q.iter() {
+        if labeled.contains(&entity) {
+            continue;
+        }
+        let name = format!("x{:03}", asteroid.texture_index);
+        commands.spawn((
+            Text2dBundle {
+                text: Text::from_section(
+                    name,
+                    TextStyle {
+                        font_size: 14.0,
+                        color: Color::rgba(1.0, 1.0, 1.0, 0.7),
+                        ..default()
+                    },
+                ),
+                transform: Transform::from_xyz(
+                    transform.translation.x,
+                    transform.translation.y + asteroid.radius + 15.0,
+                    10.0,
+                ),
+                ..default()
+            },
+            AsteroidLabel(entity),
+        ));
+    }
+}
+
 fn draw_hitboxes(
     debug: Res<DebugMode>,
     mut gizmos: Gizmos,
@@ -84,14 +172,24 @@ fn draw_hitboxes(
     asteroid_q: Query<(&Transform, &Asteroid)>,
     missile_q: Query<(&Transform, &Missile)>,
 ) {
-    if !debug.0 { return; }
+    if !debug.0 {
+        return;
+    }
 
     for transform in player_q.iter() {
-        gizmos.circle_2d(transform.translation.truncate(), PLAYER_RADIUS, Color::GREEN);
+        gizmos.circle_2d(
+            transform.translation.truncate(),
+            PLAYER_RADIUS,
+            Color::GREEN,
+        );
     }
 
     for (transform, asteroid) in asteroid_q.iter() {
-        gizmos.circle_2d(transform.translation.truncate(), asteroid.radius, Color::RED);
+        gizmos.circle_2d(
+            transform.translation.truncate(),
+            asteroid.radius,
+            Color::RED,
+        );
     }
 
     for (transform, missile) in missile_q.iter() {
@@ -100,7 +198,10 @@ fn draw_hitboxes(
             HitboxShape::Circle(r) => {
                 gizmos.circle_2d(pos, *r, Color::YELLOW);
             }
-            HitboxShape::Rect { half_length, half_width } => {
+            HitboxShape::Rect {
+                half_length,
+                half_width,
+            } => {
                 let angle = transform.rotation.to_euler(EulerRot::ZYX).0;
                 let cos = angle.cos();
                 let sin = angle.sin();
