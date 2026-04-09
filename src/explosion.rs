@@ -1,3 +1,14 @@
+//! Système d'animations de mort (astéroïdes et projectiles).
+//!
+//! - Astéroïdes : cherche d'abord un dossier custom `death_xNNN/` avec des frames.
+//!   S'il existe → animation personnalisée. Sinon → explosion générique (4 frames).
+//! - Projectiles : si `death_folder` est défini dans la WeaponDef et contient des frames,
+//!   l'animation est jouée. Sinon le projectile disparaît sans effet.
+//! - Convention de nommage des frames : `frame000.png`, `frame001.png`, etc.
+//! - Toutes les animations durent exactement DEATH_ANIM_DURATION secondes,
+//!   la durée par frame est calculée automatiquement.
+//! - L'animation conserve la vélocité et la rotation de l'entité d'origine.
+
 use bevy::prelude::*;
 
 pub struct ExplosionPlugin;

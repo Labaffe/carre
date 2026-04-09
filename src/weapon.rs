@@ -1,3 +1,16 @@
+//! Système d'armes du joueur.
+//!
+//! Chaque arme est une `WeaponDef` (const) qui définit :
+//! - `texture_path` : sprite du projectile
+//! - `hitbox`       : Circle(rayon) ou Rect { half_length, half_width }
+//! - `speed`        : vitesse en px/s
+//! - `fire_rate`    : intervalle entre deux tirs (secondes)
+//! - `pattern`      : liste de ShotAngle (angles relatifs en radians, 0 = droit devant)
+//! - `death_folder` : dossier optionnel de frames de mort du projectile
+//!
+//! Pour ajouter une arme : créer un `const WeaponDef` et l'assigner dans `update_player_weapon`.
+//! Le joueur passe automatiquement de Standard Missile à Red Projectile après 10 secondes.
+
 use bevy::prelude::*;
 use crate::difficulty::Difficulty;
 use crate::player::Player;

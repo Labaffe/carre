@@ -1,3 +1,8 @@
+//! Joueur : spawn, mouvement ZQSD, rotation vers le réticule, animation du vaisseau.
+//!
+//! À 10 secondes, la vitesse de déplacement double (200 → 400 px/s)
+//! et le sprite commence à cycler ses 9 frames d'animation.
+
 use bevy::prelude::*;
 use crate::crosshair::Crosshair;
 use crate::difficulty::Difficulty;
@@ -61,6 +66,7 @@ pub fn spawn_player(commands: &mut Commands, asset_server: &Res<AssetServer>) {
     ));
 }
 
+/// Déplacement WASD (ZQSD en AZERTY). Vitesse doublée après 10 secondes.
 fn movement(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut query: Query<&mut Transform, With<Player>>,
@@ -78,6 +84,7 @@ fn movement(
     transform.translation += direction.normalize_or_zero() * speed * 0.016;
 }
 
+/// Animation du vaisseau : cycle les 9 frames (ship_0 à ship_8) à partir de 10 secondes.
 fn animate_ship(
     time: Res<Time>,
     difficulty: Res<Difficulty>,
@@ -101,6 +108,7 @@ fn animate_ship(
     }
 }
 
+/// Fait pivoter le vaisseau pour pointer vers le réticule.
 fn rotate_towards_crosshair(
     crosshair_q: Query<&Transform, (With<Crosshair>, Without<Player>)>,
     mut player_q: Query<&mut Transform, (With<Player>, Without<Crosshair>)>,

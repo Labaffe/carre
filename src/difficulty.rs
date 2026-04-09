@@ -1,3 +1,9 @@
+//! Système de difficulté progressive.
+//!
+//! - 0-10s  : facteur 1.0, montée en tension (son charging à 7s, boom à 10s)
+//! - 10-20s : facteur 3.0 → 5.0 (augmente de +1 toutes les 5s)
+//! - Le facteur influence : vitesse des astéroïdes, fréquence de spawn, scroll du background.
+
 use crate::state::GameState;
 use bevy::prelude::*;
 

@@ -1,3 +1,7 @@
+//! Collision joueur ↔ astéroïde.
+//! Quand le joueur touche un astéroïde, c'est le game over :
+//! le joueur et l'astéroïde sont supprimés, l'état passe à GameOver.
+
 use crate::asteroid::Asteroid;
 use crate::player::Player;
 use crate::state::GameState;
@@ -14,6 +18,7 @@ impl Plugin for CollisionPlugin {
     }
 }
 
+/// Rayon de la hitbox du joueur (sprite 128x128, hitbox ~70% du demi-côté).
 pub const PLAYER_RADIUS: f32 = 45.0;
 
 fn player_asteroid_collision(

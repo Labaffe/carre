@@ -1,3 +1,9 @@
+//! Système de missiles : tir, mouvement, collision avec les astéroïdes.
+//!
+//! Le pattern de tir et la hitbox sont définis par la `WeaponDef` équipée sur le joueur.
+//! Supporte les hitbox circulaires (Standard Missile) et rectangulaires orientées (Red Projectile).
+//! Un HashSet empêche les doubles despawn quand plusieurs missiles touchent la même cible en une frame.
+
 use crate::asteroid::{Asteroid, HitFlash};
 use crate::crosshair::Crosshair;
 use crate::difficulty::Difficulty;
@@ -39,6 +45,9 @@ pub struct Missile {
 
 // ─── Collision OBB vs Cercle ─────────────────────────────────────────
 
+/// Test de collision rectangle orienté (OBB) vs cercle.
+/// Projette le centre du cercle dans le repère local du rectangle,
+/// puis trouve le point le plus proche sur le rectangle.
 fn obb_circle_collision(
     rect_pos: Vec2,
     rect_angle: f32,
@@ -84,6 +93,7 @@ fn missile_hits_circle(
 
 // ─── Tir ─────────────────────────────────────────────────────────────
 
+/// Rotation 2D d'un vecteur direction par un angle en radians.
 fn rotate_direction(dir: Vec2, angle: f32) -> Vec2 {
     let cos = angle.cos();
     let sin = angle.sin();
@@ -110,6 +120,7 @@ fn shoot(
         return;
     };
 
+    // Adapter la cadence de tir à l'arme actuelle
     fire_timer.0.set_duration(std::time::Duration::from_secs_f32(weapon.def.fire_rate));
     fire_timer.0.tick(time.delta());
     if !fire_timer.0.just_finished() {
@@ -125,7 +136,7 @@ fn shoot(
     }
 
     let def = &weapon.def;
-    let origin = Vec3::new(player_pos.x, player_pos.y, -0.1);
+    let origin = Vec3::new(player_pos.x, player_pos.y, -0.1); // z négatif = derrière le joueur
 
     // Spawn un projectile par angle dans le pattern
     for shot in def.pattern.iter() {
@@ -230,6 +241,7 @@ fn missile_asteroid_collision(
 
 // ─── Mouvement ───────────────────────────────────────────────────────
 
+/// Déplace les missiles et les supprime quand ils sortent de l'écran.
 fn move_missiles(
     mut commands: Commands,
     mut query: Query<(Entity, &mut Transform, &Missile)>,

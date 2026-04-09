@@ -1,3 +1,7 @@
+//! Mode debug (F1) : affiche un overlay avec FPS, timer, difficulté,
+//! dessine les hitboxes (cercles verts/rouges/jaunes, rectangles pour les missiles OBB),
+//! et affiche le nom du sprite au-dessus de chaque astéroïde (ex: "x007").
+
 use crate::asteroid::Asteroid;
 use crate::collision::PLAYER_RADIUS;
 use crate::difficulty::Difficulty;

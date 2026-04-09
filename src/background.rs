@@ -1,3 +1,8 @@
+//! Background spatial scrollant en boucle.
+//! Deux copies de l'image se suivent verticalement pour un défilement infini.
+//! La vitesse de scroll est proportionnelle au carré du facteur de difficulté.
+//! Caché au game over, réaffiché au restart.
+
 use crate::difficulty::Difficulty;
 use bevy::prelude::*;
 
@@ -28,6 +33,8 @@ fn setup_background(mut commands: Commands, asset_server: Res<AssetServer>) {
     }
 }
 
+/// Fait défiler les deux sprites de background vers le bas.
+/// Quand un sprite sort de l'écran, il est repositionné au-dessus de l'autre.
 fn scroll_background(
     mut query: Query<&mut Transform, With<Background>>,
     time: Res<Time>,

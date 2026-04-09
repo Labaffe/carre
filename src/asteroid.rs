@@ -1,3 +1,11 @@
+//! Système d'astéroïdes : spawn aléatoire, mouvement, flash au hit.
+//!
+//! Les textures sont scannées dynamiquement depuis `assets/images/asteroids/`.
+//! La taille, la vitesse et les PV dépendent du diamètre généré aléatoirement.
+//! La vélocité de base est stockée sans le facteur de difficulté :
+//! celui-ci est appliqué chaque frame dans `move_asteroids`, ce qui permet
+//! aux astéroïdes déjà à l'écran d'accélérer quand la difficulté augmente.
+
 use crate::difficulty::Difficulty;
 use crate::state::GameState;
 use bevy::prelude::*;
@@ -90,7 +98,7 @@ fn spawn_asteroids(
 
     let window = windows.single();
     let x = fastrand::f32() * window.width() - window.width() / 2.0;
-    let is_small = fastrand::f32() < 0.5; // 30% de petits
+    let is_small = fastrand::f32() < 0.3; // 30% de petits, 70% de gros
     let pick = fastrand::usize(..textures.0.len());
     let (texture_index, ref texture) = textures.0[pick];
     let texture = texture.clone();
@@ -99,14 +107,16 @@ fn spawn_asteroids(
         fastrand::f32() * std::f32::consts::TAU,
     ));
 
+    // Taille : petits 60-90px, gros 120-180px
     let side = if is_small {
-        fastrand::f32() * 30.0 + 60.0 // 60-90px
+        fastrand::f32() * 30.0 + 60.0
     } else {
-        fastrand::f32() * 60.0 + 120.0 // 120-180px
+        fastrand::f32() * 60.0 + 120.0
     };
     let size = Vec2::splat(side);
-    let radius = side * 0.30;
+    let radius = side * 0.30; // hitbox = 30% du diamètre
 
+    // PV proportionnels à la taille : 1 (petit) à 5 (très gros)
     let health = if side < 35.0 {
         1
     } else {
@@ -115,6 +125,8 @@ fn spawn_asteroids(
             .clamp(1.0, 5.0) as i32
     };
 
+    // Vitesse inversement proportionnelle à la taille (petits = rapides)
+    // Stockée sans le facteur de difficulté (appliqué dans move_asteroids)
     let speed = 150.0 - (side - 35.0) / (180.0 - 35.0) * 100.0;
     let base_velocity = Vec3::new(0.0, -speed, 0.0);
 
@@ -157,6 +169,9 @@ fn animate_hit_flash(
     }
 }
 
+/// Déplace les astéroïdes chaque frame.
+/// Le facteur de difficulté est appliqué dynamiquement : quand il augmente,
+/// tous les astéroïdes à l'écran accélèrent immédiatement.
 fn move_asteroids(
     mut query: Query<(&mut Transform, &Asteroid)>,
     time: Res<Time>,

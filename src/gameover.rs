@@ -1,3 +1,10 @@
+//! Écran de game over.
+//!
+//! Au déclenchement : supprime astéroïdes/missiles, cache le background (écran noir).
+//! Après 1.5s de délai : lance la musique "you_died" et anime le texte
+//! (fondu + zoom de 0.3 à 1.0 sur 6 secondes). Police : Optimus Princeps.
+//! Appuyer sur R : nettoie l'UI, réaffiche le background, respawn le joueur.
+
 use crate::asteroid::Asteroid;
 use crate::background::Background;
 use crate::missile::Missile;
