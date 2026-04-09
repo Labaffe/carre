@@ -27,38 +27,47 @@ struct Explosion {
     velocity: Vec3,
 }
 
-/// Nombre max de frames à chercher dans un dossier.
-const MAX_DEATH_FRAMES: usize = 32;
-
 // ─── Utilitaire ──────────────────────────────────────────────────────
 
-/// Charge les frames `frame000.png`, `frame001.png`… depuis un dossier.
-/// Retourne `None` si `frame000.png` n'existe pas.
+/// Scanne un dossier pour trouver tous les fichiers `frameNNN.png`,
+/// les trie par index croissant, et retourne les handles.
+/// Supporte les trous dans la numérotation (ex: frame000, frame004, frame008).
+/// Retourne `None` si le dossier n'existe pas ou ne contient aucune frame.
 fn load_frames_from_folder(
     asset_server: &Res<AssetServer>,
     folder: &str,
 ) -> Option<Vec<Handle<Image>>> {
-    let first = format!("{}/frame000.png", folder);
-    let full_path = std::path::Path::new("assets").join(&first);
-    if !full_path.exists() {
+    let dir_path = std::path::Path::new("assets").join(folder);
+    let read_dir = std::fs::read_dir(&dir_path).ok()?;
+
+    let mut entries: Vec<(usize, String)> = Vec::new();
+
+    for entry in read_dir.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy().to_string();
+        // Cherche les fichiers frameNNN.png (peu importe le nombre de chiffres)
+        if let Some(rest) = name.strip_prefix("frame") {
+            if let Some(num_str) = rest.strip_suffix(".png") {
+                if let Ok(index) = num_str.parse::<usize>() {
+                    entries.push((index, name));
+                }
+            }
+        }
+    }
+
+    if entries.is_empty() {
         return None;
     }
 
-    let mut frames = Vec::new();
-    for i in 0..MAX_DEATH_FRAMES {
-        let path = format!("{}/frame{:03}.png", folder, i);
-        let full = std::path::Path::new("assets").join(&path);
-        if !full.exists() {
-            break;
-        }
-        frames.push(asset_server.load(path));
-    }
+    // Tri par index croissant pour jouer les frames dans l'ordre
+    entries.sort_by_key(|(i, _)| *i);
 
-    if frames.is_empty() {
-        None
-    } else {
-        Some(frames)
-    }
+    let frames = entries
+        .into_iter()
+        .map(|(_, name)| asset_server.load(format!("{}/{}", folder, name)))
+        .collect();
+
+    Some(frames)
 }
 
 /// Durée totale fixe d'une animation de mort (en secondes).
