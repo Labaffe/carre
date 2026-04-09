@@ -197,24 +197,26 @@ fn missile_asteroid_collision(
                 asteroid.health -= 1;
 
                 if asteroid.health <= 0 {
-                    spawn_explosion(
-                        &mut commands,
-                        &asset_server,
-                        asteroid_transform.translation,
-                        asteroid.size,
-                        asteroid.texture_index,
-                        asteroid.base_velocity * difficulty.factor,
-                        asteroid_transform.rotation,
-                    );
-                    commands.spawn(AudioBundle {
-                        source: asset_server.load("audio/asteroid_die.ogg"),
-                        settings: PlaybackSettings::DESPAWN,
-                    });
-                    commands.entity(asteroid_entity).despawn();
-                    despawned_asteroids.insert(asteroid_entity);
+                    if !despawned_asteroids.contains(&asteroid_entity) {
+                        spawn_explosion(
+                            &mut commands,
+                            &asset_server,
+                            asteroid_transform.translation,
+                            asteroid.size,
+                            asteroid.texture_index,
+                            asteroid.base_velocity * difficulty.factor,
+                            asteroid_transform.rotation,
+                        );
+                        commands.spawn(AudioBundle {
+                            source: asset_server.load("audio/asteroid_die.ogg"),
+                            settings: PlaybackSettings::DESPAWN,
+                        });
+                        commands.entity(asteroid_entity).despawn();
+                        despawned_asteroids.insert(asteroid_entity);
+                    }
                 } else {
                     commands.entity(asteroid_entity)
-                        .insert(HitFlash(Timer::from_seconds(0.25, TimerMode::Once)));
+                        .insert(HitFlash(Timer::from_seconds(0.06, TimerMode::Once)));
                     commands.spawn(AudioBundle {
                         source: asset_server.load("audio/asteroid_hit.ogg"),
                         settings: PlaybackSettings::DESPAWN,

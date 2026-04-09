@@ -138,9 +138,7 @@ fn spawn_asteroids(
     ));
 }
 
-/// Flash au hit : alterne rapidement entre sprite visible et invisible.
-/// Note : dans Bevy, sprite.color est un multiplicateur de texture.
-/// Color::WHITE = apparence normale. Pour un flash visible, on joue sur l'alpha.
+/// Flash au hit : passe le sprite en blanc pur pendant la durée du flash.
 fn animate_hit_flash(
     mut commands: Commands,
     time: Res<Time>,
@@ -153,13 +151,8 @@ fn animate_hit_flash(
             sprite.color = Color::WHITE;
             commands.entity(entity).remove::<HitFlash>();
         } else {
-            // alterne entre blanc opaque et quasi-invisible à 35 Hz
-            let blink = (flash.0.elapsed_secs() * 35.0).sin();
-            sprite.color = if blink > 0.0 {
-                Color::WHITE // sprite normal
-            } else {
-                Color::rgba(1.0, 1.0, 1.0, 0.0) // invisible → effet flash blanc
-            };
+            // Multiplie chaque canal par une valeur très élevée → surexpose le sprite en blanc pur
+            sprite.color = Color::rgba(100.0, 100.0, 100.0, 1.0);
         }
     }
 }
