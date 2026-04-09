@@ -190,6 +190,7 @@ fn animate_main_menu(
 
 fn handle_menu_input(
     keyboard: Res<ButtonInput<KeyCode>>,
+    mouse: Res<ButtonInput<MouseButton>>,
     mut anim: ResMut<MainMenuAnim>,
     mut next_state: ResMut<NextState<GameState>>,
     mut exit: EventWriter<AppExit>,
@@ -211,8 +212,11 @@ fn handle_menu_input(
         }
     }
 
-    // Validation
-    if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
+    // Validation (clavier ou clic souris)
+    if keyboard.just_pressed(KeyCode::Enter)
+        || keyboard.just_pressed(KeyCode::Space)
+        || mouse.just_pressed(MouseButton::Left)
+    {
         match anim.selected {
             0 => {
                 next_state.set(GameState::Playing);

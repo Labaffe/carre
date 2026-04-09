@@ -1,18 +1,26 @@
+use crate::state::GameState;
 use bevy::prelude::*;
 
 pub struct CrosshairPlugin;
 
 impl Plugin for CrosshairPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_crosshair)
-            .add_systems(Update, crosshair_follow_mouse);
+        app.add_systems(OnEnter(GameState::Playing), spawn_crosshair)
+            .add_systems(OnExit(GameState::Playing), despawn_crosshair)
+            .add_systems(
+                Update,
+                crosshair_follow_mouse.run_if(in_state(GameState::Playing)),
+            );
     }
 }
 
 #[derive(Component)]
 pub struct Crosshair;
 
-fn setup_crosshair(mut commands: Commands) {
+fn spawn_crosshair(mut commands: Commands, mut windows: Query<&mut Window>) {
+    // Masquer le curseur système pendant le jeu
+    windows.single_mut().cursor.visible = false;
+
     let h_bar = commands
         .spawn(SpriteBundle {
             sprite: Sprite {
@@ -38,6 +46,19 @@ fn setup_crosshair(mut commands: Commands) {
     commands
         .spawn((SpatialBundle::default(), Crosshair))
         .push_children(&[h_bar, v_bar]);
+}
+
+fn despawn_crosshair(
+    mut commands: Commands,
+    query: Query<Entity, With<Crosshair>>,
+    mut windows: Query<&mut Window>,
+) {
+    // Réafficher le curseur système hors du jeu
+    windows.single_mut().cursor.visible = true;
+
+    for entity in query.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
 }
 
 fn crosshair_follow_mouse(

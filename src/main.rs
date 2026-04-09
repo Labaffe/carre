@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::window::WindowMode;
 
 mod asteroid;
 mod background;
@@ -30,7 +31,14 @@ use weapon::WeaponPlugin;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Carré".to_string(),
+                mode: WindowMode::BorderlessFullscreen,
+                ..default()
+            }),
+            ..default()
+        }))
         .init_state::<GameState>()
         .add_plugins((
             BackgroundPlugin,
@@ -57,8 +65,7 @@ pub struct MusicMain;
 #[derive(Component)]
 pub struct MusicGameOver;
 
-fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
-    windows.single_mut().cursor.visible = false;
+fn setup(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
 }
 
@@ -72,7 +79,11 @@ pub fn spawn_main_music(commands: &mut Commands, asset_server: &Res<AssetServer>
     commands.spawn((
         AudioBundle {
             source: asset_server.load("audio/gradius.ogg"),
-            settings: PlaybackSettings::LOOP,
+            settings: PlaybackSettings {
+                mode: bevy::audio::PlaybackMode::Loop,
+                volume: bevy::audio::Volume::new(0.7),
+                ..default()
+            },
         },
         MusicMain,
     ));
