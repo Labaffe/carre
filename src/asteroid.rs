@@ -32,7 +32,7 @@ pub struct Asteroid {
 pub struct HitFlash(pub Timer);
 
 #[derive(Resource)]
-struct AsteroidTextures(Vec<Handle<Image>>);
+struct AsteroidTextures(Vec<(usize, Handle<Image>)>);
 
 #[derive(Resource)]
 struct AsteroidSpawner {
@@ -48,10 +48,27 @@ impl Default for AsteroidSpawner {
 }
 
 fn preload_asteroid_textures(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let handles = (0..=16)
-        .map(|i| asset_server.load(format!("images/asteroids/asteroid_x{:03}.png", i)))
-        .collect();
-    commands.insert_resource(AsteroidTextures(handles));
+    let dir = std::path::Path::new("assets/images/asteroids");
+    let mut entries = Vec::new();
+
+    if let Ok(read_dir) = std::fs::read_dir(dir) {
+        for entry in read_dir.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            // Cherche les fichiers asteroid_xNNN.png
+            if let Some(rest) = name.strip_prefix("asteroid_x") {
+                if let Some(num_str) = rest.strip_suffix(".png") {
+                    if let Ok(index) = num_str.parse::<usize>() {
+                        let handle = asset_server.load(format!("images/asteroids/{}", name));
+                        entries.push((index, handle));
+                    }
+                }
+            }
+        }
+    }
+
+    entries.sort_by_key(|(i, _)| *i);
+    commands.insert_resource(AsteroidTextures(entries));
 }
 
 fn spawn_asteroids(
@@ -74,8 +91,9 @@ fn spawn_asteroids(
     let window = windows.single();
     let x = fastrand::f32() * window.width() - window.width() / 2.0;
     let is_small = fastrand::f32() < 0.5; // 30% de petits
-    let texture_index = fastrand::usize(..textures.0.len());
-    let texture = textures.0[texture_index].clone();
+    let pick = fastrand::usize(..textures.0.len());
+    let (texture_index, ref texture) = textures.0[pick];
+    let texture = texture.clone();
 
     let transform = Transform::from_xyz(x, 500.0, 0.0).with_rotation(Quat::from_rotation_z(
         fastrand::f32() * std::f32::consts::TAU,
