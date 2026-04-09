@@ -43,19 +43,27 @@ fn load_frames_from_folder(
         frames.push(asset_server.load(path));
     }
 
-    if frames.is_empty() { None } else { Some(frames) }
+    if frames.is_empty() {
+        None
+    } else {
+        Some(frames)
+    }
 }
 
-/// Spawn une animation à une position donnée avec une taille, une vélocité et une durée par frame.
+/// Durée totale fixe d'une animation de mort (en secondes).
+const DEATH_ANIM_DURATION: f32 = 0.25;
+
+/// Spawn une animation à une position donnée.
+/// La durée par frame est calculée pour que l'animation totale dure toujours `DEATH_ANIM_DURATION`.
 fn spawn_anim(
     commands: &mut Commands,
     frames: Vec<Handle<Image>>,
     position: Vec3,
     size: Vec2,
     velocity: Vec3,
-    frame_duration: f32,
     rotation: Quat,
 ) {
+    let frame_duration = DEATH_ANIM_DURATION / frames.len() as f32;
     commands.spawn((
         SpriteBundle {
             texture: frames[0].clone(),
@@ -103,7 +111,7 @@ pub fn spawn_explosion(
     let frames = load_frames_from_folder(asset_server, &folder)
         .unwrap_or_else(|| load_default_frames(asset_server));
 
-    spawn_anim(commands, frames, position, size, velocity, 0.035, rotation);
+    spawn_anim(commands, frames, position, size, velocity, rotation);
 }
 
 // ─── Mort projectile ─────────────────────────────────────────────────
@@ -117,18 +125,26 @@ pub fn spawn_projectile_death(
     position: Vec3,
     death_folder: Option<&str>,
 ) {
-    let Some(folder) = death_folder else { return; };
-    let Some(frames) = load_frames_from_folder(asset_server, folder) else { return; };
+    let Some(folder) = death_folder else {
+        return;
+    };
+    let Some(frames) = load_frames_from_folder(asset_server, folder) else {
+        return;
+    };
 
-    spawn_anim(commands, frames, position, Vec2::splat(32.0), Vec3::ZERO, 0.035, Quat::IDENTITY);
+    spawn_anim(
+        commands,
+        frames,
+        position,
+        Vec2::splat(32.0),
+        Vec3::ZERO,
+        Quat::IDENTITY,
+    );
 }
 
 // ─── Systèmes ────────────────────────────────────────────────────────
 
-fn move_explosions(
-    mut query: Query<(&mut Transform, &Explosion)>,
-    time: Res<Time>,
-) {
+fn move_explosions(mut query: Query<(&mut Transform, &Explosion)>, time: Res<Time>) {
     for (mut transform, explosion) in query.iter_mut() {
         transform.translation += explosion.velocity * time.delta_seconds();
     }
