@@ -97,13 +97,16 @@ fn spawn_asteroids(
     }
 
     let window = windows.single();
-    let x = fastrand::f32() * window.width() - window.width() / 2.0;
+    let half_w = window.width() / 2.0;
+    let half_h = window.height() / 2.0;
+    let x = fastrand::f32() * window.width() - half_w;
     let is_small = fastrand::f32() < 0.3; // 30% de petits, 70% de gros
     let pick = fastrand::usize(..textures.0.len());
     let (texture_index, ref texture) = textures.0[pick];
     let texture = texture.clone();
 
-    let transform = Transform::from_xyz(x, 500.0, 0.0).with_rotation(Quat::from_rotation_z(
+    // Spawn au-dessus de l'écran (juste hors du champ visible)
+    let transform = Transform::from_xyz(x, half_h + 100.0, 0.0).with_rotation(Quat::from_rotation_z(
         fastrand::f32() * std::f32::consts::TAU,
     ));
 
@@ -173,11 +176,18 @@ fn animate_hit_flash(
 /// Le facteur de difficulté est appliqué dynamiquement : quand il augmente,
 /// tous les astéroïdes à l'écran accélèrent immédiatement.
 fn move_asteroids(
-    mut query: Query<(&mut Transform, &Asteroid)>,
+    mut commands: Commands,
+    mut query: Query<(Entity, &mut Transform, &Asteroid)>,
     time: Res<Time>,
     difficulty: Res<Difficulty>,
+    windows: Query<&Window>,
 ) {
-    for (mut transform, asteroid) in query.iter_mut() {
+    let half_h = windows.single().height() / 2.0;
+    for (entity, mut transform, asteroid) in query.iter_mut() {
         transform.translation += asteroid.base_velocity * difficulty.factor * time.delta_seconds();
+        // Despawn quand l'astéroïde sort en bas de l'écran
+        if transform.translation.y < -(half_h + 200.0) {
+            commands.entity(entity).despawn();
+        }
     }
 }
