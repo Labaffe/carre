@@ -5,9 +5,6 @@
 //! (fondu + zoom de 0.3 à 1.0 sur 6 secondes). Police : Optimus Princeps.
 //! Appuyer sur R : nettoie l'UI, réaffiche le background, respawn le joueur.
 
-use crate::asteroid::Asteroid;
-use crate::background::Background;
-use crate::missile::Missile;
 use crate::state::GameState;
 use crate::{MusicGameOver, MusicMain};
 use bevy::prelude::*;
@@ -52,22 +49,10 @@ struct GameOverAnim {
 
 // --- Setup ---
 
-fn cleanup_playing_entities(
-    mut commands: Commands,
-    asteroids: Query<Entity, With<Asteroid>>,
-    missiles: Query<Entity, With<Missile>>,
-    mut backgrounds: Query<&mut Visibility, With<Background>>,
-) {
-    for entity in asteroids.iter() {
-        commands.entity(entity).despawn();
-    }
-    for entity in missiles.iter() {
-        commands.entity(entity).despawn();
-    }
-    for mut vis in backgrounds.iter_mut() {
-        *vis = Visibility::Hidden;
-    }
-}
+/// Les entités de jeu (joueur, astéroïdes, missiles, etc.) sont nettoyées
+/// par `cleanup_playing` dans main.rs via OnExit(Playing).
+/// Cette fonction ne fait plus rien car le nettoyage est centralisé.
+fn cleanup_playing_entities() {}
 
 fn setup_gameover_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     let font = asset_server.load("fonts/optimus_princeps.ttf");
@@ -197,16 +182,12 @@ fn handle_restart(
     mut next_state: ResMut<NextState<GameState>>,
     mut commands: Commands,
     gameover_music_q: Query<Entity, With<MusicGameOver>>,
-    mut backgrounds: Query<&mut Visibility, With<Background>>,
 ) {
     if keyboard.just_pressed(KeyCode::KeyR) {
         for entity in gameover_music_q.iter() {
             commands.entity(entity).despawn();
         }
-        for mut vis in backgrounds.iter_mut() {
-            *vis = Visibility::Visible;
-        }
-        // Le joueur et la musique sont spawnés par les systèmes OnEnter(Playing)
+        // Le joueur, background et musique sont spawnés par les systèmes OnEnter(Playing)
         next_state.set(GameState::Playing);
     }
 }

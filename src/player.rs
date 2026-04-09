@@ -6,8 +6,13 @@
 use bevy::prelude::*;
 use crate::crosshair::Crosshair;
 use crate::difficulty::Difficulty;
+use crate::pause::PauseState;
 use crate::state::GameState;
 use crate::weapon::Weapon;
+
+fn not_paused(pause: Res<PauseState>) -> bool {
+    !pause.paused
+}
 
 pub struct PlayerPlugin;
 
@@ -18,7 +23,8 @@ impl Plugin for PlayerPlugin {
             .add_systems(
                 Update,
                 (movement, rotate_towards_crosshair, animate_ship)
-                    .run_if(in_state(GameState::Playing)),
+                    .run_if(in_state(GameState::Playing))
+                    .run_if(not_paused),
             );
     }
 }

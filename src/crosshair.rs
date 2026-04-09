@@ -1,5 +1,10 @@
+use crate::pause::PauseState;
 use crate::state::GameState;
 use bevy::prelude::*;
+
+fn not_paused(pause: Res<PauseState>) -> bool {
+    !pause.paused
+}
 
 pub struct CrosshairPlugin;
 
@@ -9,7 +14,9 @@ impl Plugin for CrosshairPlugin {
             .add_systems(OnExit(GameState::Playing), despawn_crosshair)
             .add_systems(
                 Update,
-                crosshair_follow_mouse.run_if(in_state(GameState::Playing)),
+                crosshair_follow_mouse
+                    .run_if(in_state(GameState::Playing))
+                    .run_if(not_paused),
             );
     }
 }

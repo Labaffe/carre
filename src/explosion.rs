@@ -20,7 +20,7 @@ impl Plugin for ExplosionPlugin {
 }
 
 #[derive(Component)]
-struct Explosion {
+pub struct Explosion {
     frames: Vec<Handle<Image>>,
     current_frame: usize,
     timer: Timer,
