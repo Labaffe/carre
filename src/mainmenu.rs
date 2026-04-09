@@ -57,8 +57,50 @@ const FADE_DURATION: f32 = 1.0;
 
 // ─── Setup ───────────────────────────────────────────────────────────
 
-fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
+/// Taille d'une tile en pixels.
+const TILE_SIZE: f32 = 128.0;
+
+fn setup_main_menu(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    windows: Query<&Window>,
+) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
+    let tile_texture = asset_server.load("images/space_tile.png");
+
+    // ── Tiles de fond (world-space sprites) ───────────────────────
+    let window = windows.single();
+    let half_w = window.width() / 2.0;
+    let half_h = window.height() / 2.0;
+    let rotations = [0.0_f32, 90.0, 180.0, 270.0];
+
+    let cols = (window.width() / TILE_SIZE).ceil() as i32 + 2;
+    let rows = (window.height() / TILE_SIZE).ceil() as i32 + 2;
+
+    for row in 0..rows {
+        for col in 0..cols {
+            let x = -half_w + col as f32 * TILE_SIZE + TILE_SIZE / 2.0;
+            let y = -half_h + row as f32 * TILE_SIZE + TILE_SIZE / 2.0;
+            let angle_rad = rotations[fastrand::usize(0..4)].to_radians();
+
+            commands.spawn((
+                SpriteBundle {
+                    texture: tile_texture.clone(),
+                    sprite: Sprite {
+                        custom_size: Some(Vec2::splat(TILE_SIZE)),
+                        ..default()
+                    },
+                    transform: Transform {
+                        translation: Vec3::new(x, y, 0.0),
+                        rotation: Quat::from_rotation_z(angle_rad),
+                        ..default()
+                    },
+                    ..default()
+                },
+                MainMenuUI,
+            ));
+        }
+    }
 
     // Musique du menu
     commands.spawn((
