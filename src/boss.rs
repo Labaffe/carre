@@ -35,6 +35,8 @@ impl Plugin for BossPlugin {
                 (
                     spawn_boss,
                     boss_intro,
+                    boss_flexing,
+                    boss_flexing_sound,
                     boss_idle_animation,
                     boss_phase_logic,
                     boss_pattern_executor,
@@ -59,8 +61,12 @@ fn not_paused(pause: Res<PauseState>) -> bool {
 
 /// Temps (difficulty.elapsed) d'apparition du boss.
 const BOSS_SPAWN_TIME: f32 = 35.8;
-/// Durée de l'animation d'entrée (= durée de boss_start.ogg ≈ 7s).
-const BOSS_INTRO_DURATION: f32 = 7.0;
+/// Durée de la première animation d'entrée (dézoom/spirale, = durée de boss_start.ogg ≈ 7s).
+const BOSS_START_ANIMATION_DURATION: f32 = 7.0;
+/// Pause entre les deux animations d'entrée.
+const BOSS_FLEXING_WAIT: f32 = 0.5;
+/// Durée de la deuxième animation d'entrée (flexing).
+const BOSS_START_2_ANIMATION_DURATION: f32 = 1.7;
 /// Points de vie du boss.
 const BOSS_MAX_HEALTH: i32 = 150;
 /// Rayon de la hitbox du boss.
@@ -90,6 +96,8 @@ pub enum BossState {
     Waiting,
     /// Arrive en spirale depuis la planète, invincible.
     Entering,
+    /// Attente + animation flexing après l'arrivée, invincible.
+    Flexing,
     /// Actif dans une phase, vulnérable.
     Active(BossPhaseId),
     /// Animation de mort en cours, invincible.
@@ -185,17 +193,32 @@ pub struct BossProjectile {
     pub radius: f32,
 }
 
+/// Marqueur : le son de flexing a été joué.
+#[derive(Component)]
+struct BossFlexingSoundPlayed;
+
 /// Ressource : frames idle préchargées.
 #[derive(Resource)]
 struct BossIdleFrames(Vec<Handle<Image>>);
 
+/// Ressource : frames flexing préchargées.
+#[derive(Resource)]
+struct BossFlexingFrames(Vec<Handle<Image>>);
+
 // ─── Préchargement des frames idle ──────────────────────────────────
 
 fn preload_boss_idle_frames(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let frames: Vec<Handle<Image>> = (0..11)
+    let idle_frames: Vec<Handle<Image>> = (0..11)
         .map(|i| asset_server.load(format!("images/boss/idle/frame{:03}.png", i)))
         .collect();
-    commands.insert_resource(BossIdleFrames(frames));
+    commands.insert_resource(BossIdleFrames(idle_frames));
+
+    let flexing_indices = [0, 1, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+    let flexing_frames: Vec<Handle<Image>> = flexing_indices
+        .iter()
+        .map(|i| asset_server.load(format!("images/boss/flexing/frame{:03}.png", i)))
+        .collect();
+    commands.insert_resource(BossFlexingFrames(flexing_frames));
 }
 
 // ─── Spawn ──────────────────────────────────────────────────────────
@@ -243,7 +266,7 @@ fn spawn_boss(
             max_health: BOSS_MAX_HEALTH,
             state: BossState::Entering,
             radius: BOSS_RADIUS,
-            anim_timer: Timer::from_seconds(BOSS_INTRO_DURATION, TimerMode::Once),
+            anim_timer: Timer::from_seconds(BOSS_START_ANIMATION_DURATION, TimerMode::Once),
         },
         BossIdleAnim {
             timer: Timer::from_seconds(1.0 / BOSS_IDLE_FPS, TimerMode::Repeating),
@@ -260,10 +283,7 @@ fn spawn_boss(
 
 fn boss_intro(
     time: Res<Time>,
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
     mut boss_q: Query<(&mut Boss, &mut Transform), Without<Player>>,
-    mut difficulty: ResMut<Difficulty>,
 ) {
     for (mut boss, mut transform) in boss_q.iter_mut() {
         if boss.state != BossState::Entering {
@@ -296,12 +316,56 @@ fn boss_intro(
             BOSS_INTRO_START_SCALE + (BOSS_INTRO_END_SCALE - BOSS_INTRO_START_SCALE) * eased;
         transform.scale = Vec3::splat(scale);
 
-        // Fin de l'intro → passage en Phase 1 + lancement musique boss
+        // Fin de l'intro → passage en Flexing (attente + animation flexing)
         if boss.anim_timer.finished() {
-            boss.state = BossState::Active(BossPhaseId::Phase1);
+            boss.state = BossState::Flexing;
+            boss.anim_timer = Timer::from_seconds(
+                BOSS_FLEXING_WAIT + BOSS_START_2_ANIMATION_DURATION,
+                TimerMode::Once,
+            );
             transform.scale = Vec3::splat(BOSS_INTRO_END_SCALE);
             transform.translation.x = 0.0;
             transform.translation.y = BOSS_TARGET_Y;
+        }
+    }
+}
+
+// ─── Flexing : attente 0.5s puis animation flexing ─────────────────
+
+fn boss_flexing(
+    time: Res<Time>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    flexing_frames: Res<BossFlexingFrames>,
+    idle_frames: Res<BossIdleFrames>,
+    mut boss_q: Query<(Entity, &mut Boss, &mut Handle<Image>)>,
+    mut difficulty: ResMut<Difficulty>,
+) {
+    for (_entity, mut boss, mut texture) in boss_q.iter_mut() {
+        if boss.state != BossState::Flexing {
+            continue;
+        }
+
+        boss.anim_timer.tick(time.delta());
+        let elapsed = boss.anim_timer.elapsed_secs();
+
+        // Phase d'attente : l'idle continue (géré par boss_idle_animation)
+        if elapsed < BOSS_FLEXING_WAIT {
+            continue;
+        }
+
+        // Progression dans l'animation flexing
+        let flexing_elapsed = elapsed - BOSS_FLEXING_WAIT;
+        let flexing_progress = (flexing_elapsed / BOSS_START_2_ANIMATION_DURATION).clamp(0.0, 1.0);
+        let frame_count = flexing_frames.0.len();
+        let frame_index = ((flexing_progress * frame_count as f32) as usize).min(frame_count - 1);
+        *texture = flexing_frames.0[frame_index].clone();
+
+        // Fin du flexing → Active + musique boss
+        if boss.anim_timer.finished() {
+            boss.state = BossState::Active(BossPhaseId::Phase1);
+            // Remettre la première frame idle
+            *texture = idle_frames.0[0].clone();
 
             // Lancer la musique du boss
             if !difficulty.boss_music_played {
@@ -325,6 +389,31 @@ fn boss_intro(
     }
 }
 
+/// Système qui lance boss_start_2.ogg une seule fois au début du flexing.
+fn boss_flexing_sound(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut boss_q: Query<(Entity, &Boss, Option<&BossFlexingSoundPlayed>)>,
+) {
+    for (entity, boss, sound_played) in boss_q.iter_mut() {
+        if boss.state != BossState::Flexing {
+            continue;
+        }
+        if boss.anim_timer.elapsed_secs() < BOSS_FLEXING_WAIT {
+            continue;
+        }
+        if sound_played.is_some() {
+            continue;
+        }
+        // Premier tick après l'attente → son + marqueur
+        commands.entity(entity).insert(BossFlexingSoundPlayed);
+        commands.spawn(AudioBundle {
+            source: asset_server.load("audio/boss_start_2.ogg"),
+            settings: PlaybackSettings::DESPAWN,
+        });
+    }
+}
+
 // ─── Animation idle (cycle de frames) ───────────────────────────────
 
 fn boss_idle_animation(
@@ -333,9 +422,15 @@ fn boss_idle_animation(
     mut boss_q: Query<(&Boss, &mut BossIdleAnim, &mut Handle<Image>)>,
 ) {
     for (boss, mut anim, mut texture) in boss_q.iter_mut() {
-        // Animer uniquement en Entering ou Active
+        // Animer uniquement en Entering, Active, ou Flexing (pendant l'attente)
         match &boss.state {
             BossState::Entering | BossState::Active(_) => {}
+            BossState::Flexing => {
+                // Pendant le flexing, l'idle ne tourne que pendant l'attente
+                if boss.anim_timer.elapsed_secs() >= BOSS_FLEXING_WAIT {
+                    continue;
+                }
+            }
             _ => continue,
         }
 
