@@ -210,8 +210,8 @@ fn spawn_boss(
     let window = windows.single();
     let half_h = window.height() / 2.0;
 
-    // Position de départ : en bas au centre, au niveau de la planète
-    let start_y = -(half_h + 100.0);
+    // Position de départ : juste au-dessus du centre de l'écran
+    let start_y = 50.0;
 
     // Son d'entrée (boss_start.ogg, synchronisé avec l'animation)
     commands.spawn(AudioBundle {
@@ -224,7 +224,7 @@ fn spawn_boss(
             texture: asset_server.load("images/boss/idle/frame000.png"),
             sprite: Sprite {
                 custom_size: Some(Vec2::splat(BOSS_SPRITE_SIZE)),
-                color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                color: Color::WHITE,
                 ..default()
             },
             transform: Transform {
@@ -258,11 +258,10 @@ fn boss_intro(
     time: Res<Time>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut boss_q: Query<(&mut Boss, &mut Transform, &mut Sprite)>,
+    mut boss_q: Query<(&mut Boss, &mut Transform), Without<Player>>,
     mut difficulty: ResMut<Difficulty>,
-    windows: Query<&Window>,
 ) {
-    for (mut boss, mut transform, mut sprite) in boss_q.iter_mut() {
+    for (mut boss, mut transform) in boss_q.iter_mut() {
         if boss.state != BossState::Entering {
             continue;
         }
@@ -273,11 +272,9 @@ fn boss_intro(
         // Ease-in-out pour un mouvement fluide
         let eased = progress * progress * (3.0 - 2.0 * progress);
 
-        let window = windows.single();
-        let half_h = window.height() / 2.0;
-        let start_y = -(half_h + 100.0);
+        let start_y = 50.0;
 
-        // Position de base : monte de la planète vers la position cible
+        // Position de base : du centre vers la position cible
         let base_y = start_y + (BOSS_TARGET_Y - start_y) * eased;
 
         // Spirale : le rayon diminue à mesure que le boss approche sa position
@@ -290,18 +287,14 @@ fn boss_intro(
         transform.translation.x = offset_x;
         transform.translation.y = base_y + offset_y;
 
-        // Scale : petit → taille normale
+        // Scale : minuscule → taille normale (l'effet d'arrivée est le zoom progressif)
         let scale =
             BOSS_INTRO_START_SCALE + (BOSS_INTRO_END_SCALE - BOSS_INTRO_START_SCALE) * eased;
         transform.scale = Vec3::splat(scale);
 
-        // Fade-in
-        sprite.color.set_a(eased);
-
         // Fin de l'intro → passage en Phase 1 + lancement musique boss
         if boss.anim_timer.finished() {
             boss.state = BossState::Active(BossPhaseId::Phase1);
-            sprite.color.set_a(1.0);
             transform.scale = Vec3::splat(BOSS_INTRO_END_SCALE);
             transform.translation.x = 0.0;
             transform.translation.y = BOSS_TARGET_Y;
