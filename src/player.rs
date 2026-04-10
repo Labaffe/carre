@@ -87,15 +87,23 @@ pub fn spawn_player(commands: &mut Commands, asset_server: &Res<AssetServer>, st
 }
 
 /// Déplacement WASD (ZQSD en AZERTY). Vitesse doublée après 10 secondes.
+/// Marge en pixels par rapport au bord de l'écran (demi-taille du sprite joueur).
+const PLAYER_MARGIN: f32 = 64.0;
+
 fn movement(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut query: Query<&mut Transform, With<Player>>,
     difficulty: Res<Difficulty>,
+    windows: Query<&Window>,
 ) {
     // Bloquer le mouvement pendant la première seconde
     if difficulty.elapsed < 1.0 {
         return;
     }
+
+    let window = windows.single();
+    let half_w = window.width() / 2.0 - PLAYER_MARGIN;
+    let half_h = window.height() / 2.0 - PLAYER_MARGIN;
 
     let mut transform = query.single_mut();
     let speed = if difficulty.elapsed >= 10.0 { 400.0 } else { 200.0 };
@@ -107,6 +115,9 @@ fn movement(
     if keyboard.pressed(KeyCode::KeyD) { direction.x += 1.0; }
 
     transform.translation += direction.normalize_or_zero() * speed * 0.016;
+
+    transform.translation.x = transform.translation.x.clamp(-half_w, half_w);
+    transform.translation.y = transform.translation.y.clamp(-half_h, half_h);
 }
 
 /// Animation du vaisseau : cycle les 9 frames (ship_0 à ship_8) à partir de 10 secondes.

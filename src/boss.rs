@@ -18,6 +18,7 @@
 //! 3. Ajouter dans `phase_def()` et `boss_phase_logic`
 
 use crate::collision::PLAYER_RADIUS;
+use crate::debug::DebugMode;
 use crate::difficulty::Difficulty;
 use crate::missile::{Missile, missile_hits_circle};
 use crate::pause::PauseState;
@@ -40,6 +41,7 @@ impl Plugin for BossPlugin {
                     boss_music_delayed,
                     boss_idle_animation,
                     boss_phase_logic,
+                    boss_sinusoidal_movement,
                     boss_pattern_executor,
                     missile_boss_collision,
                     move_boss_projectiles,
@@ -90,6 +92,15 @@ const BOSS_SPIRAL_RADIUS: f32 = 150.0;
 const BOSS_HIT_FLASH_DURATION: f32 = 0.06;
 /// FPS de l'animation idle.
 const BOSS_IDLE_FPS: f32 = 10.0;
+
+// ─── Pattern sinusoïdal (Phase 1) ──────────────────────────────────
+
+/// Marge du boss par rapport au bord de l'écran (px).
+const BOSS_MARGIN: f32 = 80.0;
+/// Fréquence horizontale (rad/s).
+const BOSS_SINE_FREQ_X: f32 = 2.4;
+/// Fréquence verticale (rad/s) — oscillation rapide haut/bas.
+const BOSS_SINE_FREQ_Y: f32 = 3.5;
 
 // ─── État machine ───────────────────────────────────────────────────
 
@@ -505,6 +516,46 @@ fn boss_phase_logic(
     }
 }
 
+// ─── Mouvement sinusoïdal du boss ──────────────────────────────────
+
+/// Déplace le boss en sinusoïdes sur tout le terrain.
+/// Activé uniquement quand la rotation planète/background a commencé
+/// (3s après le lancement de la musique boss).
+fn boss_sinusoidal_movement(
+    difficulty: Res<Difficulty>,
+    mut boss_q: Query<(&Boss, &mut Transform), Without<Player>>,
+    windows: Query<&Window>,
+) {
+    // Attendre que la rotation planète soit active
+    let pattern_elapsed = match difficulty.boss_music_start_time {
+        Some(start) => {
+            let since = difficulty.elapsed - start - 3.0;
+            if since < 0.0 {
+                return;
+            }
+            since
+        }
+        None => return,
+    };
+
+    let window = windows.single();
+    let half_w = window.width() / 2.0 - BOSS_MARGIN;
+    let half_h = window.height() / 2.0 - BOSS_MARGIN;
+
+    for (boss, mut transform) in boss_q.iter_mut() {
+        match &boss.state {
+            BossState::Active(_) => {}
+            _ => continue,
+        }
+
+        let x = half_w * (pattern_elapsed * BOSS_SINE_FREQ_X).sin();
+        let y = half_h * (pattern_elapsed * BOSS_SINE_FREQ_Y).sin();
+
+        transform.translation.x = x;
+        transform.translation.y = y;
+    }
+}
+
 // ─── Exécution des patterns (squelette) ─────────────────────────────
 
 fn boss_pattern_executor(
@@ -525,10 +576,10 @@ fn boss_pattern_executor(
             continue;
         }
 
-        // ── SQUELETTE : ajouter les patterns ici ──
+        // ── SQUELETTE : ajouter les patterns de tir ici ──
         // let player_pos = _player_q.single().translation;
         // match _phase {
-        //     BossPhaseId::Phase1 => fire_pattern_spread(&mut commands, &asset_server, boss_transform.translation, player_pos),
+        //     BossPhaseId::Phase1 => fire_pattern_spread(...),
         //     BossPhaseId::Phase2 => fire_pattern_spiral(...),
         //     BossPhaseId::Phase3 => fire_pattern_barrage(...),
         // }
@@ -596,7 +647,12 @@ fn boss_projectile_player_collision(
     mut next_state: ResMut<NextState<GameState>>,
     player_q: Query<(Entity, &Transform), With<Player>>,
     projectile_q: Query<(&Transform, &BossProjectile)>,
+    debug: Res<DebugMode>,
 ) {
+    if debug.0 {
+        return;
+    }
+
     let Ok((player_entity, player_transform)) = player_q.get_single() else {
         return;
     };
