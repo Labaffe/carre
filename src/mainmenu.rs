@@ -171,7 +171,7 @@ fn setup_main_menu(
                 ImageBundle {
                     image: UiImage::new(asset_server.load("images/main_menu_title.png")),
                     style: Style {
-                        width: Val::Px(650.0),
+                        width: Val::Px(750.0),
                         height: Val::Auto,
                         margin: UiRect::bottom(Val::Px(60.0)),
                         ..default()
