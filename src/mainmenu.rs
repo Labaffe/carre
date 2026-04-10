@@ -2,10 +2,11 @@
 //!
 //! - Fond noir pendant 1 seconde, puis fondu d'apparition sur 1 seconde.
 //! - Affiche le logo `main_menu_title.png` au centre sur fond noir.
-//! - Deux options : "Commencer" et "Quitter". Police : Space Goatesque.
-//! - Musique `main_menu.ogg` en boucle dès le lancement.
+//! - Trois options : "Commencer", "Paramètres" et "Quitter".
+//! - Sous-menu Paramètres : réglage du volume global.
 
 use crate::state::GameState;
+use crate::GameSettings;
 use bevy::app::AppExit;
 use bevy::prelude::*;
 
@@ -46,27 +47,41 @@ struct MenuOption {
 #[derive(Clone, PartialEq)]
 enum MenuAction {
     Play,
+    Settings,
     Quit,
+}
+
+/// Marqueur pour les éléments du sous-menu Paramètres.
+#[derive(Component)]
+struct SettingsUI;
+
+/// Texte affichant la valeur du volume.
+#[derive(Component)]
+struct VolumeText;
+
+/// Vue active du menu.
+#[derive(Clone, PartialEq)]
+enum MenuView {
+    Main,
+    Settings,
 }
 
 #[derive(Resource)]
 struct MainMenuAnim {
     elapsed: f32,
-    /// Index de l'option sélectionnée (0 = Commencer, 1 = Quitter).
     selected: usize,
+    view: MenuView,
 }
 
 // ─── Constantes ──────────────────────────────────────────────────────
 
-/// Délai avant le début du fondu (secondes).
 const FADE_DELAY: f32 = 1.0;
-/// Durée du fondu d'apparition (secondes).
 const FADE_DURATION: f32 = 1.0;
+const TILE_SIZE: f32 = 128.0;
+/// Pas d'incrément du volume (5%).
+const VOLUME_STEP: f32 = 0.05;
 
 // ─── Setup ───────────────────────────────────────────────────────────
-
-/// Taille d'une tile en pixels.
-const TILE_SIZE: f32 = 128.0;
 
 fn setup_main_menu(
     mut commands: Commands,
@@ -78,7 +93,6 @@ fn setup_main_menu(
     let tile_texture = asset_server.load("images/space_tile_1.png");
 
     // ── Tiles de fond (world-space sprites) ───────────────────────
-    // Calcul de la zone visible via la projection de la caméra
     let (half_w, half_h) = if let Ok((_cam, _gt, proj)) = camera_q.get_single() {
         (proj.area.max.x, proj.area.max.y)
     } else {
@@ -87,8 +101,6 @@ fn setup_main_menu(
     };
 
     let rotations = [0.0_f32, 90.0, 180.0, 270.0];
-
-    // Marge supplémentaire pour les tiles pivotées (diagonale > côté)
     let margin = TILE_SIZE;
     let total_w = (half_w + margin) * 2.0;
     let total_h = (half_h + margin) * 2.0;
@@ -154,7 +166,7 @@ fn setup_main_menu(
             MainMenuRoot,
         ))
         .with_children(|parent| {
-            // Logo (invisible au départ, alpha = 0)
+            // Logo
             parent.spawn((
                 ImageBundle {
                     image: UiImage::new(asset_server.load("images/main_menu_title.png")),
@@ -186,6 +198,22 @@ fn setup_main_menu(
                 MainMenuUI,
             ));
 
+            // Option : Paramètres
+            parent.spawn((
+                TextBundle::from_section(
+                    "Paramètres",
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 42.0,
+                        color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                    },
+                ),
+                MenuOption {
+                    action: MenuAction::Settings,
+                },
+                MainMenuUI,
+            ));
+
             // Option : Quitter
             parent.spawn((
                 TextBundle::from_section(
@@ -206,6 +234,7 @@ fn setup_main_menu(
     commands.insert_resource(MainMenuAnim {
         elapsed: 0.0,
         selected: 0,
+        view: MenuView::Main,
     });
 }
 
@@ -214,84 +243,142 @@ fn setup_main_menu(
 fn animate_main_menu(
     mut anim: ResMut<MainMenuAnim>,
     time: Res<Time>,
-    // Fond noir du root (fade-out 1→0)
-    mut root_q: Query<&mut BackgroundColor, With<MainMenuRoot>>,
-    // Logo (fade-in 0→1, exclut le root)
+    root_q: Query<&Children, With<MainMenuRoot>>,
+    mut bg_root_q: Query<&mut BackgroundColor, With<MainMenuRoot>>,
     mut logo_q: Query<
         &mut BackgroundColor,
-        (With<MainMenuUI>, Without<MainMenuRoot>, Without<MenuOption>, Without<Text>),
+        (
+            With<MainMenuUI>,
+            Without<MainMenuRoot>,
+            Without<MenuOption>,
+            Without<Text>,
+        ),
     >,
-    mut text_q: Query<(&mut Text, &MenuOption)>,
+    mut text_q: Query<(&mut Text, &MenuOption, &mut Style)>,
     mut tile_q: Query<&mut Sprite, With<MainMenuTile>>,
+    mut volume_text_q: Query<&mut Text, (With<VolumeText>, Without<MenuOption>)>,
+    settings: Res<GameSettings>,
 ) {
     anim.elapsed += time.delta_seconds();
 
-    // Calcul de l'opacité : 0 avant FADE_DELAY, puis fondu linéaire sur FADE_DURATION
     let alpha = if anim.elapsed < FADE_DELAY {
         0.0
     } else {
         ((anim.elapsed - FADE_DELAY) / FADE_DURATION).clamp(0.0, 1.0)
     };
 
-    // Tiles : alpha 0→1
+    // Tiles
     for mut sprite in tile_q.iter_mut() {
         sprite.color.set_a(alpha);
     }
 
-    // Fond noir du root : 1→0 (se dissipe, révèle les tiles)
-    for mut bg in root_q.iter_mut() {
+    // Fond noir du root
+    for mut bg in bg_root_q.iter_mut() {
         bg.0.set_a(1.0 - alpha);
     }
 
-    // Logo : 0→1 (apparaît)
+    // Logo
     for mut bg in logo_q.iter_mut() {
         bg.0.set_a(alpha);
     }
 
-    // Appliquer l'alpha au texte avec surbrillance de l'option sélectionnée
-    for (mut text, option) in text_q.iter_mut() {
-        let is_selected = (option.action == MenuAction::Play && anim.selected == 0)
-            || (option.action == MenuAction::Quit && anim.selected == 1);
-
-        for section in text.sections.iter_mut() {
-            if is_selected {
-                // Option sélectionnée : jaune
-                section.style.color = Color::rgba(1.0, 0.85, 0.0, alpha);
-            } else {
-                // Option non sélectionnée : blanc
-                section.style.color = Color::rgba(0.6, 0.6, 0.6, alpha);
+    // Menu options — visibilité dépend de la vue active
+    let mut idx = 0;
+    for (mut text, _option, mut style) in text_q.iter_mut() {
+        if anim.view == MenuView::Settings {
+            // Cacher les options du menu principal quand on est dans Paramètres
+            style.display = Display::None;
+        } else {
+            style.display = Display::Flex;
+            let is_selected = idx == anim.selected;
+            for section in text.sections.iter_mut() {
+                if is_selected {
+                    section.style.color = Color::rgba(1.0, 0.85, 0.0, alpha);
+                } else {
+                    section.style.color = Color::rgba(0.6, 0.6, 0.6, alpha);
+                }
             }
         }
+        idx += 1;
+    }
+
+    // Mettre à jour le texte du volume dans le sous-menu
+    for mut text in volume_text_q.iter_mut() {
+        let pct = (settings.master_volume * 100.0).round() as i32;
+        text.sections[0].value = format!("< Volume : {} % >", pct);
     }
 }
 
 // ─── Input ───────────────────────────────────────────────────────────
 
 fn handle_menu_input(
+    mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
     mut anim: ResMut<MainMenuAnim>,
     mut next_state: ResMut<NextState<GameState>>,
     mut exit: EventWriter<AppExit>,
+    mut settings: ResMut<GameSettings>,
+    mut global_volume: ResMut<GlobalVolume>,
+    asset_server: Res<AssetServer>,
+    settings_ui_q: Query<Entity, With<SettingsUI>>,
+    root_q: Query<Entity, With<MainMenuRoot>>,
 ) {
-    // Ne pas accepter d'input avant que le menu soit visible
     if anim.elapsed < FADE_DELAY {
         return;
     }
 
-    // Navigation haut/bas
+    match anim.view {
+        MenuView::Main => {
+            handle_main_view(
+                &keyboard,
+                &mouse,
+                &mut anim,
+                &mut next_state,
+                &mut exit,
+                &mut commands,
+                &asset_server,
+                &settings,
+                &root_q,
+            );
+        }
+        MenuView::Settings => {
+            handle_settings_view(
+                &keyboard,
+                &mut anim,
+                &mut settings,
+                &mut global_volume,
+                &mut commands,
+                &settings_ui_q,
+            );
+        }
+    }
+}
+
+fn handle_main_view(
+    keyboard: &Res<ButtonInput<KeyCode>>,
+    mouse: &Res<ButtonInput<MouseButton>>,
+    anim: &mut ResMut<MainMenuAnim>,
+    next_state: &mut ResMut<NextState<GameState>>,
+    exit: &mut EventWriter<AppExit>,
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    settings: &ResMut<GameSettings>,
+    root_q: &Query<Entity, With<MainMenuRoot>>,
+) {
+    // Navigation
     if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
         if anim.selected > 0 {
             anim.selected -= 1;
         }
     }
     if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
-        if anim.selected < 1 {
+        if anim.selected < 2 {
             anim.selected += 1;
         }
     }
 
-    // Validation (clavier ou clic souris)
+    // Validation
     if keyboard.just_pressed(KeyCode::Enter)
         || keyboard.just_pressed(KeyCode::Space)
         || mouse.just_pressed(MouseButton::Left)
@@ -301,11 +388,115 @@ fn handle_menu_input(
                 next_state.set(GameState::Playing);
             }
             1 => {
+                // Ouvrir le sous-menu Paramètres
+                anim.view = MenuView::Settings;
+                anim.selected = 0;
+                spawn_settings_ui(commands, asset_server, settings, root_q);
+            }
+            2 => {
                 exit.send(AppExit);
             }
             _ => {}
         }
     }
+}
+
+fn handle_settings_view(
+    keyboard: &Res<ButtonInput<KeyCode>>,
+    anim: &mut ResMut<MainMenuAnim>,
+    settings: &mut ResMut<GameSettings>,
+    global_volume: &mut ResMut<GlobalVolume>,
+    commands: &mut Commands,
+    settings_ui_q: &Query<Entity, With<SettingsUI>>,
+) {
+    // Gauche/Droite pour ajuster le volume
+    if keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyA) {
+        settings.master_volume = (settings.master_volume - VOLUME_STEP).max(0.0);
+        global_volume.volume = bevy::audio::Volume::new(settings.master_volume);
+    }
+    if keyboard.just_pressed(KeyCode::ArrowRight) || keyboard.just_pressed(KeyCode::KeyD) {
+        settings.master_volume = (settings.master_volume + VOLUME_STEP).min(1.0);
+        global_volume.volume = bevy::audio::Volume::new(settings.master_volume);
+    }
+
+    // Retour au menu principal
+    if keyboard.just_pressed(KeyCode::Escape)
+        || keyboard.just_pressed(KeyCode::Enter)
+        || keyboard.just_pressed(KeyCode::Space)
+    {
+        anim.view = MenuView::Main;
+        anim.selected = 1; // Reselect "Paramètres"
+        // Despawn le sous-menu
+        for entity in settings_ui_q.iter() {
+            commands.entity(entity).despawn_recursive();
+        }
+    }
+}
+
+/// Spawn l'UI du sous-menu Paramètres (enfant du root).
+fn spawn_settings_ui(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    settings: &ResMut<GameSettings>,
+    root_q: &Query<Entity, With<MainMenuRoot>>,
+) {
+    let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
+    let pct = (settings.master_volume * 100.0).round() as i32;
+
+    let Ok(root_entity) = root_q.get_single() else {
+        return;
+    };
+
+    commands.entity(root_entity).with_children(|parent| {
+        // Conteneur du sous-menu
+        parent
+            .spawn((
+                NodeBundle {
+                    style: Style {
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        row_gap: Val::Px(40.0),
+                        ..default()
+                    },
+                    ..default()
+                },
+                SettingsUI,
+            ))
+            .with_children(|parent| {
+                // Titre
+                parent.spawn(TextBundle::from_section(
+                    "PARAMÈTRES",
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 48.0,
+                        color: Color::WHITE,
+                    },
+                ));
+
+                // Volume
+                parent.spawn((
+                    TextBundle::from_section(
+                        format!("< Volume : {} % >", pct),
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: 32.0,
+                            color: Color::rgba(1.0, 0.85, 0.0, 1.0),
+                        },
+                    ),
+                    VolumeText,
+                ));
+
+                // Instruction
+                parent.spawn(TextBundle::from_section(
+                    "Entrée pour revenir",
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 20.0,
+                        color: Color::rgba(0.5, 0.5, 0.5, 1.0),
+                    },
+                ));
+            });
+    });
 }
 
 // ─── Cleanup ─────────────────────────────────────────────────────────

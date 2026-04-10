@@ -44,6 +44,7 @@ fn main() {
             ..default()
         }))
         .insert_resource(ClearColor(Color::BLACK))
+        .init_resource::<GameSettings>()
         .init_state::<GameState>()
         .add_plugins((
             BackgroundPlugin,
@@ -68,14 +69,29 @@ fn main() {
         .run();
 }
 
+/// Volume global du jeu (0.0 – 1.0).
+#[derive(Resource)]
+pub struct GameSettings {
+    pub master_volume: f32,
+}
+
+impl Default for GameSettings {
+    fn default() -> Self {
+        Self { master_volume: 0.5 }
+    }
+}
+
 #[derive(Component)]
 pub struct MusicMain;
 
 #[derive(Component)]
 pub struct MusicGameOver;
 
-fn setup(mut commands: Commands) {
+fn setup(mut commands: Commands, settings: Res<GameSettings>) {
     commands.spawn(Camera2dBundle::default());
+    commands.insert_resource(GlobalVolume {
+        volume: bevy::audio::Volume::new(settings.master_volume),
+    });
 }
 
 /// Affiche la fenêtre après la première frame (évite le flash blanc Windows).
@@ -141,7 +157,6 @@ pub fn spawn_main_music(commands: &mut Commands, asset_server: &Res<AssetServer>
             source: asset_server.load("audio/gradius.ogg"),
             settings: PlaybackSettings {
                 mode: bevy::audio::PlaybackMode::Once,
-                volume: bevy::audio::Volume::new(0.6),
                 ..default()
             },
         },
