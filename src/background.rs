@@ -1,7 +1,8 @@
 //! Background spatial scrollant en boucle.
-//! Deux copies de l'image se suivent verticalement pour un défilement infini.
-//! La vitesse de scroll est proportionnelle au carré du facteur de difficulté.
-//! Spawné à l'entrée du Playing, caché au game over, réaffiché au restart.
+//!
+//! **Phase normale** : 2 tiles verticales, scroll vers le bas.
+//! **Phase boss** (3 s après boss.ogg) : grille 3×3 qui scroll ET tourne
+//! en même temps que la planète, simulant une orbite.
 
 use crate::difficulty::Difficulty;
 use crate::state::GameState;
@@ -28,24 +29,33 @@ pub struct Background;
 #[derive(Component)]
 pub struct Planet;
 
+// ─── Constantes background ─────────────────────────────────────────
+
+/// Largeur d'une tile de background (px).
+const BG_TILE_WIDTH: f32 = 5796.0;
+/// Hauteur d'une tile de background (px).
+const BG_TILE_HEIGHT: f32 = 1534.0;
+/// Vitesse du scroll du background pendant le boss (px/s).
+const BOSS_BG_SCROLL_SPEED: f32 = 150.0;
+/// Vitesse de rotation du background pendant le boss (rad/s, = planète).
+const BOSS_BG_ROTATION_SPEED: f32 = 0.30;
+
 fn setup_background(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     existing: Query<Entity, With<Background>>,
 ) {
-    // Ne pas re-spawner si le background existe déjà (cas du restart après game over)
     if !existing.is_empty() {
-        // Réafficher les backgrounds cachés
         return;
     }
 
-    let bg = asset_server.load("images/space_background.png");
+    let bg = asset_server.load("images/space_background_tile.png");
 
     for i in 0..2 {
         commands.spawn((
             SpriteBundle {
                 texture: bg.clone(),
-                transform: Transform::from_xyz(0.0, 1536.0 * i as f32, -1.0),
+                transform: Transform::from_xyz(0.0, BG_TILE_HEIGHT * i as f32, -1.0),
                 ..default()
             },
             Background,
@@ -53,28 +63,94 @@ fn setup_background(
     }
 }
 
-/// Fait défiler les deux sprites de background vers le bas.
-/// Quand un sprite sort de l'écran, il est repositionné au-dessus de l'autre.
+/// Fait défiler le background.
+/// - Avant le boss : 2 tiles, scroll vertical.
+/// - Pendant le boss : grille 3×3 qui scroll et tourne (orbite planétaire).
 fn scroll_background(
-    mut query: Query<&mut Transform, With<Background>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut query: Query<(Entity, &mut Transform), With<Background>>,
+    windows: Query<&Window>,
     time: Res<Time>,
-    difficulty: Res<Difficulty>,
+    mut difficulty: ResMut<Difficulty>,
 ) {
-    let base_speed = 150.0;
-    let image_height = 1536.0;
-    // Après 26.7s : vitesse décroissante indépendante de la difficulté.
-    // Sinon : scaling basé sur le facteur.
-    let speed = if let Some(override_speed) = difficulty.bg_speed_override {
-        override_speed
-    } else {
-        base_speed * (1.0 + difficulty.factor * 3.0)
+    let boss_bg_active = match difficulty.boss_music_start_time {
+        Some(start) => difficulty.elapsed - start >= 3.0,
+        None => false,
     };
 
-    for mut transform in query.iter_mut() {
-        transform.translation.y -= speed * time.delta_seconds();
+    // Nombre total de tiles en mode boss (2 existantes + 4 ajoutées).
+    const BOSS_TILE_COUNT: f32 = 6.0;
 
-        if transform.translation.y <= -image_height {
-            transform.translation.y += image_height * 2.0;
+    if boss_bg_active {
+        // ── Transition : garder les 2 tiles, ajouter 2 au-dessus + 2 en dessous ──
+        // L'image ne tile que verticalement (haut-bas), jamais en X.
+        // Sa largeur (5796 px) couvre l'écran à n'importe quel angle de rotation.
+        if !difficulty.boss_bg_initialized {
+            difficulty.boss_bg_initialized = true;
+
+            // Ajouter 4 tiles (2 au-dessus, 2 en dessous) — les 2 existantes restent
+            let bg = asset_server.load("images/space_background_tile.png");
+            for row in [-2_i32, -1, 2, 3] {
+                commands.spawn((
+                    SpriteBundle {
+                        texture: bg.clone(),
+                        transform: Transform::from_xyz(0.0, row as f32 * BG_TILE_HEIGHT, -1.0),
+                        ..default()
+                    },
+                    Background,
+                ));
+            }
+            return;
+        }
+
+        // ── Scroll + rotation de la colonne autour de la planète ──
+        let boss_bg_elapsed = difficulty.elapsed - difficulty.boss_music_start_time.unwrap() - 3.0;
+        let angle = boss_bg_elapsed * BOSS_BG_ROTATION_SPEED;
+        let rotation = Quat::from_rotation_z(angle);
+        let scroll_total = boss_bg_elapsed * BOSS_BG_SCROLL_SPEED;
+
+        let grid_h = BOSS_TILE_COUNT * BG_TILE_HEIGHT;
+        let half_grid_h = grid_h / 2.0;
+
+        // Centre de rotation = position de la planète
+        let window = windows.single();
+        let half_h = window.height() / 2.0;
+        let planet_x = (difficulty.elapsed * 0.3).sin() * 15.0;
+        let planet_y = -(half_h + 700.0) + (difficulty.elapsed * 0.2).cos() * 10.0;
+        let pivot = Vec3::new(planet_x, planet_y, 0.0);
+
+        let mut tiles: Vec<(Entity, Mut<Transform>)> = query.iter_mut().collect();
+        let count = tiles.len() as f32;
+        let half_count = count / 2.0;
+        for (idx, (_, tf)) in tiles.iter_mut().enumerate() {
+            let row = idx as f32 - half_count + 0.5;
+
+            // Scroll continu en Y local + wrap vertical (seul axe de tiling)
+            let raw_y = row * BG_TILE_HEIGHT - scroll_total;
+            let wrapped_y = ((raw_y + half_grid_h).rem_euclid(grid_h)) - half_grid_h;
+
+            // Rotation autour du pivot (centre de la planète), pas de décalage X
+            let local_pos = Vec3::new(0.0, wrapped_y, 0.0);
+            let rotated = rotation.mul_vec3(local_pos);
+            tf.translation = Vec3::new(pivot.x + rotated.x, pivot.y + rotated.y, -1.0);
+            tf.rotation = rotation;
+        }
+    } else {
+        // ── Scroll vertical classique ──
+        let base_speed = 150.0;
+        let speed = if let Some(override_speed) = difficulty.bg_speed_override {
+            override_speed
+        } else {
+            base_speed * (1.0 + difficulty.factor * 3.0)
+        };
+
+        for (_, mut transform) in query.iter_mut() {
+            transform.translation.y -= speed * time.delta_seconds();
+
+            if transform.translation.y <= -BG_TILE_HEIGHT {
+                transform.translation.y += BG_TILE_HEIGHT * 2.0;
+            }
         }
     }
 }
@@ -86,7 +162,7 @@ const PLANET_APPEAR_TIME: f32 = 28.0;
 /// Durée de l'animation de zoom (secondes).
 const PLANET_ANIM_DURATION: f32 = 10.0;
 /// Vitesse de rotation de la planète pendant le boss (après 3s de musique boss).
-const PLANETE_BOSS_ROTATION_SPEED: f32 = 0.15;
+const PLANETE_BOSS_ROTATION_SPEED: f32 = 0.30;
 
 fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
     let window = windows.single();

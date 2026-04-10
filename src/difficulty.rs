@@ -37,6 +37,8 @@ pub struct Difficulty {
     /// Vitesse du background indépendante de la difficulté après 26.7s.
     /// None = utilise le calcul basé sur factor. Some(v) = vitesse fixe décroissante.
     pub bg_speed_override: Option<f32>,
+    /// La grille 3×3 du background boss a été initialisée.
+    pub boss_bg_initialized: bool,
 }
 
 impl Default for Difficulty {
@@ -53,6 +55,7 @@ impl Default for Difficulty {
             boss_music_start_time: None,
             spawning_stopped: false,
             bg_speed_override: None,
+            boss_bg_initialized: false,
         }
     }
 }
