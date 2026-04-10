@@ -11,11 +11,14 @@ pub struct BackgroundPlugin;
 
 impl Plugin for BackgroundPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(GameState::Playing), (setup_background, spawn_planet))
-            .add_systems(
-                Update,
-                (scroll_background, animate_planet).run_if(in_state(GameState::Playing)),
-            );
+        app.add_systems(
+            OnEnter(GameState::Playing),
+            (setup_background, spawn_planet),
+        )
+        .add_systems(
+            Update,
+            (scroll_background, animate_planet).run_if(in_state(GameState::Playing)),
+        );
     }
 }
 
@@ -79,15 +82,11 @@ fn scroll_background(
 // ─── Planète ────────────────────────────────────────────────────────
 
 /// Temps d'apparition de la planète (secondes).
-const PLANET_APPEAR_TIME: f32 = 31.0;
+const PLANET_APPEAR_TIME: f32 = 28.0;
 /// Durée de l'animation de zoom (secondes).
-const PLANET_ANIM_DURATION: f32 = 4.0;
+const PLANET_ANIM_DURATION: f32 = 8.0;
 
-fn spawn_planet(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    windows: Query<&Window>,
-) {
+fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
     let window = windows.single();
     let half_h = window.height() / 2.0;
 
@@ -121,7 +120,8 @@ fn animate_planet(
     let window = windows.single();
     let half_h = window.height() / 2.0;
 
-    let progress = ((difficulty.elapsed - PLANET_APPEAR_TIME) / PLANET_ANIM_DURATION).clamp(0.0, 1.0);
+    let progress =
+        ((difficulty.elapsed - PLANET_APPEAR_TIME) / PLANET_ANIM_DURATION).clamp(0.0, 1.0);
 
     for (mut transform, mut sprite) in planet_q.iter_mut() {
         // Alpha : apparition douce

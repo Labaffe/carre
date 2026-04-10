@@ -115,9 +115,9 @@ fn spawn_asteroids(
         fastrand::f32() * std::f32::consts::TAU,
     ));
 
-    // Taille : petits 60-90px, gros 120-180px
+    // Taille : petits 80-110px, gros 120-180px
     let side = if is_small {
-        fastrand::f32() * 30.0 + 60.0
+        fastrand::f32() * 30.0 + 80.0
     } else {
         fastrand::f32() * 60.0 + 120.0
     };

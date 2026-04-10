@@ -29,6 +29,7 @@ pub struct Difficulty {
     pub boom_14_played: bool,
     pub boom_18_played: bool,
     pub boom_22_played: bool,
+    pub boss_music_played: bool,
     /// À partir de 26.7s, les astéroïdes ne spawnent plus.
     pub spawning_stopped: bool,
     /// Vitesse du background indépendante de la difficulté après 26.7s.
@@ -46,6 +47,7 @@ impl Default for Difficulty {
             boom_14_played: false,
             boom_18_played: false,
             boom_22_played: false,
+            boss_music_played: false,
             spawning_stopped: false,
             bg_speed_override: None,
         }
@@ -62,9 +64,9 @@ impl Difficulty {
 /// Temps à partir duquel les astéroïdes ne spawnent plus.
 const SPAWN_STOP_TIME: f32 = 26.7;
 /// Durée de décélération du background après SPAWN_STOP_TIME (en secondes).
-const BG_DECEL_DURATION: f32 = 6.0;
+const BG_DECEL_DURATION: f32 = 8.0;
 /// Vitesse finale du background après décélération.
-const BG_FINAL_SPEED: f32 = 20.0;
+const BG_FINAL_SPEED: f32 = 30.0;
 
 fn reset_difficulty(mut difficulty: ResMut<Difficulty>) {
     *difficulty = Difficulty::default();
@@ -152,5 +154,14 @@ fn update_difficulty(
         let bg_speed_at_stop = 150.0 * (1.0 + 8.0 * 3.0); // base_speed * (1 + factor * 3)
         let current_speed = bg_speed_at_stop + (BG_FINAL_SPEED - bg_speed_at_stop) * t;
         difficulty.bg_speed_override = Some(current_speed);
+    }
+
+    // Musique boss à 38
+    if difficulty.elapsed >= 38.0 && !difficulty.boss_music_played {
+        difficulty.boss_music_played = true;
+        commands.spawn(AudioBundle {
+            source: asset_server.load("audio/boss.ogg"),
+            settings: PlaybackSettings::LOOP,
+        });
     }
 }
