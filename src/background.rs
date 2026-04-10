@@ -186,11 +186,25 @@ fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows:
     ));
 }
 
+/// Temps du son landing.ogg (5s avant la fin de l'animation planète).
+const LANDING_TIME: f32 = PLANET_APPEAR_TIME + PLANET_ANIM_DURATION - 5.0;
+
 fn animate_planet(
-    difficulty: Res<Difficulty>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut difficulty: ResMut<Difficulty>,
     windows: Query<&Window>,
     mut planet_q: Query<&mut Transform, With<Planet>>,
 ) {
+    // Son landing 5s avant la fin de l'animation
+    if difficulty.elapsed >= LANDING_TIME && !difficulty.landing_played {
+        difficulty.landing_played = true;
+        commands.spawn(AudioBundle {
+            source: asset_server.load("audio/landing.ogg"),
+            settings: PlaybackSettings::DESPAWN,
+        });
+    }
+
     if difficulty.elapsed < PLANET_APPEAR_TIME {
         return;
     }

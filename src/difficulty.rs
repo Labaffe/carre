@@ -46,6 +46,8 @@ pub struct Difficulty {
     pub bg_speed_override: Option<f32>,
     /// La grille 3×3 du background boss a été initialisée.
     pub boss_bg_initialized: bool,
+    /// Son landing.ogg joué (5s avant la fin de PLANET_ANIM_DURATION).
+    pub landing_played: bool,
 }
 
 impl Default for Difficulty {
@@ -64,6 +66,7 @@ impl Default for Difficulty {
             spawning_stopped: false,
             bg_speed_override: None,
             boss_bg_initialized: false,
+            landing_played: false,
         }
     }
 }
