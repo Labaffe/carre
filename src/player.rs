@@ -5,7 +5,7 @@
 
 use bevy::prelude::*;
 use crate::crosshair::Crosshair;
-use crate::difficulty::Difficulty;
+use crate::difficulty::{BoomEvent, Difficulty};
 use crate::pause::PauseState;
 use crate::state::GameState;
 use crate::weapon::Weapon;
@@ -22,7 +22,7 @@ impl Plugin for PlayerPlugin {
             .add_systems(OnEnter(GameState::Playing), setup_player)
             .add_systems(
                 Update,
-                (movement, rotate_towards_crosshair, animate_ship)
+                (movement, rotate_towards_crosshair, animate_ship, boom_flash_trigger, boom_flash_update)
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),
             );
@@ -31,6 +31,12 @@ impl Plugin for PlayerPlugin {
 
 #[derive(Component)]
 pub struct Player;
+
+/// Flash blanc autour du vaisseau lors d'un boom.
+const BOOM_FLASH_DURATION: f32 = 0.25;
+
+#[derive(Component)]
+struct BoomFlash(Timer);
 
 #[derive(Component)]
 struct ShipAnimation {
@@ -138,4 +144,46 @@ fn rotate_towards_crosshair(
     let direction = crosshair_pos - player_transform.translation;
     let angle = direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2;
     player_transform.rotation = Quat::from_rotation_z(angle);
+}
+
+// ─── Flash blanc au boom ────────────────────────────────────────────
+
+/// Déclenche un flash blanc sur le vaisseau à chaque BoomEvent.
+fn boom_flash_trigger(
+    mut commands: Commands,
+    mut boom_events: EventReader<BoomEvent>,
+    player_q: Query<Entity, With<Player>>,
+) {
+    if boom_events.read().next().is_none() {
+        return;
+    }
+    // Consommer tous les événements restants
+    boom_events.read().for_each(drop);
+
+    if let Ok(entity) = player_q.get_single() {
+        commands
+            .entity(entity)
+            .insert(BoomFlash(Timer::from_seconds(BOOM_FLASH_DURATION, TimerMode::Once)));
+    }
+}
+
+/// Anime le flash blanc : blanc intense → couleur normale.
+fn boom_flash_update(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut Sprite, &mut BoomFlash), With<Player>>,
+) {
+    for (entity, mut sprite, mut flash) in query.iter_mut() {
+        flash.0.tick(time.delta());
+        let t = flash.0.fraction(); // 0 → 1
+
+        if flash.0.finished() {
+            sprite.color = Color::WHITE;
+            commands.entity(entity).remove::<BoomFlash>();
+        } else {
+            // Flash blanc intense qui s'estompe : surbrillance au début, retour à la normale
+            let intensity = 1.0 + (1.0 - t) * 8.0; // 9.0 → 1.0
+            sprite.color = Color::rgba(intensity, intensity, intensity, 1.0);
+        }
+    }
 }

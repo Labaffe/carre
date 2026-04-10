@@ -7,11 +7,16 @@
 use crate::state::GameState;
 use bevy::prelude::*;
 
+/// Événement envoyé à chaque boom (palier de difficulté).
+#[derive(Event)]
+pub struct BoomEvent;
+
 pub struct DifficultyPlugin;
 
 impl Plugin for DifficultyPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(Difficulty::default())
+            .add_event::<BoomEvent>()
             .add_systems(OnEnter(GameState::Playing), reset_difficulty)
             .add_systems(
                 Update,
@@ -84,6 +89,7 @@ fn update_difficulty(
     time: Res<Time>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut boom_events: EventWriter<BoomEvent>,
 ) {
     difficulty.elapsed += time.delta_seconds();
 
@@ -99,6 +105,7 @@ fn update_difficulty(
     // Son boom à 10s
     if difficulty.elapsed >= 10.0 && !difficulty.boom_played {
         difficulty.boom_played = true;
+        boom_events.send(BoomEvent);
         commands.spawn(AudioBundle {
             source: asset_server.load("audio/boom.wav"),
             settings: PlaybackSettings::DESPAWN,
@@ -108,6 +115,7 @@ fn update_difficulty(
     // Son boom à 14.3s
     if difficulty.elapsed >= 14.3 && !difficulty.boom_14_played {
         difficulty.boom_14_played = true;
+        boom_events.send(BoomEvent);
         commands.spawn(AudioBundle {
             source: asset_server.load("audio/boom.wav"),
             settings: PlaybackSettings::DESPAWN,
@@ -117,6 +125,7 @@ fn update_difficulty(
     // Son boom à 18.3s
     if difficulty.elapsed >= 18.3 && !difficulty.boom_18_played {
         difficulty.boom_18_played = true;
+        boom_events.send(BoomEvent);
         commands.spawn(AudioBundle {
             source: asset_server.load("audio/boom.wav"),
             settings: PlaybackSettings::DESPAWN,
@@ -126,6 +135,7 @@ fn update_difficulty(
     // Son boom à 22.6s
     if difficulty.elapsed >= 22.6 && !difficulty.boom_22_played {
         difficulty.boom_22_played = true;
+        boom_events.send(BoomEvent);
         commands.spawn(AudioBundle {
             source: asset_server.load("audio/boom.wav"),
             settings: PlaybackSettings::DESPAWN,
