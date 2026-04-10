@@ -33,7 +33,7 @@ pub struct Explosion {
 /// les trie par index croissant, et retourne les handles.
 /// Supporte les trous dans la numérotation (ex: frame000, frame004, frame008).
 /// Retourne `None` si le dossier n'existe pas ou ne contient aucune frame.
-pub(crate) fn load_frames_from_folder(
+pub fn load_frames_from_folder(
     asset_server: &Res<AssetServer>,
     folder: &str,
 ) -> Option<Vec<Handle<Image>>> {

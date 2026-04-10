@@ -18,6 +18,7 @@
 //! 3. Ajouter dans `phase_def()` et `boss_phase_logic`
 
 use crate::difficulty::Difficulty;
+use crate::explosion::load_frames_from_folder;
 use crate::missile::{Missile, missile_hits_circle};
 use crate::pause::PauseState;
 use crate::player::Player;
@@ -219,16 +220,12 @@ struct BossFlexingFrames(Vec<Handle<Image>>);
 // ─── Préchargement des frames idle ──────────────────────────────────
 
 fn preload_boss_idle_frames(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let idle_frames: Vec<Handle<Image>> = (0..11)
-        .map(|i| asset_server.load(format!("images/boss/idle/frame{:03}.png", i)))
-        .collect();
+    let idle_frames = load_frames_from_folder(&asset_server, "images/boss/idle")
+        .expect("boss idle frames folder missing or empty");
     commands.insert_resource(BossIdleFrames(idle_frames));
 
-    let flexing_indices = [0, 1, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
-    let flexing_frames: Vec<Handle<Image>> = flexing_indices
-        .iter()
-        .map(|i| asset_server.load(format!("images/boss/flexing/frame{:03}.png", i)))
-        .collect();
+    let flexing_frames = load_frames_from_folder(&asset_server, "images/boss/flexing")
+        .expect("boss flexing frames folder missing or empty");
     commands.insert_resource(BossFlexingFrames(flexing_frames));
 }
 

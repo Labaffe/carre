@@ -32,6 +32,9 @@ pub const PLAYER_RADIUS: f32 = 45.0;
 /// Trait commun pour tout objet possédant une hitbox.
 pub trait Hittable: Component {
     fn hitbox_shape(&self) -> HitboxShape;
+    /// Si true, l'entité hostile est despawnée au contact avec le joueur.
+    /// Par défaut true (astéroïdes). Le boss ne meurt pas au contact.
+    fn despawn_on_hit(&self) -> bool { true }
 }
 
 impl Hittable for Player {
@@ -50,6 +53,7 @@ impl Hittable for Boss {
     fn hitbox_shape(&self) -> HitboxShape {
         HitboxShape::Circle(self.radius)
     }
+    fn despawn_on_hit(&self) -> bool { false }
 }
 
 impl Hittable for BossProjectile {
@@ -93,7 +97,9 @@ fn player_collision<T: Hittable>(
 
         if distance < combined_radius {
             commands.entity(player_entity).despawn_recursive();
-            commands.entity(hostile_entity).despawn();
+            if hittable.despawn_on_hit() {
+                commands.entity(hostile_entity).despawn();
+            }
             next_state.set(GameState::GameOver);
             return;
         }
