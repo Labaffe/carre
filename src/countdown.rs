@@ -4,9 +4,9 @@
 //! Chaque étape pop avec un effet de scale (zoom-in + overshoot) puis fade-out.
 //! Envoyez un `CountdownEvent` pour déclencher un countdown de 3 secondes.
 
-use bevy::prelude::*;
 use crate::difficulty::BoomEvent;
 use crate::state::GameState;
+use bevy::prelude::*;
 
 pub struct CountdownPlugin;
 
@@ -31,11 +31,11 @@ const COUNTDOWN_DURATION: f32 = 3.0;
 
 /// Étapes du countdown : (temps relatif, texte, son).
 const STEPS: &[(f32, &str, &str)] = &[
-    (0.0,  "READY", "audio/t_ready.ogg"),
-    (0.75, "3",     "audio/t_3.ogg"),
-    (1.5,  "2",     "audio/t_2.ogg"),
-    (2.25, "1",     "audio/t_1.ogg"),
-    (3.0,  "GO!",   "audio/t_go.wav"),
+    (0.0, "READY", "audio/t_ready.ogg"),
+    (0.75, "3", "audio/t_1.ogg"),
+    (1.5, "2", "audio/t_1.ogg"),
+    (2.25, "1", "audio/t_1.ogg"),
+    (3.0, "GO!", "audio/t_go.wav"),
 ];
 
 /// Durée d'affichage de "GO!" avant de disparaître.
@@ -83,42 +83,42 @@ fn start_countdown(
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
 
     // Container centré plein écran
-    commands.spawn((
-        NodeBundle {
-            style: Style {
-                position_type: PositionType::Absolute,
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                ..default()
-            },
-            ..default()
-        },
-        CountdownUI,
-    )).with_children(|parent| {
-        parent.spawn((
-            TextBundle {
-                text: Text::from_section(
-                    "READY",
-                    TextStyle {
-                        font,
-                        font_size: 80.0,
-                        color: Color::WHITE,
-                    },
-                ),
+    commands
+        .spawn((
+            NodeBundle {
                 style: Style {
+                    position_type: PositionType::Absolute,
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
                     ..default()
                 },
-                transform: Transform::from_scale(Vec3::splat(0.0)),
                 ..default()
             },
-            CountdownPop {
-                timer: 0.0,
-                duration: POP_DURATION,
-            },
-        ));
-    });
+            CountdownUI,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                TextBundle {
+                    text: Text::from_section(
+                        "READY",
+                        TextStyle {
+                            font,
+                            font_size: 80.0,
+                            color: Color::WHITE,
+                        },
+                    ),
+                    style: Style { ..default() },
+                    transform: Transform::from_scale(Vec3::splat(0.0)),
+                    ..default()
+                },
+                CountdownPop {
+                    timer: 0.0,
+                    duration: POP_DURATION,
+                },
+            ));
+        });
 
     // Son READY
     commands.spawn(AudioBundle {
@@ -232,10 +232,7 @@ fn animate_countdown_text(
     }
 }
 
-fn cleanup_countdown(
-    mut commands: Commands,
-    query: Query<Entity, With<CountdownUI>>,
-) {
+fn cleanup_countdown(mut commands: Commands, query: Query<Entity, With<CountdownUI>>) {
     for entity in query.iter() {
         commands.entity(entity).despawn_recursive();
     }
