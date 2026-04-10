@@ -186,8 +186,8 @@ fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows:
     ));
 }
 
-/// Temps du son landing.ogg (5s avant la fin de l'animation planète).
-const LANDING_TIME: f32 = PLANET_APPEAR_TIME + PLANET_ANIM_DURATION - 5.0;
+/// Temps du son landing.ogg (6.3s avant la fin de l'animation planète).
+const LANDING_TIME: f32 = PLANET_APPEAR_TIME + PLANET_ANIM_DURATION - 6.3;
 
 fn animate_planet(
     mut commands: Commands,
