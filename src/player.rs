@@ -49,11 +49,17 @@ fn preload_ship_textures(mut commands: Commands, asset_server: Res<AssetServer>)
     commands.insert_resource(ShipTextures(textures));
 }
 
-fn setup_player(mut commands: Commands, asset_server: Res<AssetServer>) {
-    spawn_player(&mut commands, &asset_server);
+fn setup_player(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    windows: Query<&Window>,
+) {
+    let window = windows.single();
+    let half_h = window.height() / 2.0;
+    spawn_player(&mut commands, &asset_server, -half_h * 0.5);
 }
 
-pub fn spawn_player(commands: &mut Commands, asset_server: &Res<AssetServer>) {
+pub fn spawn_player(commands: &mut Commands, asset_server: &Res<AssetServer>, start_y: f32) {
     commands.spawn((
         SpriteBundle {
             texture: asset_server.load("images/player_ship/ship_0.png"),
@@ -61,6 +67,7 @@ pub fn spawn_player(commands: &mut Commands, asset_server: &Res<AssetServer>) {
                 custom_size: Some(Vec2::new(128.0, 128.0)),
                 ..default()
             },
+            transform: Transform::from_xyz(0.0, start_y, 0.0),
             ..default()
         },
         Player,
@@ -79,6 +86,11 @@ fn movement(
     mut query: Query<&mut Transform, With<Player>>,
     difficulty: Res<Difficulty>,
 ) {
+    // Bloquer le mouvement pendant la première seconde
+    if difficulty.elapsed < 1.0 {
+        return;
+    }
+
     let mut transform = query.single_mut();
     let speed = if difficulty.elapsed >= 10.0 { 400.0 } else { 200.0 };
     let mut direction = Vec3::ZERO;
