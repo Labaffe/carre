@@ -5,8 +5,8 @@
 //! - Trois options : "Commencer", "Paramètres" et "Quitter".
 //! - Sous-menu Paramètres : réglage du volume global.
 
-use crate::state::GameState;
 use crate::GameSettings;
+use crate::state::GameState;
 use bevy::app::AppExit;
 use bevy::prelude::*;
 
@@ -80,6 +80,8 @@ const FADE_DURATION: f32 = 1.0;
 const TILE_SIZE: f32 = 128.0;
 /// Pas d'incrément du volume (5%).
 const VOLUME_STEP: f32 = 0.05;
+/// Probabilité qu'une tile de fond soit invisible (0.0 = toutes visibles, 1.0 = toutes invisibles).
+const TILE_HIDDEN_CHANCE: f64 = 0.2;
 
 // ─── Setup ───────────────────────────────────────────────────────────
 
@@ -114,6 +116,11 @@ fn setup_main_menu(
             let x = start_x + col as f32 * TILE_SIZE + TILE_SIZE / 2.0;
             let y = start_y + row as f32 * TILE_SIZE + TILE_SIZE / 2.0;
             let angle_rad = rotations[fastrand::usize(0..4)].to_radians();
+
+            // Certaines tiles sont aléatoirement invisibles
+            if fastrand::f64() < TILE_HIDDEN_CHANCE {
+                continue;
+            }
 
             commands.spawn((
                 SpriteBundle {
