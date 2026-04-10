@@ -1,9 +1,10 @@
 //! Mode debug (F1) : affiche un overlay avec FPS, timer, difficulté,
-//! dessine les hitboxes (cercles verts/rouges/jaunes, rectangles pour les missiles OBB),
+//! dessine les hitboxes de tous les `Hittable` (cercles ou rectangles OBB),
 //! et affiche le nom du sprite au-dessus de chaque astéroïde (ex: "x007").
 
 use crate::asteroid::Asteroid;
-use crate::collision::PLAYER_RADIUS;
+use crate::boss::{Boss, BossProjectile};
+use crate::collision::Hittable;
 use crate::difficulty::Difficulty;
 use crate::missile::Missile;
 use crate::player::Player;
@@ -193,62 +194,55 @@ fn manage_asteroid_labels(
     }
 }
 
-fn draw_hitboxes(
-    debug: Res<DebugMode>,
-    mut gizmos: Gizmos,
-    player_q: Query<&Transform, With<Player>>,
-    asteroid_q: Query<(&Transform, &Asteroid)>,
-    missile_q: Query<(&Transform, &Missile)>,
+/// Dessine la hitbox d'un Hittable via gizmos.
+fn draw_hittable<T: Hittable>(
+    gizmos: &mut Gizmos,
+    query: &Query<(&Transform, &T)>,
+    color: Color,
 ) {
-    if !debug.0 {
-        return;
-    }
-
-    for transform in player_q.iter() {
-        gizmos.circle_2d(
-            transform.translation.truncate(),
-            PLAYER_RADIUS,
-            Color::GREEN,
-        );
-    }
-
-    for (transform, asteroid) in asteroid_q.iter() {
-        gizmos.circle_2d(
-            transform.translation.truncate(),
-            asteroid.radius,
-            Color::RED,
-        );
-    }
-
-    for (transform, missile) in missile_q.iter() {
+    for (transform, hittable) in query.iter() {
         let pos = transform.translation.truncate();
-        match &missile.hitbox {
+        match hittable.hitbox_shape() {
             HitboxShape::Circle(r) => {
-                gizmos.circle_2d(pos, *r, Color::YELLOW);
+                gizmos.circle_2d(pos, r, color);
             }
-            HitboxShape::Rect {
-                half_length,
-                half_width,
-            } => {
+            HitboxShape::Rect { half_length, half_width } => {
                 let angle = transform.rotation.to_euler(EulerRot::ZYX).0;
                 let cos = angle.cos();
                 let sin = angle.sin();
                 let ax = Vec2::new(cos, sin);
                 let ay = Vec2::new(-sin, cos);
 
-                let hl = *half_length;
-                let hw = *half_width;
-
                 let corners = [
-                    pos + ax * hw + ay * hl,
-                    pos - ax * hw + ay * hl,
-                    pos - ax * hw - ay * hl,
-                    pos + ax * hw - ay * hl,
+                    pos + ax * half_width + ay * half_length,
+                    pos - ax * half_width + ay * half_length,
+                    pos - ax * half_width - ay * half_length,
+                    pos + ax * half_width - ay * half_length,
                 ];
                 for i in 0..4 {
-                    gizmos.line_2d(corners[i], corners[(i + 1) % 4], Color::YELLOW);
+                    gizmos.line_2d(corners[i], corners[(i + 1) % 4], color);
                 }
             }
         }
     }
+}
+
+fn draw_hitboxes(
+    debug: Res<DebugMode>,
+    mut gizmos: Gizmos,
+    player_q: Query<(&Transform, &Player)>,
+    asteroid_q: Query<(&Transform, &Asteroid)>,
+    missile_q: Query<(&Transform, &Missile)>,
+    boss_q: Query<(&Transform, &Boss)>,
+    boss_proj_q: Query<(&Transform, &BossProjectile)>,
+) {
+    if !debug.0 {
+        return;
+    }
+
+    draw_hittable(&mut gizmos, &player_q, Color::GREEN);
+    draw_hittable(&mut gizmos, &asteroid_q, Color::RED);
+    draw_hittable(&mut gizmos, &missile_q, Color::YELLOW);
+    draw_hittable(&mut gizmos, &boss_q, Color::CYAN);
+    draw_hittable(&mut gizmos, &boss_proj_q, Color::rgba(1.0, 0.5, 0.0, 1.0));
 }

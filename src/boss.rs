@@ -17,8 +17,6 @@
 //! 2. Définir une `const PHASE_N: PhaseDef`
 //! 3. Ajouter dans `phase_def()` et `boss_phase_logic`
 
-use crate::collision::PLAYER_RADIUS;
-use crate::debug::DebugMode;
 use crate::difficulty::Difficulty;
 use crate::missile::{Missile, missile_hits_circle};
 use crate::pause::PauseState;
@@ -45,7 +43,6 @@ impl Plugin for BossPlugin {
                     boss_pattern_executor,
                     missile_boss_collision,
                     move_boss_projectiles,
-                    boss_projectile_player_collision,
                     boss_hit_flash,
                     boss_dying,
                     cleanup_boss_projectiles_offscreen,
@@ -637,36 +634,6 @@ fn missile_boss_collision(
 fn move_boss_projectiles(mut query: Query<(&mut Transform, &BossProjectile)>, time: Res<Time>) {
     for (mut transform, proj) in query.iter_mut() {
         transform.translation += proj.velocity * time.delta_seconds();
-    }
-}
-
-// ─── Collision projectiles boss → joueur ────────────────────────────
-
-fn boss_projectile_player_collision(
-    mut commands: Commands,
-    mut next_state: ResMut<NextState<GameState>>,
-    player_q: Query<(Entity, &Transform), With<Player>>,
-    projectile_q: Query<(&Transform, &BossProjectile)>,
-    debug: Res<DebugMode>,
-) {
-    if debug.0 {
-        return;
-    }
-
-    let Ok((player_entity, player_transform)) = player_q.get_single() else {
-        return;
-    };
-
-    for (proj_transform, proj) in projectile_q.iter() {
-        let distance = player_transform
-            .translation
-            .distance(proj_transform.translation);
-
-        if distance < PLAYER_RADIUS + proj.radius {
-            commands.entity(player_entity).despawn_recursive();
-            next_state.set(GameState::GameOver);
-            return;
-        }
     }
 }
 

@@ -1,11 +1,13 @@
-//! Collision joueur ↔ astéroïde.
-//! Quand le joueur touche un astéroïde, c'est le game over :
-//! le joueur et l'astéroïde sont supprimés, l'état passe à GameOver.
+//! Collision joueur ↔ entités hostiles (astéroïdes, boss, projectiles boss).
+//! Tout objet implémentant le trait `Hittable` peut tuer le joueur au contact.
 
 use crate::asteroid::Asteroid;
+use crate::boss::{Boss, BossProjectile};
 use crate::debug::DebugMode;
+use crate::missile::Missile;
 use crate::player::Player;
 use crate::state::GameState;
+use crate::weapon::HitboxShape;
 use bevy::prelude::*;
 
 pub struct CollisionPlugin;
@@ -14,7 +16,12 @@ impl Plugin for CollisionPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            player_asteroid_collision.run_if(in_state(GameState::Playing)),
+            (
+                player_collision::<Asteroid>,
+                player_collision::<Boss>,
+                player_collision::<BossProjectile>,
+            )
+                .run_if(in_state(GameState::Playing)),
         );
     }
 }
@@ -22,11 +29,46 @@ impl Plugin for CollisionPlugin {
 /// Rayon de la hitbox du joueur (sprite 128x128, hitbox ~70% du demi-côté).
 pub const PLAYER_RADIUS: f32 = 45.0;
 
-fn player_asteroid_collision(
+/// Trait commun pour tout objet possédant une hitbox.
+pub trait Hittable: Component {
+    fn hitbox_shape(&self) -> HitboxShape;
+}
+
+impl Hittable for Player {
+    fn hitbox_shape(&self) -> HitboxShape {
+        HitboxShape::Circle(PLAYER_RADIUS)
+    }
+}
+
+impl Hittable for Asteroid {
+    fn hitbox_shape(&self) -> HitboxShape {
+        HitboxShape::Circle(self.radius)
+    }
+}
+
+impl Hittable for Boss {
+    fn hitbox_shape(&self) -> HitboxShape {
+        HitboxShape::Circle(self.radius)
+    }
+}
+
+impl Hittable for BossProjectile {
+    fn hitbox_shape(&self) -> HitboxShape {
+        HitboxShape::Circle(self.radius)
+    }
+}
+
+impl Hittable for Missile {
+    fn hitbox_shape(&self) -> HitboxShape {
+        self.hitbox.clone()
+    }
+}
+
+fn player_collision<T: Hittable>(
     mut commands: Commands,
     mut next_state: ResMut<NextState<GameState>>,
     player_q: Query<(Entity, &Transform), With<Player>>,
-    asteroid_q: Query<(Entity, &Transform, &Asteroid)>,
+    hostile_q: Query<(Entity, &Transform, &T)>,
     debug: Res<DebugMode>,
 ) {
     if debug.0 {
@@ -37,30 +79,24 @@ fn player_asteroid_collision(
         return;
     };
 
-    for (asteroid_entity, asteroid_transform, asteroid) in asteroid_q.iter() {
+    for (hostile_entity, hostile_transform, hittable) in hostile_q.iter() {
         let distance = player_transform
             .translation
-            .distance(asteroid_transform.translation);
+            .distance(hostile_transform.translation);
 
-        if distance < PLAYER_RADIUS + asteroid.radius {
-            game_over(
-                &mut commands,
-                &mut next_state,
-                player_entity,
-                asteroid_entity,
-            );
-            break;
+        let combined_radius = match hittable.hitbox_shape() {
+            HitboxShape::Circle(r) => PLAYER_RADIUS + r,
+            HitboxShape::Rect { half_length, half_width } => {
+                PLAYER_RADIUS + half_length.max(half_width)
+            }
+        };
+
+        if distance < combined_radius {
+            commands.entity(player_entity).despawn_recursive();
+            commands.entity(hostile_entity).despawn();
+            next_state.set(GameState::GameOver);
+            return;
         }
     }
 }
 
-fn game_over(
-    commands: &mut Commands,
-    next_state: &mut ResMut<NextState<GameState>>,
-    player_entity: Entity,
-    asteroid_entity: Entity,
-) {
-    commands.entity(player_entity).despawn_recursive();
-    commands.entity(asteroid_entity).despawn();
-    next_state.set(GameState::GameOver);
-}
