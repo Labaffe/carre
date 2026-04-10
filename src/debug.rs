@@ -8,6 +8,7 @@ use crate::difficulty::Difficulty;
 use crate::missile::Missile;
 use crate::player::Player;
 use crate::weapon::HitboxShape;
+use crate::MusicMain;
 use bevy::prelude::*;
 
 pub struct DebugPlugin;
@@ -62,10 +63,12 @@ fn setup_debug_ui(mut commands: Commands) {
 }
 
 fn toggle_debug(
+    mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut debug: ResMut<DebugMode>,
     mut ui_q: Query<&mut Visibility, With<DebugUI>>,
     mut difficulty: ResMut<crate::difficulty::Difficulty>,
+    music_q: Query<Entity, With<MusicMain>>,
 ) {
     // F2 : sauter à 31 secondes (début du "niveau 2")
     if keyboard.just_pressed(KeyCode::F2) {
@@ -80,6 +83,11 @@ fn toggle_debug(
         let t = (4.3 / 6.0_f32).clamp(0.0, 1.0);
         let bg_speed_at_stop = 150.0 * (1.0 + 8.0 * 3.0);
         difficulty.bg_speed_override = Some(bg_speed_at_stop + (50.0 - bg_speed_at_stop) * t);
+
+        // Couper la musique gradius immédiatement
+        for entity in music_q.iter() {
+            commands.entity(entity).despawn_recursive();
+        }
     }
 
     if keyboard.just_pressed(KeyCode::F1) {

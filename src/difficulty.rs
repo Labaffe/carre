@@ -156,12 +156,5 @@ fn update_difficulty(
         difficulty.bg_speed_override = Some(current_speed);
     }
 
-    // Musique boss à 38
-    if difficulty.elapsed >= 38.0 && !difficulty.boss_music_played {
-        difficulty.boss_music_played = true;
-        commands.spawn(AudioBundle {
-            source: asset_server.load("audio/boss.ogg"),
-            settings: PlaybackSettings::LOOP,
-        });
-    }
+    // Note : la musique boss est lancée par boss.rs à la fin de l'animation d'entrée.
 }

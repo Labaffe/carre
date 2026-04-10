@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 mod asteroid;
 mod background;
+mod boss;
 mod collision;
 mod crosshair;
 mod debug;
@@ -17,6 +18,7 @@ mod weapon;
 
 use asteroid::{Asteroid, AsteroidPlugin};
 use background::{Background, BackgroundPlugin, Planet};
+use boss::{Boss, BossPlugin, BossProjectile};
 use collision::CollisionPlugin;
 use crosshair::CrosshairPlugin;
 use debug::DebugPlugin;
@@ -57,6 +59,7 @@ fn main() {
             ExplosionPlugin,
             WeaponPlugin,
             PausePlugin,
+            BossPlugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, show_window_after_render.run_if(run_once()))
@@ -94,6 +97,8 @@ fn cleanup_playing(
     explosions: Query<Entity, With<Explosion>>,
     backgrounds: Query<Entity, With<Background>>,
     planets: Query<Entity, With<Planet>>,
+    bosses: Query<Entity, With<Boss>>,
+    boss_projectiles: Query<Entity, With<BossProjectile>>,
     music: Query<Entity, With<MusicMain>>,
 ) {
     for entity in players.iter() {
@@ -112,6 +117,12 @@ fn cleanup_playing(
         commands.entity(entity).despawn_recursive();
     }
     for entity in planets.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+    for entity in bosses.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+    for entity in boss_projectiles.iter() {
         commands.entity(entity).despawn_recursive();
     }
     for entity in music.iter() {

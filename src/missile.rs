@@ -69,7 +69,7 @@ fn obb_circle_collision(
 }
 
 /// Teste la collision entre un missile (hitbox variable) et un cercle (astéroïde).
-fn missile_hits_circle(
+pub(crate) fn missile_hits_circle(
     missile_pos: Vec2,
     missile_rot: Quat,
     hitbox: &HitboxShape,

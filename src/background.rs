@@ -84,7 +84,7 @@ fn scroll_background(
 /// Temps d'apparition de la planète (secondes).
 const PLANET_APPEAR_TIME: f32 = 28.0;
 /// Durée de l'animation de zoom (secondes).
-const PLANET_ANIM_DURATION: f32 = 8.0;
+const PLANET_ANIM_DURATION: f32 = 10.0;
 
 fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
     let window = windows.single();
