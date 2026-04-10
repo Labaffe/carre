@@ -768,11 +768,6 @@ fn boss_dying(
             boss.state = BossState::Dead;
             commands.entity(entity).despawn_recursive();
 
-            // Explosion finale
-            commands.spawn(AudioBundle {
-                source: asset_server.load("audio/boss_explosion_2.ogg"),
-                settings: PlaybackSettings::DESPAWN,
-            });
         }
     }
 }
