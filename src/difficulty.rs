@@ -4,6 +4,7 @@
 //! - 10-20s : facteur 3.0 → 5.0 (augmente de +1 toutes les 5s)
 //! - Le facteur influence : vitesse des astéroïdes, fréquence de spawn, scroll du background.
 
+use crate::countdown::CountdownEvent;
 use crate::state::GameState;
 use bevy::prelude::*;
 
@@ -50,6 +51,10 @@ pub struct Difficulty {
     pub landing_played: bool,
     /// Le boss a déjà été spawné (empêche le double spawn avec F3).
     pub boss_spawned: bool,
+    /// Son charging joué avant la phase 3 du vaisseau.
+    pub phase3_charging_played: bool,
+    /// Son boom joué au passage en phase 3 du vaisseau.
+    pub phase3_boom_played: bool,
 }
 
 impl Default for Difficulty {
@@ -70,6 +75,8 @@ impl Default for Difficulty {
             boss_bg_initialized: false,
             landing_played: false,
             boss_spawned: false,
+            phase3_charging_played: false,
+            phase3_boom_played: false,
         }
     }
 }
@@ -99,56 +106,54 @@ fn update_difficulty(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut boom_events: EventWriter<BoomEvent>,
+    mut countdown_events: EventWriter<CountdownEvent>,
 ) {
     difficulty.elapsed += time.delta_seconds();
 
-    // Son charging à 7s
+    // Countdown phase 2 à 7s (READY → 3 → 2 → 1 → GO! à 10s)
     if difficulty.elapsed >= 7.0 && !difficulty.charging_played {
         difficulty.charging_played = true;
-        commands.spawn(AudioBundle {
-            source: asset_server.load("audio/charging.ogg"),
-            settings: PlaybackSettings::DESPAWN,
-        });
-    }
-
-    // Son boom à 10s
-    if difficulty.elapsed >= 10.0 && !difficulty.boom_played {
         difficulty.boom_played = true;
-        boom_events.send(BoomEvent);
-        commands.spawn(AudioBundle {
-            source: asset_server.load("audio/boom.wav"),
-            settings: PlaybackSettings::DESPAWN,
-        });
+        countdown_events.send(CountdownEvent);
     }
 
-    // Son boom à 14.3s
+    // Boom à 14.3s (pas de countdown, juste le son)
     if difficulty.elapsed >= 14.3 && !difficulty.boom_14_played {
         difficulty.boom_14_played = true;
         boom_events.send(BoomEvent);
         commands.spawn(AudioBundle {
-            source: asset_server.load("audio/boom.wav"),
+            source: asset_server.load("audio/t_go.wav"),
             settings: PlaybackSettings::DESPAWN,
         });
     }
 
-    // Son boom à 18.3s
+    // Boom à 18.3s
     if difficulty.elapsed >= 18.3 && !difficulty.boom_18_played {
         difficulty.boom_18_played = true;
         boom_events.send(BoomEvent);
         commands.spawn(AudioBundle {
-            source: asset_server.load("audio/boom.wav"),
+            source: asset_server.load("audio/t_go.wav"),
             settings: PlaybackSettings::DESPAWN,
         });
     }
 
-    // Son boom à 22.6s
+    // Boom à 22.6s
     if difficulty.elapsed >= 22.6 && !difficulty.boom_22_played {
         difficulty.boom_22_played = true;
         boom_events.send(BoomEvent);
         commands.spawn(AudioBundle {
-            source: asset_server.load("audio/boom.wav"),
+            source: asset_server.load("audio/t_go.wav"),
             settings: PlaybackSettings::DESPAWN,
         });
+    }
+
+    // Countdown phase 3 : dès que la musique boss démarre
+    if let Some(_start) = difficulty.boss_music_start_time {
+        if !difficulty.phase3_charging_played {
+            difficulty.phase3_charging_played = true;
+            difficulty.phase3_boom_played = true;
+            countdown_events.send(CountdownEvent);
+        }
     }
 
     // Paliers de difficulté fixes :

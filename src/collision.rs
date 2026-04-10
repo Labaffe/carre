@@ -2,7 +2,7 @@
 //! Tout objet implémentant le trait `Hittable` peut tuer le joueur au contact.
 
 use crate::asteroid::Asteroid;
-use crate::boss::{Boss, BossProjectile};
+use crate::boss::{Boss, BossProjectile, BossState};
 use crate::debug::DebugMode;
 use crate::missile::Missile;
 use crate::player::Player;
@@ -35,6 +35,8 @@ pub trait Hittable: Component {
     /// Si true, l'entité hostile est despawnée au contact avec le joueur.
     /// Par défaut true (astéroïdes). Le boss ne meurt pas au contact.
     fn despawn_on_hit(&self) -> bool { true }
+    /// Si false, la collision est ignorée (ex: boss en animation d'entrée).
+    fn is_dangerous(&self) -> bool { true }
 }
 
 impl Hittable for Player {
@@ -54,6 +56,9 @@ impl Hittable for Boss {
         HitboxShape::Circle(self.radius)
     }
     fn despawn_on_hit(&self) -> bool { false }
+    fn is_dangerous(&self) -> bool {
+        matches!(self.state, BossState::Active(_))
+    }
 }
 
 impl Hittable for BossProjectile {
@@ -84,6 +89,10 @@ fn player_collision<T: Hittable>(
     };
 
     for (hostile_entity, hostile_transform, hittable) in hostile_q.iter() {
+        if !hittable.is_dangerous() {
+            continue;
+        }
+
         let distance = player_transform
             .translation
             .distance(hostile_transform.translation);

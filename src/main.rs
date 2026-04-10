@@ -4,6 +4,7 @@ mod asteroid;
 mod background;
 mod boss;
 mod collision;
+mod countdown;
 mod crosshair;
 mod debug;
 mod difficulty;
@@ -20,6 +21,7 @@ use asteroid::{Asteroid, AsteroidPlugin};
 use background::{Background, BackgroundPlugin, Planet};
 use boss::{Boss, BossPlugin, BossProjectile, MusicBoss};
 use collision::CollisionPlugin;
+use countdown::CountdownPlugin;
 use crosshair::CrosshairPlugin;
 use debug::DebugPlugin;
 use difficulty::DifficultyPlugin;
@@ -52,6 +54,7 @@ fn main() {
             PlayerPlugin,
             AsteroidPlugin,
             CollisionPlugin,
+            CountdownPlugin,
             GameOverPlugin,
             MainMenuPlugin,
             DebugPlugin,

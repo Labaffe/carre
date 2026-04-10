@@ -153,21 +153,21 @@ pub struct PhaseDef {
 pub const PHASE_1: PhaseDef = PhaseDef {
     health_threshold_pct: 1.0,
     patterns: &[],
-    enter_sound: Some("audio/boom.wav"),
+    enter_sound: Some("audio/t_go.wav"),
     pattern_interval: 2.0,
 };
 
 pub const PHASE_2: PhaseDef = PhaseDef {
     health_threshold_pct: 0.66,
     patterns: &[],
-    enter_sound: Some("audio/boom.wav"),
+    enter_sound: Some("audio/t_go.wav"),
     pattern_interval: 1.5,
 };
 
 pub const PHASE_3: PhaseDef = PhaseDef {
     health_threshold_pct: 0.33,
     patterns: &[],
-    enter_sound: Some("audio/boom.wav"),
+    enter_sound: Some("audio/t_go.wav"),
     pattern_interval: 1.0,
 };
 
