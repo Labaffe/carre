@@ -219,13 +219,13 @@ fn animate_planet(
         // Courbe ease-in-out : doux au début et à la fin
         let eased = progress * progress * (3.0 - 2.0 * progress);
 
-        // Scale : 1.0→5.0 (bien zoomé)
+        // Scale : 1.0→9.0 (zoom bien plus prononcé)
         let scale = 1.0 + eased * 4.0;
         transform.scale = Vec3::splat(scale);
 
-        // Position Y : presque entièrement sous l'écran, seul un petit arc dépasse
+        // Position Y : remonte davantage pour montrer plus de surface
         let start_y = -(half_h + 900.0);
-        let end_y = -(half_h + 700.0);
+        let end_y = -(half_h + 600.0);
         transform.translation.y = start_y + (end_y - start_y) * eased;
 
         // Position X : centre avec léger mouvement d'orbite
