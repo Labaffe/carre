@@ -96,6 +96,10 @@ const BOSS_SPIRAL_RADIUS: f32 = 150.0;
 const BOSS_HIT_FLASH_DURATION: f32 = 0.06;
 /// FPS de l'animation idle.
 const BOSS_IDLE_FPS: f32 = 10.0;
+/// Durée totale de l'animation de mort du boss (secondes).
+const BOSS_DEATH_DURATION: f32 = 4.0;
+/// Amplitude max du tremblement à la fin de la mort (px).
+const BOSS_DEATH_SHAKE_MAX: f32 = 20.0;
 
 // ─── Patrol pattern (Phase 1) ──────────────────────────────────────
 
@@ -220,6 +224,10 @@ struct BossPatrol {
     sine_time: f32,
     initialized: bool,
 }
+
+/// Position de base pendant l'animation de mort (avant le shake).
+#[derive(Component)]
+struct BossDeathBasePos(Vec3);
 
 /// Marqueur : le son de flexing a été joué.
 #[derive(Component)]
@@ -487,9 +495,9 @@ fn boss_idle_animation(
 fn boss_phase_logic(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut boss_q: Query<(&mut Boss, &mut PatternTimer)>,
+    mut boss_q: Query<(Entity, &mut Boss, &mut PatternTimer, &Transform)>,
 ) {
-    for (mut boss, mut pattern_timer) in boss_q.iter_mut() {
+    for (entity, mut boss, mut pattern_timer, transform) in boss_q.iter_mut() {
         let current_phase = match &boss.state {
             BossState::Active(phase) => *phase,
             _ => continue,
@@ -498,7 +506,8 @@ fn boss_phase_logic(
         // Boss mort → passage en Dying
         if boss.health <= 0 {
             boss.state = BossState::Dying;
-            boss.anim_timer = Timer::from_seconds(1.5, TimerMode::Once);
+            boss.anim_timer = Timer::from_seconds(BOSS_DEATH_DURATION, TimerMode::Once);
+            commands.entity(entity).insert(BossDeathBasePos(transform.translation));
             continue;
         }
 
@@ -699,44 +708,69 @@ fn boss_dying(
     mut commands: Commands,
     time: Res<Time>,
     asset_server: Res<AssetServer>,
-    mut boss_q: Query<(Entity, &mut Boss, &mut Sprite, &Transform)>,
+    mut boss_q: Query<(Entity, &mut Boss, &mut Sprite, &mut Transform, Option<&BossDeathBasePos>)>,
 ) {
-    for (entity, mut boss, mut sprite, transform) in boss_q.iter_mut() {
+    for (entity, mut boss, mut sprite, mut transform, base_pos) in boss_q.iter_mut() {
         if boss.state != BossState::Dying {
             continue;
         }
 
         boss.anim_timer.tick(time.delta());
-        let progress = boss.anim_timer.fraction();
+        let progress = boss.anim_timer.fraction(); // 0 → 1
+        let elapsed = boss.anim_timer.elapsed_secs();
 
-        // Fade-out progressif
-        sprite.color.set_a(1.0 - progress);
+        let base = base_pos.map(|b| b.0).unwrap_or(transform.translation);
 
-        // Spawner des explosions aléatoires autour du boss pendant la mort
-        if fastrand::f32() < 0.15 {
+        // Clignotement blanc : fréquence augmente avec le temps (2 Hz → 15 Hz)
+        let blink_freq = 2.0 + progress * 13.0;
+        let blink = (elapsed * blink_freq * std::f32::consts::TAU).sin() > 0.0;
+        if blink {
+            let v = 1.0 + (1.0 - progress) * 1.5; // flash moins intense vers la fin
+            sprite.color = Color::rgba(v, v, v, 1.0);
+        } else {
+            sprite.color = Color::WHITE;
+        }
+
+        // Tremblement : amplitude augmente avec le temps (quadratique)
+        let shake_intensity = progress * progress * BOSS_DEATH_SHAKE_MAX;
+        let shake_x = (fastrand::f32() - 0.5) * 2.0 * shake_intensity;
+        let shake_y = (fastrand::f32() - 0.5) * 2.0 * shake_intensity;
+        transform.translation.x = base.x + shake_x;
+        transform.translation.y = base.y + shake_y;
+
+        // Explosions : probabilité augmente avec le temps
+        // Début : ~5% de chance par frame, fin : ~60% de chance par frame
+        let explosion_chance = 0.05 + progress * progress * 0.55;
+        if fastrand::f32() < explosion_chance {
             let offset = Vec3::new(
-                (fastrand::f32() - 0.5) * 200.0,
-                (fastrand::f32() - 0.5) * 200.0,
+                (fastrand::f32() - 0.5) * 250.0,
+                (fastrand::f32() - 0.5) * 250.0,
                 1.0,
             );
             crate::explosion::spawn_explosion(
                 &mut commands,
                 &asset_server,
-                transform.translation + offset,
-                Vec2::splat(64.0),
+                base + offset,
+                Vec2::splat(64.0 + progress * 48.0),
                 0,
                 Vec3::ZERO,
                 Quat::IDENTITY,
             );
+
+            // Son d'explosion
+            commands.spawn(AudioBundle {
+                source: asset_server.load("audio/boss_explosion.ogg"),
+                settings: PlaybackSettings::DESPAWN,
+            });
         }
 
         if boss.anim_timer.finished() {
             boss.state = BossState::Dead;
             commands.entity(entity).despawn_recursive();
 
-            // Son de mort
+            // Explosion finale
             commands.spawn(AudioBundle {
-                source: asset_server.load("audio/asteroid_die.ogg"),
+                source: asset_server.load("audio/boss_explosion_2.ogg"),
                 settings: PlaybackSettings::DESPAWN,
             });
         }
