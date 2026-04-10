@@ -81,7 +81,7 @@ fn despawn_crosshair(
 }
 
 /// Durée du blocage initial du crosshair (secondes).
-const CROSSHAIR_LOCK_DURATION: f32 = 1.0;
+const CROSSHAIR_LOCK_DURATION: f32 = 0.4;
 
 fn crosshair_follow_mouse(
     mut windows: Query<&mut Window>,

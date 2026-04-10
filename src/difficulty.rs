@@ -37,6 +37,8 @@ pub struct Difficulty {
     pub boss_music_played: bool,
     /// Instant (elapsed) où la musique boss a été lancée.
     pub boss_music_start_time: Option<f32>,
+    /// Instant (elapsed) où le boss est passé en Active (fin du flexing).
+    pub boss_active_time: Option<f32>,
     /// À partir de 26.7s, les astéroïdes ne spawnent plus.
     pub spawning_stopped: bool,
     /// Vitesse du background indépendante de la difficulté après 26.7s.
@@ -58,6 +60,7 @@ impl Default for Difficulty {
             boom_22_played: false,
             boss_music_played: false,
             boss_music_start_time: None,
+            boss_active_time: None,
             spawning_stopped: false,
             bg_speed_override: None,
             boss_bg_initialized: false,

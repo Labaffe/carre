@@ -37,6 +37,7 @@ impl Plugin for BossPlugin {
                     boss_intro,
                     boss_flexing,
                     boss_flexing_sound,
+                    boss_music_delayed,
                     boss_idle_animation,
                     boss_phase_logic,
                     boss_pattern_executor,
@@ -63,6 +64,8 @@ fn not_paused(pause: Res<PauseState>) -> bool {
 const BOSS_SPAWN_TIME: f32 = 35.8;
 /// Durée de la première animation d'entrée (dézoom/spirale, = durée de boss_start.ogg ≈ 7s).
 const BOSS_START_ANIMATION_DURATION: f32 = 7.0;
+/// Délai après le passage en Active avant de lancer la musique boss (secondes).
+const BOSS_MUSIC_DELAY: f32 = 1.0;
 /// Pause entre les deux animations d'entrée.
 const BOSS_FLEXING_WAIT: f32 = 0.5;
 /// Durée de la deuxième animation d'entrée (flexing).
@@ -281,10 +284,7 @@ fn spawn_boss(
 
 // ─── Intro : spirale depuis la planète ──────────────────────────────
 
-fn boss_intro(
-    time: Res<Time>,
-    mut boss_q: Query<(&mut Boss, &mut Transform), Without<Player>>,
-) {
+fn boss_intro(time: Res<Time>, mut boss_q: Query<(&mut Boss, &mut Transform), Without<Player>>) {
     for (mut boss, mut transform) in boss_q.iter_mut() {
         if boss.state != BossState::Entering {
             continue;
@@ -361,24 +361,11 @@ fn boss_flexing(
         let frame_index = ((flexing_progress * frame_count as f32) as usize).min(frame_count - 1);
         *texture = flexing_frames.0[frame_index].clone();
 
-        // Fin du flexing → Active + musique boss
+        // Fin du flexing → Active (la musique boss sera lancée 3.5s plus tard)
         if boss.anim_timer.finished() {
             boss.state = BossState::Active(BossPhaseId::Phase1);
-            // Remettre la première frame idle
             *texture = idle_frames.0[0].clone();
-
-            // Lancer la musique du boss
-            if !difficulty.boss_music_played {
-                difficulty.boss_music_played = true;
-                difficulty.boss_music_start_time = Some(difficulty.elapsed);
-                commands.spawn((
-                    AudioBundle {
-                        source: asset_server.load("audio/boss.ogg"),
-                        settings: PlaybackSettings::LOOP,
-                    },
-                    MusicBoss,
-                ));
-            }
+            difficulty.boss_active_time = Some(difficulty.elapsed);
 
             if let Some(sound) = PHASE_1.enter_sound {
                 commands.spawn(AudioBundle {
@@ -412,6 +399,31 @@ fn boss_flexing_sound(
             source: asset_server.load("audio/boss_start_2.ogg"),
             settings: PlaybackSettings::DESPAWN,
         });
+    }
+}
+
+/// Lance la musique boss 3.5s après le passage en Active.
+fn boss_music_delayed(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut difficulty: ResMut<Difficulty>,
+) {
+    if difficulty.boss_music_played {
+        return;
+    }
+    let Some(active_time) = difficulty.boss_active_time else {
+        return;
+    };
+    if difficulty.elapsed - active_time >= BOSS_MUSIC_DELAY {
+        difficulty.boss_music_played = true;
+        difficulty.boss_music_start_time = Some(difficulty.elapsed);
+        commands.spawn((
+            AudioBundle {
+                source: asset_server.load("audio/boss.ogg"),
+                settings: PlaybackSettings::LOOP,
+            },
+            MusicBoss,
+        ));
     }
 }
 
