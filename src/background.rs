@@ -94,7 +94,7 @@ fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows:
         SpriteBundle {
             texture: asset_server.load("images/planete.png"),
             sprite: Sprite {
-                color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                color: Color::WHITE,
                 ..default()
             },
             transform: Transform {
@@ -111,7 +111,7 @@ fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows:
 fn animate_planet(
     difficulty: Res<Difficulty>,
     windows: Query<&Window>,
-    mut planet_q: Query<(&mut Transform, &mut Sprite), With<Planet>>,
+    mut planet_q: Query<&mut Transform, With<Planet>>,
 ) {
     if difficulty.elapsed < PLANET_APPEAR_TIME {
         return;
@@ -123,10 +123,7 @@ fn animate_planet(
     let progress =
         ((difficulty.elapsed - PLANET_APPEAR_TIME) / PLANET_ANIM_DURATION).clamp(0.0, 1.0);
 
-    for (mut transform, mut sprite) in planet_q.iter_mut() {
-        // Alpha : apparition douce
-        sprite.color.set_a(progress.clamp(0.0, 1.0));
-
+    for mut transform in planet_q.iter_mut() {
         // Courbe ease-in-out : doux au début et à la fin
         let eased = progress * progress * (3.0 - 2.0 * progress);
 

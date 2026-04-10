@@ -62,9 +62,9 @@ impl Difficulty {
 }
 
 /// Temps à partir duquel les astéroïdes ne spawnent plus.
-pub const SPAWN_STOP_TIME: f32 = 26.7;
+pub const SPAWN_STOP_TIME: f32 = 27.7;
 /// Durée de décélération du background après SPAWN_STOP_TIME (en secondes).
-const BG_DECEL_DURATION: f32 = 8.0;
+const BG_DECEL_DURATION: f32 = 9.0;
 /// Vitesse finale du background après décélération.
 const BG_FINAL_SPEED: f32 = 30.0;
 
