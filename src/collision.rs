@@ -3,6 +3,7 @@
 //! le joueur et l'astéroïde sont supprimés, l'état passe à GameOver.
 
 use crate::asteroid::Asteroid;
+use crate::debug::DebugMode;
 use crate::player::Player;
 use crate::state::GameState;
 use bevy::prelude::*;
@@ -26,7 +27,12 @@ fn player_asteroid_collision(
     mut next_state: ResMut<NextState<GameState>>,
     player_q: Query<(Entity, &Transform), With<Player>>,
     asteroid_q: Query<(Entity, &Transform, &Asteroid)>,
+    debug: Res<DebugMode>,
 ) {
+    if debug.0 {
+        return;
+    }
+
     let Ok((player_entity, player_transform)) = player_q.get_single() else {
         return;
     };
