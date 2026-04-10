@@ -69,7 +69,17 @@ fn toggle_debug(
 ) {
     // F2 : sauter à 31 secondes (début du "niveau 2")
     if keyboard.just_pressed(KeyCode::F2) {
-        difficulty.elapsed = 31.0;
+        difficulty.elapsed = crate::difficulty::SPAWN_STOP_TIME;
+        difficulty.spawning_stopped = true;
+        difficulty.charging_played = true;
+        difficulty.boom_played = true;
+        difficulty.boom_14_played = true;
+        difficulty.boom_18_played = true;
+        difficulty.boom_22_played = true;
+        // Vitesse du background à 31s : déjà en décélération depuis 26.7s (4.3s écoulées)
+        let t = (4.3 / 6.0_f32).clamp(0.0, 1.0);
+        let bg_speed_at_stop = 150.0 * (1.0 + 8.0 * 3.0);
+        difficulty.bg_speed_override = Some(bg_speed_at_stop + (50.0 - bg_speed_at_stop) * t);
     }
 
     if keyboard.just_pressed(KeyCode::F1) {
