@@ -157,21 +157,21 @@ fn update_difficulty(
     }
 
     // Paliers de difficulté fixes :
-    // 0-10s    : facteur 1.0
-    // 10s      : facteur 3.0
-    // 14.3s    : facteur 5.0
-    // 18.3s    : facteur 7.0
-    // 22.6s    : facteur 9.0 (max)
+    // 0-10s    : facteur 0.5 (intro calme)
+    // 10s      : facteur 3.5
+    // 14.3s    : facteur 4.5
+    // 18.3s    : facteur 6.5
+    // 22.6s    : facteur 7.5 (max)
     if difficulty.elapsed < 10.0 {
-        difficulty.factor = 1.0;
+        difficulty.factor = 0.5;
     } else if difficulty.elapsed < 14.3 {
-        difficulty.factor = 3.0;
+        difficulty.factor = 3.5;
     } else if difficulty.elapsed < 18.3 {
-        difficulty.factor = 4.0;
+        difficulty.factor = 4.5;
     } else if difficulty.elapsed < 22.6 {
-        difficulty.factor = 6.0;
+        difficulty.factor = 6.5;
     } else {
-        difficulty.factor = 7.0;
+        difficulty.factor = 7.5;
     }
 
     // À 26.7s : arrêt du spawn + décélération du background vers 50 px/s en 6s
