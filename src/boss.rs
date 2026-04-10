@@ -370,6 +370,7 @@ fn boss_flexing(
             // Lancer la musique du boss
             if !difficulty.boss_music_played {
                 difficulty.boss_music_played = true;
+                difficulty.boss_music_start_time = Some(difficulty.elapsed);
                 commands.spawn((
                     AudioBundle {
                         source: asset_server.load("audio/boss.ogg"),

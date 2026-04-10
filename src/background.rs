@@ -85,6 +85,8 @@ fn scroll_background(
 const PLANET_APPEAR_TIME: f32 = 28.0;
 /// Durée de l'animation de zoom (secondes).
 const PLANET_ANIM_DURATION: f32 = 10.0;
+/// Vitesse de rotation de la planète pendant le boss (après 3s de musique boss).
+const PLANETE_BOSS_ROTATION_SPEED: f32 = 0.15;
 
 fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
     let window = windows.single();
@@ -142,7 +144,11 @@ fn animate_planet(
         transform.translation.x = orbit_x;
         transform.translation.y += orbit_y;
 
-        // Rotation très lente sur elle-même
-        transform.rotation = Quat::from_rotation_z(difficulty.elapsed * 0.02);
+        // Rotation : accélère 3s après le lancement de la musique boss
+        let rotation_speed = match difficulty.boss_music_start_time {
+            Some(start) if difficulty.elapsed - start >= 3.0 => PLANETE_BOSS_ROTATION_SPEED,
+            _ => 0.02,
+        };
+        transform.rotation = Quat::from_rotation_z(difficulty.elapsed * rotation_speed);
     }
 }
