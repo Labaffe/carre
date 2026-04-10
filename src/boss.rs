@@ -17,6 +17,7 @@
 //! 2. Définir une `const PHASE_N: PhaseDef`
 //! 3. Ajouter dans `phase_def()` et `boss_phase_logic`
 
+use crate::MusicMain;
 use crate::asteroid::Asteroid;
 use crate::difficulty::Difficulty;
 use crate::explosion::load_frames_from_folder;
@@ -24,7 +25,6 @@ use crate::missile::{Missile, missile_hits_circle};
 use crate::pause::PauseState;
 use crate::player::Player;
 use crate::state::GameState;
-use crate::MusicMain;
 use bevy::prelude::*;
 
 pub struct BossPlugin;
@@ -102,11 +102,11 @@ const BOSS_IDLE_FPS: f32 = 10.0;
 /// Marge du boss par rapport au bord de l'écran (px).
 const BOSS_MARGIN: f32 = 80.0;
 /// Vitesse horizontale constante du boss (px/s).
-const BOSS_PATROL_SPEED_X: f32 = 250.0;
+const BOSS_PATROL_SPEED_X: f32 = 270.0;
 /// Amplitude verticale du mouvement sinusoïdal (fraction de la demi-hauteur écran).
 const BOSS_SINE_AMPLITUDE_Y: f32 = 0.85;
 /// Fréquence verticale (rad/s) — oscillation haut/bas.
-const BOSS_SINE_FREQ_Y: f32 = 3.0;
+const BOSS_SINE_FREQ_Y: f32 = 4.5;
 
 // ─── État machine ───────────────────────────────────────────────────
 
@@ -218,6 +218,7 @@ pub struct BossProjectile {
 struct BossPatrol {
     dir_x: f32,
     sine_time: f32,
+    initialized: bool,
 }
 
 /// Marqueur : le son de flexing a été joué.
@@ -249,13 +250,14 @@ fn preload_boss_idle_frames(mut commands: Commands, asset_server: Res<AssetServe
 fn spawn_boss(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    difficulty: Res<Difficulty>,
+    mut difficulty: ResMut<Difficulty>,
     boss_q: Query<&Boss>,
     windows: Query<&Window>,
 ) {
-    if difficulty.elapsed < BOSS_SPAWN_TIME || !boss_q.is_empty() {
+    if difficulty.elapsed < BOSS_SPAWN_TIME || !boss_q.is_empty() || difficulty.boss_spawned {
         return;
     }
+    difficulty.boss_spawned = true;
 
     let window = windows.single();
     let half_h = window.height() / 2.0;
@@ -302,6 +304,7 @@ fn spawn_boss(
         BossPatrol {
             dir_x: 1.0,
             sine_time: 0.0,
+            initialized: false,
         },
     ));
 }
@@ -560,6 +563,14 @@ fn boss_sinusoidal_movement(
             _ => continue,
         }
 
+        // Initialiser sine_time pour que la sinusoïde démarre à la position Y actuelle
+        if !patrol.initialized {
+            let amplitude = half_h * BOSS_SINE_AMPLITUDE_Y;
+            let ratio = (transform.translation.y / amplitude).clamp(-1.0, 1.0);
+            patrol.sine_time = ratio.asin() / BOSS_SINE_FREQ_Y;
+            patrol.initialized = true;
+        }
+
         // X : vitesse constante, flip aux bords
         transform.translation.x += patrol.dir_x * BOSS_PATROL_SPEED_X * dt;
         if transform.translation.x > half_w {
@@ -675,7 +686,9 @@ fn boss_hit_flash(
             sprite.color = Color::WHITE;
             commands.entity(entity).remove::<BossHitFlash>();
         } else {
-            sprite.color = Color::rgba(100.0, 100.0, 100.0, 1.0);
+            let t = flash.0.fraction(); // 0 → 1
+            let v = 1.0 + (1.0 - t) * 2.0; // 3.0 → 1.0
+            sprite.color = Color::rgba(v, v, v, 1.0);
         }
     }
 }
@@ -787,6 +800,7 @@ fn debug_skip_to_boss(
     difficulty.boss_music_start_time = None;
     difficulty.boss_active_time = None;
     difficulty.landing_played = true;
+    difficulty.boss_spawned = true;
 
     // Despawn le boss existant s'il y en a un
     for entity in boss_q.iter() {
@@ -836,6 +850,8 @@ fn debug_skip_to_boss(
         BossPatrol {
             dir_x: 1.0,
             sine_time: 0.0,
+            initialized: false,
         },
+        BossFlexingSoundPlayed,
     ));
 }

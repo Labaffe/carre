@@ -48,6 +48,8 @@ pub struct Difficulty {
     pub boss_bg_initialized: bool,
     /// Son landing.ogg joué (5s avant la fin de PLANET_ANIM_DURATION).
     pub landing_played: bool,
+    /// Le boss a déjà été spawné (empêche le double spawn avec F3).
+    pub boss_spawned: bool,
 }
 
 impl Default for Difficulty {
@@ -67,6 +69,7 @@ impl Default for Difficulty {
             bg_speed_override: None,
             boss_bg_initialized: false,
             landing_played: false,
+            boss_spawned: false,
         }
     }
 }
