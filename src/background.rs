@@ -38,7 +38,7 @@ const BG_TILE_HEIGHT: f32 = 1534.0;
 /// Vitesse du scroll du background pendant le boss (px/s).
 const BOSS_BG_SCROLL_SPEED: f32 = 150.0;
 /// Vitesse de rotation du background pendant le boss (rad/s, = planète).
-const BOSS_BG_ROTATION_SPEED: f32 = 0.30;
+const BOSS_BG_ROTATION_SPEED: f32 = 0.50;
 
 fn setup_background(
     mut commands: Commands,
@@ -162,7 +162,7 @@ const PLANET_APPEAR_TIME: f32 = 28.0;
 /// Durée de l'animation de zoom (secondes).
 const PLANET_ANIM_DURATION: f32 = 10.0;
 /// Vitesse de rotation de la planète pendant le boss (après 3s de musique boss).
-const PLANETE_BOSS_ROTATION_SPEED: f32 = 0.30;
+const PLANETE_BOSS_ROTATION_SPEED: f32 = 0.50;
 
 fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
     let window = windows.single();
