@@ -17,12 +17,14 @@
 //! 2. Définir une `const PHASE_N: PhaseDef`
 //! 3. Ajouter dans `phase_def()` et `boss_phase_logic`
 
+use crate::asteroid::Asteroid;
 use crate::difficulty::Difficulty;
 use crate::explosion::load_frames_from_folder;
 use crate::missile::{Missile, missile_hits_circle};
 use crate::pause::PauseState;
 use crate::player::Player;
 use crate::state::GameState;
+use crate::MusicMain;
 use bevy::prelude::*;
 
 pub struct BossPlugin;
@@ -50,6 +52,10 @@ impl Plugin for BossPlugin {
                 )
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),
+            )
+            .add_systems(
+                Update,
+                debug_skip_to_boss.run_if(in_state(GameState::Playing)),
             );
     }
 }
@@ -91,14 +97,16 @@ const BOSS_HIT_FLASH_DURATION: f32 = 0.06;
 /// FPS de l'animation idle.
 const BOSS_IDLE_FPS: f32 = 10.0;
 
-// ─── Pattern sinusoïdal (Phase 1) ──────────────────────────────────
+// ─── Patrol pattern (Phase 1) ──────────────────────────────────────
 
 /// Marge du boss par rapport au bord de l'écran (px).
 const BOSS_MARGIN: f32 = 80.0;
-/// Fréquence horizontale (rad/s).
-const BOSS_SINE_FREQ_X: f32 = 2.4;
-/// Fréquence verticale (rad/s) — oscillation rapide haut/bas.
-const BOSS_SINE_FREQ_Y: f32 = 3.5;
+/// Vitesse horizontale constante du boss (px/s).
+const BOSS_PATROL_SPEED_X: f32 = 250.0;
+/// Amplitude verticale du mouvement sinusoïdal (fraction de la demi-hauteur écran).
+const BOSS_SINE_AMPLITUDE_Y: f32 = 0.85;
+/// Fréquence verticale (rad/s) — oscillation haut/bas.
+const BOSS_SINE_FREQ_Y: f32 = 3.0;
 
 // ─── État machine ───────────────────────────────────────────────────
 
@@ -205,6 +213,13 @@ pub struct BossProjectile {
     pub radius: f32,
 }
 
+/// Direction horizontale du patrol (+1.0 ou -1.0), flip aux bords.
+#[derive(Component)]
+struct BossPatrol {
+    dir_x: f32,
+    sine_time: f32,
+}
+
 /// Marqueur : le son de flexing a été joué.
 #[derive(Component)]
 struct BossFlexingSoundPlayed;
@@ -284,6 +299,10 @@ fn spawn_boss(
             PHASE_1.pattern_interval,
             TimerMode::Repeating,
         )),
+        BossPatrol {
+            dir_x: 1.0,
+            sine_time: 0.0,
+        },
     ));
 }
 
@@ -516,36 +535,44 @@ fn boss_phase_logic(
 /// Activé uniquement quand la rotation planète/background a commencé
 /// (3s après le lancement de la musique boss).
 fn boss_sinusoidal_movement(
+    time: Res<Time>,
     difficulty: Res<Difficulty>,
-    mut boss_q: Query<(&Boss, &mut Transform), Without<Player>>,
+    mut boss_q: Query<(&Boss, &mut Transform, &mut BossPatrol), Without<Player>>,
     windows: Query<&Window>,
 ) {
     // Attendre que la rotation planète soit active
-    let pattern_elapsed = match difficulty.boss_music_start_time {
-        Some(start) => {
-            let since = difficulty.elapsed - start - 3.0;
-            if since < 0.0 {
-                return;
-            }
-            since
-        }
-        None => return,
+    let active = match difficulty.boss_music_start_time {
+        Some(start) => difficulty.elapsed >= start + 3.0,
+        None => false,
     };
+    if !active {
+        return;
+    }
 
+    let dt = time.delta_seconds();
     let window = windows.single();
     let half_w = window.width() / 2.0 - BOSS_MARGIN;
     let half_h = window.height() / 2.0 - BOSS_MARGIN;
 
-    for (boss, mut transform) in boss_q.iter_mut() {
+    for (boss, mut transform, mut patrol) in boss_q.iter_mut() {
         match &boss.state {
             BossState::Active(_) => {}
             _ => continue,
         }
 
-        let x = half_w * (pattern_elapsed * BOSS_SINE_FREQ_X).sin();
-        let y = half_h * (pattern_elapsed * BOSS_SINE_FREQ_Y).sin();
+        // X : vitesse constante, flip aux bords
+        transform.translation.x += patrol.dir_x * BOSS_PATROL_SPEED_X * dt;
+        if transform.translation.x > half_w {
+            transform.translation.x = half_w;
+            patrol.dir_x = -1.0;
+        } else if transform.translation.x < -half_w {
+            transform.translation.x = -half_w;
+            patrol.dir_x = 1.0;
+        }
 
-        transform.translation.x = x;
+        // Y : sinusoïde
+        patrol.sine_time += dt;
+        let y = (patrol.sine_time * BOSS_SINE_FREQ_Y).sin() * half_h * BOSS_SINE_AMPLITUDE_Y;
         transform.translation.y = y;
     }
 }
@@ -715,4 +742,100 @@ fn cleanup_boss_projectiles_offscreen(
             commands.entity(entity).despawn();
         }
     }
+}
+
+// ─── F3 : skip direct au flexing du boss ────────────────────────────
+
+fn debug_skip_to_boss(
+    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    asset_server: Res<AssetServer>,
+    mut difficulty: ResMut<Difficulty>,
+    boss_q: Query<Entity, With<Boss>>,
+    asteroid_q: Query<Entity, With<Asteroid>>,
+    music_q: Query<Entity, With<MusicMain>>,
+    boss_music_q: Query<Entity, With<MusicBoss>>,
+) {
+    if !keyboard.just_pressed(KeyCode::F3) {
+        return;
+    }
+
+    // Despawn tous les astéroïdes
+    for entity in asteroid_q.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+
+    // Couper la musique principale
+    for entity in music_q.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+
+    // Couper la musique boss si déjà en cours
+    for entity in boss_music_q.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+
+    // Avancer le temps juste après le spawn du boss
+    difficulty.elapsed = BOSS_SPAWN_TIME + 0.1;
+    difficulty.spawning_stopped = true;
+    difficulty.charging_played = true;
+    difficulty.boom_played = true;
+    difficulty.boom_14_played = true;
+    difficulty.boom_18_played = true;
+    difficulty.boom_22_played = true;
+    difficulty.boss_music_played = false;
+    difficulty.boss_music_start_time = None;
+    difficulty.boss_active_time = None;
+    difficulty.landing_played = true;
+
+    // Despawn le boss existant s'il y en a un
+    for entity in boss_q.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+
+    // Son de flexing
+    commands.spawn(AudioBundle {
+        source: asset_server.load("audio/boss_start_2.ogg"),
+        settings: PlaybackSettings::DESPAWN,
+    });
+
+    // Spawn le boss directement en état Flexing, à sa taille finale
+    commands.spawn((
+        SpriteBundle {
+            texture: asset_server.load("images/boss/idle/frame000.png"),
+            sprite: Sprite {
+                custom_size: Some(Vec2::splat(BOSS_SPRITE_SIZE)),
+                color: Color::WHITE,
+                ..default()
+            },
+            transform: Transform {
+                translation: Vec3::new(0.0, BOSS_TARGET_Y, 0.5),
+                scale: Vec3::splat(1.0),
+                ..default()
+            },
+            ..default()
+        },
+        Boss {
+            health: BOSS_MAX_HEALTH,
+            max_health: BOSS_MAX_HEALTH,
+            state: BossState::Flexing,
+            radius: BOSS_RADIUS,
+            anim_timer: Timer::from_seconds(
+                BOSS_FLEXING_WAIT + BOSS_START_2_ANIMATION_DURATION,
+                TimerMode::Once,
+            ),
+        },
+        BossIdleAnim {
+            timer: Timer::from_seconds(1.0 / BOSS_IDLE_FPS, TimerMode::Repeating),
+            current_frame: 0,
+        },
+        PatternTimer(Timer::from_seconds(
+            PHASE_1.pattern_interval,
+            TimerMode::Repeating,
+        )),
+        BossPatrol {
+            dir_x: 1.0,
+            sine_time: 0.0,
+        },
+    ));
 }

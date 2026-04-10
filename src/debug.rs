@@ -2,6 +2,7 @@
 //! dessine les hitboxes de tous les `Hittable` (cercles ou rectangles OBB),
 //! et affiche le nom du sprite au-dessus de chaque astéroïde (ex: "x007").
 
+use crate::MusicMain;
 use crate::asteroid::Asteroid;
 use crate::boss::{Boss, BossProjectile};
 use crate::collision::Hittable;
@@ -9,7 +10,6 @@ use crate::difficulty::Difficulty;
 use crate::missile::Missile;
 use crate::player::Player;
 use crate::weapon::HitboxShape;
-use crate::MusicMain;
 use bevy::prelude::*;
 
 pub struct DebugPlugin;
@@ -122,7 +122,14 @@ fn update_debug_ui(
 
     if let Ok(mut text) = ui_q.get_single_mut() {
         text.sections[0].value = format!(
-            "[DEBUG]\nFPS        : {:.0}\nTimer      : {:02}:{:02}\nDifficulté : x{:.2}",
+            "[DEBUG] GOD MODE\n\
+             FPS        : {:.0}\n\
+             Timer      : {:02}:{:02}\n\
+             Difficulte : x{:.2}\n\
+             \n\
+             F1 : Debug Mode ON/OFF\n\
+             F2 : Skip asteroides\n\
+             F3 : Skip au boss",
             fps, minutes, seconds, factor
         );
     }
@@ -195,18 +202,17 @@ fn manage_asteroid_labels(
 }
 
 /// Dessine la hitbox d'un Hittable via gizmos.
-fn draw_hittable<T: Hittable>(
-    gizmos: &mut Gizmos,
-    query: &Query<(&Transform, &T)>,
-    color: Color,
-) {
+fn draw_hittable<T: Hittable>(gizmos: &mut Gizmos, query: &Query<(&Transform, &T)>, color: Color) {
     for (transform, hittable) in query.iter() {
         let pos = transform.translation.truncate();
         match hittable.hitbox_shape() {
             HitboxShape::Circle(r) => {
                 gizmos.circle_2d(pos, r, color);
             }
-            HitboxShape::Rect { half_length, half_width } => {
+            HitboxShape::Rect {
+                half_length,
+                half_width,
+            } => {
                 let angle = transform.rotation.to_euler(EulerRot::ZYX).0;
                 let cos = angle.cos();
                 let sin = angle.sin();

@@ -231,6 +231,28 @@ fn setup_main_menu(
             ));
         });
 
+    // Indication F1 en haut à droite
+    commands.spawn((
+        TextBundle {
+            text: Text::from_section(
+                "F1 : Debug Mode",
+                TextStyle {
+                    font,
+                    font_size: 14.0,
+                    color: Color::rgba(0.4, 0.4, 0.4, 1.0),
+                },
+            ),
+            style: Style {
+                position_type: PositionType::Absolute,
+                top: Val::Px(15.0),
+                right: Val::Px(15.0),
+                ..default()
+            },
+            ..default()
+        },
+        MainMenuUI,
+    ));
+
     commands.insert_resource(MainMenuAnim {
         elapsed: 0.0,
         selected: 0,
