@@ -18,7 +18,7 @@ mod weapon;
 
 use asteroid::{Asteroid, AsteroidPlugin};
 use background::{Background, BackgroundPlugin, Planet};
-use boss::{Boss, BossPlugin, BossProjectile};
+use boss::{Boss, BossPlugin, BossProjectile, MusicBoss};
 use collision::CollisionPlugin;
 use crosshair::CrosshairPlugin;
 use debug::DebugPlugin;
@@ -100,6 +100,7 @@ fn cleanup_playing(
     bosses: Query<Entity, With<Boss>>,
     boss_projectiles: Query<Entity, With<BossProjectile>>,
     music: Query<Entity, With<MusicMain>>,
+    boss_music: Query<Entity, With<MusicBoss>>,
 ) {
     for entity in players.iter() {
         commands.entity(entity).despawn_recursive();
@@ -126,6 +127,9 @@ fn cleanup_playing(
         commands.entity(entity).despawn_recursive();
     }
     for entity in music.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+    for entity in boss_music.iter() {
         commands.entity(entity).despawn_recursive();
     }
 }

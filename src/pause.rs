@@ -6,6 +6,7 @@
 
 use crate::state::GameState;
 use crate::MusicMain;
+use crate::boss::MusicBoss;
 use bevy::app::AppExit;
 use bevy::prelude::*;
 
@@ -61,11 +62,15 @@ fn handle_pause_input(
     mut text_q: Query<(&mut Text, &PauseOption)>,
     asset_server: Res<AssetServer>,
     music_q: Query<&AudioSink, With<MusicMain>>,
+    boss_music_q: Query<&AudioSink, With<MusicBoss>>,
 ) {
     if keyboard.just_pressed(KeyCode::Escape) {
         if pause.paused {
             // Reprendre la musique
             for sink in music_q.iter() {
+                sink.play();
+            }
+            for sink in boss_music_q.iter() {
                 sink.play();
             }
             // Reprendre
@@ -77,6 +82,9 @@ fn handle_pause_input(
             time.pause();
             // Mettre la musique en pause
             for sink in music_q.iter() {
+                sink.pause();
+            }
+            for sink in boss_music_q.iter() {
                 sink.pause();
             }
             // Son de pause
@@ -129,6 +137,9 @@ fn handle_pause_input(
             0 => {
                 // Reprendre la musique
                 for sink in music_q.iter() {
+                    sink.play();
+                }
+                for sink in boss_music_q.iter() {
                     sink.play();
                 }
                 // Reprendre

@@ -174,6 +174,10 @@ pub struct BossHitFlash(pub Timer);
 #[derive(Component)]
 pub struct PatternTimer(pub Timer);
 
+/// Marqueur pour la musique du boss (pause/cleanup).
+#[derive(Component)]
+pub struct MusicBoss;
+
 /// Projectile tiré par le boss.
 #[derive(Component)]
 pub struct BossProjectile {
@@ -302,10 +306,13 @@ fn boss_intro(
             // Lancer la musique du boss
             if !difficulty.boss_music_played {
                 difficulty.boss_music_played = true;
-                commands.spawn(AudioBundle {
-                    source: asset_server.load("audio/boss.ogg"),
-                    settings: PlaybackSettings::LOOP,
-                });
+                commands.spawn((
+                    AudioBundle {
+                        source: asset_server.load("audio/boss.ogg"),
+                        settings: PlaybackSettings::LOOP,
+                    },
+                    MusicBoss,
+                ));
             }
 
             if let Some(sound) = PHASE_1.enter_sound {
