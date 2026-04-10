@@ -36,6 +36,7 @@ fn main() {
             primary_window: Some(Window {
                 title: "Carré".to_string(),
                 mode: bevy::window::WindowMode::BorderlessFullscreen,
+                visible: false,
                 ..default()
             }),
             ..default()
@@ -58,6 +59,7 @@ fn main() {
             PausePlugin,
         ))
         .add_systems(Startup, setup)
+        .add_systems(Update, show_window_after_render.run_if(run_once()))
         .add_systems(OnEnter(GameState::Playing), start_game_music)
         .add_systems(OnExit(GameState::Playing), cleanup_playing)
         .run();
@@ -71,6 +73,11 @@ pub struct MusicGameOver;
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
+}
+
+/// Affiche la fenêtre après la première frame (évite le flash blanc Windows).
+fn show_window_after_render(mut windows: Query<&mut Window>) {
+    windows.single_mut().visible = true;
 }
 
 /// Système lancé à chaque entrée en Playing : démarre la musique de jeu.
