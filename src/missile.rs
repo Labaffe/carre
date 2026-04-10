@@ -225,9 +225,8 @@ fn missile_asteroid_collision(
                         commands.entity(asteroid_entity).despawn();
                         despawned_asteroids.insert(asteroid_entity);
                     }
-                } else {
-                    commands.entity(asteroid_entity)
-                        .insert(HitFlash(Timer::from_seconds(0.06, TimerMode::Once)));
+                } else if let Some(mut ent) = commands.get_entity(asteroid_entity) {
+                    ent.insert(HitFlash(Timer::from_seconds(0.06, TimerMode::Once)));
                     commands.spawn(AudioBundle {
                         source: asset_server.load("audio/asteroid_hit.ogg"),
                         settings: PlaybackSettings::DESPAWN,

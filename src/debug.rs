@@ -4,9 +4,9 @@
 
 use crate::MusicMain;
 use crate::asteroid::Asteroid;
-use crate::boss::{Boss, BossProjectile};
 use crate::collision::Hittable;
 use crate::difficulty::Difficulty;
+use crate::enemy::{Enemy, EnemyProjectile};
 use crate::missile::Missile;
 use crate::player::Player;
 use crate::weapon::HitboxShape;
@@ -71,7 +71,6 @@ fn toggle_debug(
     mut difficulty: ResMut<crate::difficulty::Difficulty>,
     music_q: Query<Entity, With<MusicMain>>,
 ) {
-    // F2 : sauter à 31 secondes (début du "niveau 2")
     if keyboard.just_pressed(KeyCode::F2) {
         difficulty.elapsed = crate::difficulty::SPAWN_STOP_TIME;
         difficulty.spawning_stopped = true;
@@ -80,12 +79,10 @@ fn toggle_debug(
         difficulty.boom_14_played = true;
         difficulty.boom_18_played = true;
         difficulty.boom_22_played = true;
-        // Vitesse du background à 31s : déjà en décélération depuis 26.7s (4.3s écoulées)
         let t = (4.3 / 6.0_f32).clamp(0.0, 1.0);
         let bg_speed_at_stop = 150.0 * (1.0 + 8.0 * 3.0);
         difficulty.bg_speed_override = Some(bg_speed_at_stop + (50.0 - bg_speed_at_stop) * t);
 
-        // Couper la musique gradius immédiatement
         for entity in music_q.iter() {
             commands.entity(entity).despawn_recursive();
         }
@@ -144,7 +141,6 @@ fn manage_asteroid_labels(
         Without<Asteroid>,
     >,
 ) {
-    // Supprimer les labels dont l'astéroïde n'existe plus
     for (label_entity, label, _, _) in label_q.iter() {
         if asteroid_q.get(label.0).is_err() {
             commands.entity(label_entity).despawn();
@@ -152,14 +148,12 @@ fn manage_asteroid_labels(
     }
 
     if !debug.0 {
-        // Cacher tous les labels
         for (_, _, _, mut vis) in label_q.iter_mut() {
             *vis = Visibility::Hidden;
         }
         return;
     }
 
-    // Mettre à jour la position des labels existants
     let mut labeled: std::collections::HashSet<Entity> = std::collections::HashSet::new();
     for (_, label, mut label_transform, mut vis) in label_q.iter_mut() {
         labeled.insert(label.0);
@@ -173,7 +167,6 @@ fn manage_asteroid_labels(
         }
     }
 
-    // Créer les labels pour les nouveaux astéroïdes
     for (entity, transform, asteroid) in asteroid_q.iter() {
         if labeled.contains(&entity) {
             continue;
@@ -239,8 +232,8 @@ fn draw_hitboxes(
     player_q: Query<(&Transform, &Player)>,
     asteroid_q: Query<(&Transform, &Asteroid)>,
     missile_q: Query<(&Transform, &Missile)>,
-    boss_q: Query<(&Transform, &Boss)>,
-    boss_proj_q: Query<(&Transform, &BossProjectile)>,
+    enemy_q: Query<(&Transform, &Enemy)>,
+    enemy_proj_q: Query<(&Transform, &EnemyProjectile)>,
 ) {
     if !debug.0 {
         return;
@@ -249,6 +242,6 @@ fn draw_hitboxes(
     draw_hittable(&mut gizmos, &player_q, Color::GREEN);
     draw_hittable(&mut gizmos, &asteroid_q, Color::RED);
     draw_hittable(&mut gizmos, &missile_q, Color::YELLOW);
-    draw_hittable(&mut gizmos, &boss_q, Color::CYAN);
-    draw_hittable(&mut gizmos, &boss_proj_q, Color::rgba(1.0, 0.5, 0.0, 1.0));
+    draw_hittable(&mut gizmos, &enemy_q, Color::CYAN);
+    draw_hittable(&mut gizmos, &enemy_proj_q, Color::rgba(1.0, 0.5, 0.0, 1.0));
 }

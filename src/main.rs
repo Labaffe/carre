@@ -8,6 +8,7 @@ mod countdown;
 mod crosshair;
 mod debug;
 mod difficulty;
+pub mod enemy;
 mod explosion;
 mod gameover;
 mod mainmenu;
@@ -19,12 +20,13 @@ mod weapon;
 
 use asteroid::{Asteroid, AsteroidPlugin};
 use background::{Background, BackgroundPlugin, Planet};
-use boss::{Boss, BossPlugin, BossProjectile, MusicBoss};
+use boss::{BossPlugin, MusicBoss};
 use collision::CollisionPlugin;
 use countdown::CountdownPlugin;
 use crosshair::CrosshairPlugin;
 use debug::DebugPlugin;
 use difficulty::DifficultyPlugin;
+use enemy::{Enemy, EnemyPlugin, EnemyProjectile};
 use explosion::{Explosion, ExplosionPlugin};
 use gameover::GameOverPlugin;
 use mainmenu::MainMenuPlugin;
@@ -63,6 +65,9 @@ fn main() {
             ExplosionPlugin,
             WeaponPlugin,
             PausePlugin,
+        ))
+        .add_plugins((
+            EnemyPlugin,
             BossPlugin,
         ))
         .add_systems(Startup, setup)
@@ -80,7 +85,7 @@ pub struct GameSettings {
 
 impl Default for GameSettings {
     fn default() -> Self {
-        Self { master_volume: 0.5 }
+        Self { master_volume: 0.3 }
     }
 }
 
@@ -116,8 +121,8 @@ fn cleanup_playing(
     explosions: Query<Entity, With<Explosion>>,
     backgrounds: Query<Entity, With<Background>>,
     planets: Query<Entity, With<Planet>>,
-    bosses: Query<Entity, With<Boss>>,
-    boss_projectiles: Query<Entity, With<BossProjectile>>,
+    enemies: Query<Entity, With<Enemy>>,
+    enemy_projectiles: Query<Entity, With<EnemyProjectile>>,
     music: Query<Entity, With<MusicMain>>,
     boss_music: Query<Entity, With<MusicBoss>>,
 ) {
@@ -139,10 +144,10 @@ fn cleanup_playing(
     for entity in planets.iter() {
         commands.entity(entity).despawn_recursive();
     }
-    for entity in bosses.iter() {
+    for entity in enemies.iter() {
         commands.entity(entity).despawn_recursive();
     }
-    for entity in boss_projectiles.iter() {
+    for entity in enemy_projectiles.iter() {
         commands.entity(entity).despawn_recursive();
     }
     for entity in music.iter() {

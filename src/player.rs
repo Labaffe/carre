@@ -7,21 +7,58 @@
 use crate::crosshair::Crosshair;
 use crate::difficulty::{BoomEvent, Difficulty};
 use crate::explosion::load_frames_from_folder;
-use crate::pause::PauseState;
+use crate::pause::not_paused;
 use crate::state::GameState;
 use crate::weapon::Weapon;
 use bevy::prelude::*;
 
-fn not_paused(pause: Res<PauseState>) -> bool {
-    !pause.paused
+// ─── Système de vies ──────────────────────────────────────────────
+
+/// Nombre de vies au départ.
+const PLAYER_MAX_LIVES: i32 = 3;
+/// Durée d'invincibilité après un hit (secondes).
+pub const INVINCIBLE_DURATION: f32 = 2.0;
+/// Fréquence de clignotement pendant l'invincibilité (Hz).
+const INVINCIBLE_BLINK_RATE: f32 = 3.0;
+/// Fréquence de clignotement quand il reste 1 vie (Hz).
+const LAST_LIFE_BLINK_RATE: f32 = 3.0;
+/// Bonus de vitesse quand il reste 1 vie (multiplicateur).
+const LAST_LIFE_SPEED_MULT: f32 = 1.25;
+
+/// Nombre de vies restantes.
+#[derive(Resource)]
+pub struct PlayerLives {
+    pub lives: i32,
 }
+
+impl Default for PlayerLives {
+    fn default() -> Self {
+        Self {
+            lives: PLAYER_MAX_LIVES,
+        }
+    }
+}
+
+/// Invincibilité temporaire après un hit.
+#[derive(Component)]
+pub struct Invincible(pub Timer);
+
+/// Marqueur pour les icônes de vie dans l'UI.
+#[derive(Component)]
+pub struct LivesUI;
+
+/// Marqueur individuel pour chaque icône de vie.
+#[derive(Component)]
+struct LifeIcon(i32);
 
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, preload_ship_textures)
-            .add_systems(OnEnter(GameState::Playing), setup_player)
+        app.init_resource::<PlayerLives>()
+            .add_systems(Startup, preload_ship_textures)
+            .add_systems(OnEnter(GameState::Playing), (setup_player, setup_lives_ui))
+            .add_systems(OnExit(GameState::Playing), cleanup_lives_ui)
             .add_systems(
                 Update,
                 (
@@ -31,6 +68,9 @@ impl Plugin for PlayerPlugin {
                     animate_ship,
                     boom_flash_trigger,
                     boom_flash_update,
+                    update_invincibility,
+                    last_life_blink,
+                    update_lives_ui,
                 )
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),
@@ -279,5 +319,116 @@ fn boom_flash_update(
             let intensity = 1.0 + (1.0 - t) * 8.0;
             sprite.color = Color::rgba(intensity, intensity, intensity, 1.0);
         }
+    }
+}
+
+// ─── Invincibilité ────────────────────────────────────────────────
+
+fn update_invincibility(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut Sprite, &mut Invincible), With<Player>>,
+) {
+    for (entity, mut sprite, mut inv) in query.iter_mut() {
+        inv.0.tick(time.delta());
+
+        if inv.0.finished() {
+            sprite.color = Color::WHITE;
+            commands.entity(entity).remove::<Invincible>();
+        } else {
+            // Clignotement rapide : alternance visible/semi-transparent
+            let blink =
+                (inv.0.elapsed_secs() * INVINCIBLE_BLINK_RATE * std::f32::consts::TAU).sin();
+            let alpha = if blink > 0.0 { 1.0 } else { 0.0 };
+            sprite.color = Color::rgba(1.0, 1.0, 1.0, alpha);
+        }
+    }
+}
+
+// ─── Dernière vie : clignotement continu + boost vitesse ──────────
+
+fn last_life_blink(
+    lives: Res<PlayerLives>,
+    difficulty: Res<Difficulty>,
+    mut query: Query<(&mut Sprite, &mut ShipPhase, Option<&Invincible>), With<Player>>,
+) {
+    for (mut sprite, mut ship, invincible) in query.iter_mut() {
+        // Boost de vitesse à 1 vie
+        let base_speed = match ship.phase {
+            PlayerPhase::Phase1 => PHASE_1_SPEED,
+            PlayerPhase::Phase2 => PHASE_2_SPEED,
+            PlayerPhase::Phase3 => PHASE_3_SPEED,
+        };
+        if lives.lives == 1 {
+            ship.speed = base_speed * LAST_LIFE_SPEED_MULT;
+        } else {
+            ship.speed = base_speed;
+        }
+
+        // Clignotement dernière vie (style boss touché) — skip si déjà en invincibilité
+        if lives.lives == 1 && invincible.is_none() {
+            let t = (difficulty.elapsed * LAST_LIFE_BLINK_RATE * std::f32::consts::TAU).sin();
+            let v = 1.0 + (t * 0.5 + 0.5) * 2.0; // pulse entre 1.0 et 3.0
+            sprite.color = Color::rgba(v, v, v, 1.0);
+        }
+    }
+}
+
+// ─── UI des vies ──────────────────────────────────────────────────
+
+fn setup_lives_ui(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut lives: ResMut<PlayerLives>,
+) {
+    *lives = PlayerLives::default();
+
+    let texture = asset_server.load("images/player_ship/ship_0.png");
+
+    commands
+        .spawn((
+            NodeBundle {
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(20.0),
+                    left: Val::Px(20.0),
+                    column_gap: Val::Px(12.0),
+                    ..default()
+                },
+                ..default()
+            },
+            LivesUI,
+        ))
+        .with_children(|parent| {
+            for i in 0..PLAYER_MAX_LIVES {
+                parent.spawn((
+                    ImageBundle {
+                        image: UiImage::new(texture.clone()),
+                        style: Style {
+                            width: Val::Px(64.0),
+                            height: Val::Px(64.0),
+                            ..default()
+                        },
+                        ..default()
+                    },
+                    LifeIcon(i),
+                ));
+            }
+        });
+}
+
+fn update_lives_ui(lives: Res<PlayerLives>, mut icons: Query<(&LifeIcon, &mut Visibility)>) {
+    for (icon, mut vis) in icons.iter_mut() {
+        if icon.0 < lives.lives {
+            *vis = Visibility::Visible;
+        } else {
+            *vis = Visibility::Hidden;
+        }
+    }
+}
+
+fn cleanup_lives_ui(mut commands: Commands, query: Query<Entity, With<LivesUI>>) {
+    for entity in query.iter() {
+        commands.entity(entity).despawn_recursive();
     }
 }

@@ -23,6 +23,13 @@ impl Plugin for PausePlugin {
     }
 }
 
+// ─── Run condition partagée ─────────────────────────────────────────
+
+/// Run condition : le jeu n'est pas en pause.
+pub fn not_paused(pause: Res<PauseState>) -> bool {
+    !pause.paused
+}
+
 // ─── Ressource ──────────────────────────────────────────────────────
 
 #[derive(Resource, Default)]

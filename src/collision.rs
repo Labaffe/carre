@@ -1,14 +1,15 @@
-//! Collision joueur ↔ entités hostiles (astéroïdes, boss, projectiles boss).
-//! Tout objet implémentant le trait `Hittable` peut tuer le joueur au contact.
+//! Collision joueur ↔ entités hostiles (astéroïdes, ennemis, projectiles ennemis).
+//! Tout objet implémentant le trait `Hittable` peut blesser le joueur au contact.
 
 use crate::asteroid::Asteroid;
-use crate::boss::{Boss, BossProjectile, BossState};
 use crate::debug::DebugMode;
+use crate::enemy::{Enemy, EnemyProjectile, EnemyState};
 use crate::missile::Missile;
-use crate::player::Player;
+use crate::player::{Invincible, Player, PlayerLives, INVINCIBLE_DURATION};
 use crate::state::GameState;
 use crate::weapon::HitboxShape;
 use bevy::prelude::*;
+use std::time::Duration;
 
 pub struct CollisionPlugin;
 
@@ -18,8 +19,8 @@ impl Plugin for CollisionPlugin {
             Update,
             (
                 player_collision::<Asteroid>,
-                player_collision::<Boss>,
-                player_collision::<BossProjectile>,
+                player_collision::<Enemy>,
+                player_collision::<EnemyProjectile>,
             )
                 .run_if(in_state(GameState::Playing)),
         );
@@ -33,9 +34,8 @@ pub const PLAYER_RADIUS: f32 = 45.0;
 pub trait Hittable: Component {
     fn hitbox_shape(&self) -> HitboxShape;
     /// Si true, l'entité hostile est despawnée au contact avec le joueur.
-    /// Par défaut true (astéroïdes). Le boss ne meurt pas au contact.
     fn despawn_on_hit(&self) -> bool { true }
-    /// Si false, la collision est ignorée (ex: boss en animation d'entrée).
+    /// Si false, la collision est ignorée (ex: ennemi en animation d'entrée).
     fn is_dangerous(&self) -> bool { true }
 }
 
@@ -51,17 +51,17 @@ impl Hittable for Asteroid {
     }
 }
 
-impl Hittable for Boss {
+impl Hittable for Enemy {
     fn hitbox_shape(&self) -> HitboxShape {
         HitboxShape::Circle(self.radius)
     }
     fn despawn_on_hit(&self) -> bool { false }
     fn is_dangerous(&self) -> bool {
-        matches!(self.state, BossState::Active(_))
+        matches!(self.state, EnemyState::Active(_))
     }
 }
 
-impl Hittable for BossProjectile {
+impl Hittable for EnemyProjectile {
     fn hitbox_shape(&self) -> HitboxShape {
         HitboxShape::Circle(self.radius)
     }
@@ -76,17 +76,23 @@ impl Hittable for Missile {
 fn player_collision<T: Hittable>(
     mut commands: Commands,
     mut next_state: ResMut<NextState<GameState>>,
-    player_q: Query<(Entity, &Transform), With<Player>>,
+    player_q: Query<(Entity, &Transform, Option<&Invincible>), With<Player>>,
     hostile_q: Query<(Entity, &Transform, &T)>,
     debug: Res<DebugMode>,
+    mut lives: ResMut<PlayerLives>,
+    asset_server: Res<AssetServer>,
 ) {
     if debug.0 {
         return;
     }
 
-    let Ok((player_entity, player_transform)) = player_q.get_single() else {
+    let Ok((player_entity, player_transform, invincible)) = player_q.get_single() else {
         return;
     };
+
+    if invincible.is_some() {
+        return;
+    }
 
     for (hostile_entity, hostile_transform, hittable) in hostile_q.iter() {
         if !hittable.is_dangerous() {
@@ -105,13 +111,29 @@ fn player_collision<T: Hittable>(
         };
 
         if distance < combined_radius {
-            commands.entity(player_entity).despawn_recursive();
             if hittable.despawn_on_hit() {
                 commands.entity(hostile_entity).despawn();
             }
-            next_state.set(GameState::GameOver);
+
+            lives.lives -= 1;
+
+            commands.spawn(AudioBundle {
+                source: asset_server.load("audio/hurt.ogg"),
+                settings: PlaybackSettings::DESPAWN,
+            });
+
+            if lives.lives <= 0 {
+                commands.entity(player_entity).despawn_recursive();
+                next_state.set(GameState::GameOver);
+            } else {
+                commands.entity(player_entity).insert(
+                    Invincible(Timer::new(
+                        Duration::from_secs_f32(INVINCIBLE_DURATION),
+                        TimerMode::Once,
+                    )),
+                );
+            }
             return;
         }
     }
 }
-
