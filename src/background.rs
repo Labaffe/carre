@@ -220,11 +220,19 @@ fn animate_planet(
         transform.translation.x = orbit_x;
         transform.translation.y += orbit_y;
 
-        // Rotation : accélère 3s après le lancement de la musique boss
-        let rotation_speed = match difficulty.boss_music_start_time {
-            Some(start) if difficulty.elapsed - start >= 3.0 => PLANETE_BOSS_ROTATION_SPEED,
-            _ => 0.02,
+        // Rotation : accélère 3s après le lancement de la musique boss.
+        // On accumule l'angle pour éviter un saut brutal au changement de vitesse.
+        let base_speed = 0.02;
+        let angle = match difficulty.boss_music_start_time {
+            Some(start) if difficulty.elapsed - start >= 3.0 => {
+                let switch_time = start + 3.0;
+                // Angle accumulé avant la transition + angle depuis la transition
+                let angle_before = switch_time * base_speed;
+                let elapsed_since = difficulty.elapsed - switch_time;
+                angle_before + elapsed_since * PLANETE_BOSS_ROTATION_SPEED
+            }
+            _ => difficulty.elapsed * base_speed,
         };
-        transform.rotation = Quat::from_rotation_z(difficulty.elapsed * rotation_speed);
+        transform.rotation = Quat::from_rotation_z(angle);
     }
 }
