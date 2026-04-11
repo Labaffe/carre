@@ -345,11 +345,13 @@ fn missile_enemy_collision(
     let mut despawned_missiles = std::collections::HashSet::new();
 
     for (enemy_entity, enemy_transform, mut enemy) in enemy_q.iter_mut() {
-        // Invincible sauf en Active
-        match &enemy.state {
-            EnemyState::Active(_) => {}
-            _ => continue,
+        // Ignorer les ennemis morts
+        if matches!(enemy.state, EnemyState::Dying | EnemyState::Dead) {
+            continue;
         }
+
+        let is_vulnerable = matches!(enemy.state, EnemyState::Active(_));
+
         for (missile_entity, missile_transform, missile) in missile_q.iter() {
             if despawned_missiles.contains(&missile_entity) {
                 continue;
@@ -362,24 +364,30 @@ fn missile_enemy_collision(
                 enemy.radius,
             );
             if hit {
-                enemy.health -= 1;
-                score.add(1);
+                // Le missile est toujours détruit au contact
                 if let Some(mut e) = commands.get_entity(missile_entity) {
                     e.despawn();
                 }
                 despawned_missiles.insert(missile_entity);
 
-                if let Some(mut ent) = commands.get_entity(enemy_entity) {
-                    ent.insert(EnemyHitFlash(Timer::from_seconds(
-                        HIT_FLASH_DURATION,
-                        TimerMode::Once,
-                    )));
+                // Dégâts uniquement si l'ennemi est vulnérable (Active)
+                if is_vulnerable {
+                    enemy.health -= 1;
+                    score.add(1);
+
+                    if let Some(mut ent) = commands.get_entity(enemy_entity) {
+                        ent.insert(EnemyHitFlash(Timer::from_seconds(
+                            HIT_FLASH_DURATION,
+                            TimerMode::Once,
+                        )));
+                    }
+
+                    commands.spawn(AudioBundle {
+                        source: asset_server.load(enemy.hit_sound),
+                        settings: PlaybackSettings::DESPAWN,
+                    });
                 }
 
-                commands.spawn(AudioBundle {
-                    source: asset_server.load(enemy.hit_sound),
-                    settings: PlaybackSettings::DESPAWN,
-                });
                 break; // Ce missile est consommé, passer au suivant
             }
         }
