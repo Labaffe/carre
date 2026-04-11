@@ -1,6 +1,7 @@
 //! Mode debug (F1) : affiche un overlay avec FPS, timer, difficulté,
 //! dessine les hitboxes de tous les `Hittable` (cercles ou rectangles OBB),
-//! et affiche le nom du sprite au-dessus de chaque astéroïde (ex: "x007").
+//! affiche le nom du sprite au-dessus de chaque astéroïde (ex: "x007"),
+//! et affiche la timeline du niveau avec les liens de causalité.
 
 use crate::MusicMain;
 use crate::asteroid::Asteroid;
@@ -9,6 +10,7 @@ use crate::green_ufo::GreenUFOMarker;
 use crate::collision::Hittable;
 use crate::difficulty::Difficulty;
 use crate::enemy::{Enemy, EnemyProjectile, EnemyState, PatternIndex, PatternTimer};
+use crate::level::{LevelRunner, Trigger};
 use crate::missile::Missile;
 use crate::player::{Player, PlayerLives};
 use crate::score::Score;
@@ -27,6 +29,7 @@ impl Plugin for DebugPlugin {
                     toggle_debug,
                     draw_hitboxes,
                     update_debug_ui,
+                    update_debug_level_ui,
                     manage_asteroid_labels,
                 ),
             );
@@ -42,7 +45,11 @@ pub struct DebugMode(pub bool);
 #[derive(Component)]
 struct DebugUI;
 
+#[derive(Component)]
+struct DebugLevelUI;
+
 fn setup_debug_ui(mut commands: Commands) {
+    // Panneau gauche : infos générales
     commands.spawn((
         TextBundle {
             text: Text::from_sections([TextSection::new(
@@ -65,41 +72,95 @@ fn setup_debug_ui(mut commands: Commands) {
         },
         DebugUI,
     ));
+
+    // Panneau droit : timeline du niveau
+    commands.spawn((
+        TextBundle {
+            text: Text::from_sections([TextSection::new(
+                "",
+                TextStyle {
+                    font_size: 14.0,
+                    color: Color::WHITE,
+                    ..default()
+                },
+            )]),
+            style: Style {
+                position_type: PositionType::Absolute,
+                top: Val::Px(10.0),
+                right: Val::Px(10.0),
+                ..default()
+            },
+            visibility: Visibility::Hidden,
+            z_index: ZIndex::Global(100),
+            ..default()
+        },
+        DebugLevelUI,
+    ));
 }
 
 fn toggle_debug(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut debug: ResMut<DebugMode>,
-    mut ui_q: Query<&mut Visibility, With<DebugUI>>,
+    mut ui_q: Query<&mut Visibility, (With<DebugUI>, Without<DebugLevelUI>)>,
+    mut level_ui_q: Query<&mut Visibility, (With<DebugLevelUI>, Without<DebugUI>)>,
     mut difficulty: ResMut<crate::difficulty::Difficulty>,
+    runner: Option<ResMut<crate::level::LevelRunner>>,
     music_q: Query<Entity, With<MusicMain>>,
+    asteroid_q: Query<Entity, With<Asteroid>>,
+    green_ufo_q: Query<Entity, With<GreenUFOMarker>>,
+    mut boom_events: EventWriter<crate::difficulty::BoomEvent>,
+    mut countdown_events: EventWriter<crate::countdown::CountdownEvent>,
+    asset_server: Res<AssetServer>,
 ) {
     if keyboard.just_pressed(KeyCode::F2) {
-        difficulty.elapsed = crate::difficulty::SPAWN_STOP_TIME;
-        difficulty.spawning_stopped = true;
-        difficulty.charging_played = true;
-        difficulty.boom_played = true;
-        difficulty.boom_14_played = true;
-        difficulty.boom_18_played = true;
-        difficulty.boom_22_played = true;
-        let t = (4.3 / 6.0_f32).clamp(0.0, 1.0);
-        let bg_speed_at_stop = 150.0 * (1.0 + 8.0 * 3.0);
-        difficulty.bg_speed_override = Some(bg_speed_at_stop + (50.0 - bg_speed_at_stop) * t);
+        // Nettoyer les entités en jeu
+        for entity in asteroid_q.iter() {
+            if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        }
+        for entity in green_ufo_q.iter() {
+            if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        }
 
-        for entity in music_q.iter() {
-            commands.entity(entity).despawn_recursive();
+        // Avancer le LevelRunner jusqu'à "planet_appear" (juste avant le boss)
+        if let Some(mut runner) = runner {
+            // Synchroniser difficulty.elapsed AVANT d'exécuter les actions
+            // (StartBgDeceleration et ShowPlanet utilisent difficulty.elapsed)
+            difficulty.elapsed = 28.0;
+
+            let all_actions = runner.skip_to("planet_appear", 28.0);
+            for actions in &all_actions {
+                for action in actions {
+                    // Ignorer les actions cosmétiques (sons, booms, countdown, musique)
+                    if !action.should_replay_on_skip() {
+                        continue;
+                    }
+                    crate::level::execute_action(
+                        action,
+                        &mut commands,
+                        &asset_server,
+                        &mut boom_events,
+                        &mut countdown_events,
+                        &mut difficulty,
+                        &music_q,
+                    );
+                }
+            }
         }
     }
 
     if keyboard.just_pressed(KeyCode::F1) {
         debug.0 = !debug.0;
+        let new_vis = if debug.0 {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
         if let Ok(mut vis) = ui_q.get_single_mut() {
-            *vis = if debug.0 {
-                Visibility::Visible
-            } else {
-                Visibility::Hidden
-            };
+            *vis = new_vis;
+        }
+        if let Ok(mut vis) = level_ui_q.get_single_mut() {
+            *vis = new_vis;
         }
     }
 }
@@ -207,7 +268,8 @@ fn update_debug_ui(
              \n\
              F1 : Debug Mode ON/OFF\n\
              F2 : Skip asteroides\n\
-             F3 : Skip au boss",
+             F3 : Skip au boss\n\
+             F4 : Win niveau (outro)",
             fps, minutes, seconds, factor,
             lives.lives,
             score.value(),
@@ -216,6 +278,134 @@ fn update_debug_ui(
             missile_count,
             if enemy_lines.is_empty() { "\n  (aucun)".to_string() } else { enemy_lines },
         );
+    }
+}
+
+fn update_debug_level_ui(
+    debug: Res<DebugMode>,
+    runner: Option<Res<LevelRunner>>,
+    progress: Res<crate::game::GameProgress>,
+    mut ui_q: Query<&mut Text, With<DebugLevelUI>>,
+) {
+    if !debug.0 {
+        return;
+    }
+
+    let Some(runner) = runner else {
+        return;
+    };
+
+    let steps = runner.steps();
+    let current_idx = runner.current_index();
+    let elapsed = runner.elapsed;
+
+    let name = crate::level::level_name(progress.current_level);
+    let mut lines = format!("--- {} (Niveau {}) ---\n\n", name, progress.current_level);
+
+    for (i, step) in steps.iter().enumerate() {
+        // ─── Indicateur de statut ───────────────────────────────
+        let (status, status_detail) = if i < current_idx {
+            // Étape exécutée
+            let trigger_t = runner.trigger_time(step.label).unwrap_or(0.0);
+            (
+                "DONE",
+                format!("  {:.1}s", trigger_t),
+            )
+        } else if i == current_idx {
+            // Prochaine étape
+            let eta = match &step.trigger {
+                Trigger::AtTime(t) => {
+                    let remaining = t - elapsed;
+                    if remaining > 0.0 {
+                        format!("  dans {:.1}s", remaining)
+                    } else {
+                        "  imminent".to_string()
+                    }
+                }
+                Trigger::AfterPrevious(d) => {
+                    // Le previous est la dernière étape exécutée
+                    let prev_time = if current_idx > 0 {
+                        runner.trigger_time(steps[current_idx - 1].label).unwrap_or(0.0)
+                    } else {
+                        0.0
+                    };
+                    let target = prev_time + d;
+                    let remaining = target - elapsed;
+                    if remaining > 0.0 {
+                        format!("  dans {:.1}s", remaining)
+                    } else {
+                        "  imminent".to_string()
+                    }
+                }
+                Trigger::After(label, d) => {
+                    if let Some(ref_time) = runner.trigger_time(label) {
+                        let target = ref_time + d;
+                        let remaining = target - elapsed;
+                        if remaining > 0.0 {
+                            format!("  dans {:.1}s", remaining)
+                        } else {
+                            "  imminent".to_string()
+                        }
+                    } else {
+                        format!("  attend '{}'", label)
+                    }
+                }
+            };
+            ("NEXT", eta)
+        } else {
+            // Étape future
+            let eta = match &step.trigger {
+                Trigger::AtTime(t) => {
+                    let remaining = t - elapsed;
+                    format!("  dans {:.0}s", remaining)
+                }
+                _ => String::new(),
+            };
+            ("....", eta)
+        };
+
+        // ─── Trigger description ────────────────────────────────
+        let trigger_desc = step.trigger.short_desc();
+
+        // ─── Actions courtes ────────────────────────────────────
+        let actions_str: Vec<String> = step.actions.iter().map(|a| a.short_name()).collect();
+        let actions_joined = actions_str.join(", ");
+
+        // ─── Lien de causalité ──────────────────────────────────
+        let chain_info = match &step.trigger {
+            Trigger::After(label, delay) => {
+                let ref_status = if runner.trigger_time(label).is_some() {
+                    "DONE"
+                } else if steps.iter().any(|s| s.label == *label) {
+                    "WAIT"
+                } else {
+                    "???"
+                };
+                format!("\n          chaine : {} +{:.1}s [{}]", label, delay, ref_status)
+            }
+            _ => String::new(),
+        };
+
+        lines.push_str(&format!(
+            "  {}  {:<16} {}{}  {}\n{}\n",
+            status, step.label, trigger_desc, status_detail, actions_joined, chain_info,
+        ));
+    }
+
+    // ─── Résumé de progression ──────────────────────────────────
+    lines.push_str(&format!(
+        "\nProgression : {}/{} etapes  |  {:.1}s\n",
+        current_idx,
+        steps.len(),
+        elapsed,
+    ));
+
+    if runner.is_finished() {
+        lines.push_str("NIVEAU TERMINE - Boss actif\n");
+    }
+
+    if let Ok(mut text) = ui_q.get_single_mut() {
+        text.sections[0].value = lines;
     }
 }
 
@@ -230,7 +420,7 @@ fn manage_asteroid_labels(
 ) {
     for (label_entity, label, _, _) in label_q.iter() {
         if asteroid_q.get(label.0).is_err() {
-            commands.entity(label_entity).despawn();
+            if let Some(mut e) = commands.get_entity(label_entity) { e.despawn(); }
         }
     }
 

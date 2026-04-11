@@ -5,6 +5,10 @@
 //! (fondu + zoom de 0.3 à 1.0 sur 6 secondes). Police : Optimus Princeps.
 //! Appuyer sur R : nettoie l'UI, réaffiche le background, respawn le joueur.
 
+use crate::game::{
+    CampaignProgress, ConfirmOptionMarker, ConfirmPopup, ConfirmPopupUI, PlayMode,
+    despawn_confirm_popup, spawn_confirm_popup,
+};
 use crate::state::GameState;
 use crate::{MusicGameOver, MusicMain};
 use bevy::prelude::*;
@@ -90,10 +94,10 @@ fn setup_gameover_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             ));
             parent.spawn((
                 TextBundle::from_section(
-                    "Appuyez sur R pour rejouer",
+                    "R pour rejouer | Echap pour quitter",
                     TextStyle {
                         font: font.clone(),
-                        font_size: 32.0,
+                        font_size: 28.0,
                         color: Color::rgba(1.0, 1.0, 1.0, 0.0),
                     },
                 ),
@@ -109,7 +113,7 @@ fn setup_gameover_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 fn stop_main_music(mut commands: Commands, main_music_q: Query<Entity, With<MusicMain>>) {
     for entity in main_music_q.iter() {
-        commands.entity(entity).despawn();
+        if let Some(mut e) = commands.get_entity(entity) { e.despawn(); }
     }
 }
 
@@ -167,7 +171,7 @@ fn animate_gameover(
 
 fn cleanup_gameover_ui(mut commands: Commands, query: Query<Entity, With<GameOverUI>>) {
     for entity in query.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
 }
 
@@ -182,12 +186,76 @@ fn handle_restart(
     mut next_state: ResMut<NextState<GameState>>,
     mut commands: Commands,
     gameover_music_q: Query<Entity, With<MusicGameOver>>,
+    play_mode: Option<Res<PlayMode>>,
+    confirm: Option<ResMut<ConfirmPopup>>,
+    confirm_ui_q: Query<Entity, With<ConfirmPopupUI>>,
+    mut confirm_text_q: Query<(&mut Text, &ConfirmOptionMarker)>,
+    asset_server: Res<AssetServer>,
 ) {
+    // ─── Popup de confirmation active ───────────────────────────
+    if let Some(mut popup) = confirm {
+        // Mise à jour des couleurs Oui/Non
+        for (mut text, marker) in confirm_text_q.iter_mut() {
+            let is_sel = marker.0 == popup.selected;
+            for section in text.sections.iter_mut() {
+                if is_sel {
+                    section.style.color = Color::rgba(1.0, 0.85, 0.0, 1.0);
+                } else {
+                    section.style.color = Color::rgba(0.6, 0.6, 0.6, 1.0);
+                }
+            }
+        }
+
+        if keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyQ) {
+            popup.selected = 0;
+        }
+        if keyboard.just_pressed(KeyCode::ArrowRight) || keyboard.just_pressed(KeyCode::KeyD) {
+            popup.selected = 1;
+        }
+
+        if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
+            if popup.selected == 1 {
+                // Oui → abandon campagne
+                commands.remove_resource::<CampaignProgress>();
+                commands.remove_resource::<PlayMode>();
+                commands.remove_resource::<ConfirmPopup>();
+                despawn_confirm_popup(&mut commands, &confirm_ui_q);
+                next_state.set(GameState::MainMenu);
+            } else {
+                // Non → fermer la popup
+                commands.remove_resource::<ConfirmPopup>();
+                despawn_confirm_popup(&mut commands, &confirm_ui_q);
+            }
+        }
+
+        if keyboard.just_pressed(KeyCode::Escape) {
+            commands.remove_resource::<ConfirmPopup>();
+            despawn_confirm_popup(&mut commands, &confirm_ui_q);
+        }
+
+        return;
+    }
+
+    // ─── R = rejouer le niveau ──────────────────────────────────
     if keyboard.just_pressed(KeyCode::KeyR) {
         for entity in gameover_music_q.iter() {
-            commands.entity(entity).despawn();
+            if let Some(mut e) = commands.get_entity(entity) { e.despawn(); }
         }
-        // Le joueur, background et musique sont spawnés par les systèmes OnEnter(Playing)
         next_state.set(GameState::Playing);
+    }
+
+    // ─── Echap = quitter ────────────────────────────────────────
+    if keyboard.just_pressed(KeyCode::Escape) {
+        let is_campaign = play_mode.map(|m| *m) == Some(PlayMode::Campaign);
+        if is_campaign {
+            commands.insert_resource(ConfirmPopup { selected: 0 });
+            spawn_confirm_popup(&mut commands, &asset_server);
+        } else {
+            commands.remove_resource::<PlayMode>();
+            for entity in gameover_music_q.iter() {
+                if let Some(mut e) = commands.get_entity(entity) { e.despawn(); }
+            }
+            next_state.set(GameState::MainMenu);
+        }
     }
 }

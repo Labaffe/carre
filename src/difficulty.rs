@@ -1,12 +1,67 @@
 //! Système de difficulté progressive.
 //!
-//! - 0-10s  : facteur 1.0, montée en tension (son charging à 7s, boom à 10s)
-//! - 10-20s : facteur 3.0 → 5.0 (augmente de +1 toutes les 5s)
-//! - Le facteur influence : vitesse des astéroïdes, fréquence de spawn, scroll du background.
+//! La ressource `Difficulty` est le hub central de communication entre
+//! le système de niveau (`level.rs`) et les systèmes de jeu (astéroïdes,
+//! boss, background, etc.).
+//!
+//! Le système de niveau écrit les valeurs (factor, spawning_stopped, etc.)
+//! et les systèmes de jeu les lisent pour adapter leur comportement.
+
+use std::collections::HashMap;
 
 use crate::countdown::CountdownEvent;
+use crate::pause::not_paused;
 use crate::state::GameState;
 use bevy::prelude::*;
+
+/// Position de spawn d'un ennemi.
+#[derive(Clone, Copy, Debug)]
+pub enum SpawnPosition {
+    /// Position aléatoire sur le bord haut de l'écran (défaut pour les UFOs).
+    Top,
+    /// Position aléatoire sur le bord bas.
+    Bottom,
+    /// Position aléatoire sur le bord gauche.
+    Left,
+    /// Position aléatoire sur le bord droit.
+    Right,
+    /// Position exacte en pixels (x, y).
+    At(f32, f32),
+}
+
+impl SpawnPosition {
+    /// Résout la position de spawn en coordonnées monde.
+    /// `margin` = marge intérieure par rapport au bord.
+    pub fn resolve(self, window: &bevy::window::Window, margin: f32) -> bevy::math::Vec2 {
+        let half_w = window.width() / 2.0 - margin;
+        let half_h = window.height() / 2.0;
+        match self {
+            SpawnPosition::Top => {
+                let x = (fastrand::f32() - 0.5) * 2.0 * half_w;
+                bevy::math::Vec2::new(x, half_h + 40.0)
+            }
+            SpawnPosition::Bottom => {
+                let x = (fastrand::f32() - 0.5) * 2.0 * half_w;
+                bevy::math::Vec2::new(x, -half_h - 40.0)
+            }
+            SpawnPosition::Left => {
+                let y = (fastrand::f32() - 0.5) * 2.0 * half_h;
+                bevy::math::Vec2::new(-half_w - 40.0, y)
+            }
+            SpawnPosition::Right => {
+                let y = (fastrand::f32() - 0.5) * 2.0 * half_h;
+                bevy::math::Vec2::new(half_w + 40.0, y)
+            }
+            SpawnPosition::At(x, y) => bevy::math::Vec2::new(x, y),
+        }
+    }
+}
+
+impl Default for SpawnPosition {
+    fn default() -> Self {
+        SpawnPosition::Top
+    }
+}
 
 /// Événement envoyé à chaque boom (palier de difficulté).
 #[derive(Event)]
@@ -21,7 +76,9 @@ impl Plugin for DifficultyPlugin {
             .add_systems(OnEnter(GameState::Playing), reset_difficulty)
             .add_systems(
                 Update,
-                update_difficulty.run_if(in_state(GameState::Playing)),
+                update_difficulty
+                    .run_if(in_state(GameState::Playing))
+                    .run_if(not_paused),
             );
     }
 }
@@ -30,19 +87,12 @@ impl Plugin for DifficultyPlugin {
 pub struct Difficulty {
     pub elapsed: f32,
     pub factor: f32,
-    pub charging_played: bool,
-    pub boom_played: bool,
-    pub boom_14_played: bool,
-    pub boom_18_played: bool,
-    pub boom_22_played: bool,
     pub boss_music_played: bool,
     /// Instant (elapsed) où la musique boss a été lancée.
     pub boss_music_start_time: Option<f32>,
     /// Instant (elapsed) où le boss est passé en Active (fin du flexing).
     pub boss_active_time: Option<f32>,
-    /// À partir de 26.7s, les astéroïdes ne spawnent plus.
-    pub spawning_stopped: bool,
-    /// Vitesse du background indépendante de la difficulté après 26.7s.
+    /// Vitesse du background indépendante de la difficulté.
     /// None = utilise le calcul basé sur factor. Some(v) = vitesse fixe décroissante.
     pub bg_speed_override: Option<f32>,
     /// La grille 3×3 du background boss a été initialisée.
@@ -55,6 +105,23 @@ pub struct Difficulty {
     pub phase3_charging_played: bool,
     /// Son boom joué au passage en phase 3 du vaisseau.
     pub phase3_boom_played: bool,
+
+    // ─── Communication Level → systèmes de jeu ─────────────────
+    /// File de requêtes de spawn one-shot : (nom, quantité, position).
+    /// Ex: `("boss", 2, SpawnPosition::At(0.0, 50.0))` spawne 2 boss à (0, 50).
+    /// Consommées par le système de spawn de chaque ennemi.
+    pub spawn_requests: Vec<(&'static str, usize, SpawnPosition)>,
+    /// Spawners continus actifs : nom → (quantité par vague, intervalle, position).
+    /// Ex: `"green_ufo" → (4, 5.0, SpawnPosition::Top)` spawne 4 GreenUFOs/5s depuis le haut.
+    pub active_spawners: HashMap<&'static str, (usize, f32, SpawnPosition)>,
+    /// Instant (elapsed) où la décélération du background a commencé.
+    pub bg_decel_start_elapsed: Option<f32>,
+    /// Durée de la décélération du background (secondes).
+    pub bg_decel_duration: f32,
+    /// Vitesse finale du background après décélération.
+    pub bg_decel_final_speed: f32,
+    /// Instant (elapsed) où la planète doit apparaître.
+    pub planet_appear_elapsed: Option<f32>,
 }
 
 impl Default for Difficulty {
@@ -62,21 +129,21 @@ impl Default for Difficulty {
         Self {
             elapsed: 0.0,
             factor: 1.0,
-            charging_played: false,
-            boom_played: false,
-            boom_14_played: false,
-            boom_18_played: false,
-            boom_22_played: false,
             boss_music_played: false,
             boss_music_start_time: None,
             boss_active_time: None,
-            spawning_stopped: false,
             bg_speed_override: None,
             boss_bg_initialized: false,
             landing_played: false,
             boss_spawned: false,
             phase3_charging_played: false,
             phase3_boom_played: false,
+            spawn_requests: Vec::new(),
+            active_spawners: HashMap::new(),
+            bg_decel_start_elapsed: None,
+            bg_decel_duration: 9.0,
+            bg_decel_final_speed: 30.0,
+            planet_appear_elapsed: None,
         }
     }
 }
@@ -88,64 +155,22 @@ impl Difficulty {
     }
 }
 
-/// Temps à partir duquel les astéroïdes ne spawnent plus.
-pub const SPAWN_STOP_TIME: f32 = 27.7;
-/// Durée de décélération du background après SPAWN_STOP_TIME (en secondes).
-const BG_DECEL_DURATION: f32 = 9.0;
-/// Vitesse finale du background après décélération.
-const BG_FINAL_SPEED: f32 = 30.0;
-
 fn reset_difficulty(mut difficulty: ResMut<Difficulty>) {
     *difficulty = Difficulty::default();
 }
 
-//
+/// Met à jour la difficulté chaque frame.
+/// Les événements temporels sont maintenant gérés par `level.rs`.
+/// Ce système gère uniquement :
+/// - L'incrément du timer
+/// - Le countdown de la phase 3 (déclenché par la musique boss)
+/// - La décélération du background (déclenchée par le niveau)
 fn update_difficulty(
     mut difficulty: ResMut<Difficulty>,
     time: Res<Time>,
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut boom_events: EventWriter<BoomEvent>,
     mut countdown_events: EventWriter<CountdownEvent>,
 ) {
     difficulty.elapsed += time.delta_seconds();
-
-    // Countdown phase 2 à 7s (READY → 3 → 2 → 1 → GO! à 10s)
-    if difficulty.elapsed >= 7.0 && !difficulty.charging_played {
-        difficulty.charging_played = true;
-        difficulty.boom_played = true;
-        countdown_events.send(CountdownEvent);
-    }
-
-    // Boom à 14.3s (pas de countdown, juste le son)
-    if difficulty.elapsed >= 14.3 && !difficulty.boom_14_played {
-        difficulty.boom_14_played = true;
-        boom_events.send(BoomEvent);
-        commands.spawn(AudioBundle {
-            source: asset_server.load("audio/t_go.wav"),
-            settings: PlaybackSettings::DESPAWN,
-        });
-    }
-
-    // Boom à 18.3s
-    if difficulty.elapsed >= 18.3 && !difficulty.boom_18_played {
-        difficulty.boom_18_played = true;
-        boom_events.send(BoomEvent);
-        commands.spawn(AudioBundle {
-            source: asset_server.load("audio/t_go.wav"),
-            settings: PlaybackSettings::DESPAWN,
-        });
-    }
-
-    // Boom à 22.6s
-    if difficulty.elapsed >= 22.6 && !difficulty.boom_22_played {
-        difficulty.boom_22_played = true;
-        boom_events.send(BoomEvent);
-        commands.spawn(AudioBundle {
-            source: asset_server.load("audio/t_go.wav"),
-            settings: PlaybackSettings::DESPAWN,
-        });
-    }
 
     // Countdown phase 3 : dès que la musique boss démarre
     if let Some(_start) = difficulty.boss_music_start_time {
@@ -156,35 +181,13 @@ fn update_difficulty(
         }
     }
 
-    // Paliers de difficulté fixes :
-    // 0-10s    : facteur 0.5 (intro calme)
-    // 10s      : facteur 3.5
-    // 14.3s    : facteur 4.5
-    // 18.3s    : facteur 6.5
-    // 22.6s    : facteur 7.5 (max)
-    if difficulty.elapsed < 10.0 {
-        difficulty.factor = 0.5;
-    } else if difficulty.elapsed < 14.3 {
-        difficulty.factor = 3.5;
-    } else if difficulty.elapsed < 18.3 {
-        difficulty.factor = 4.5;
-    } else if difficulty.elapsed < 22.6 {
-        difficulty.factor = 6.5;
-    } else {
-        difficulty.factor = 7.5;
-    }
-
-    // À 26.7s : arrêt du spawn + décélération du background vers 50 px/s en 6s
-    if difficulty.elapsed >= SPAWN_STOP_TIME {
-        difficulty.spawning_stopped = true;
-
-        let decel_elapsed = difficulty.elapsed - SPAWN_STOP_TIME;
-        let t = (decel_elapsed / BG_DECEL_DURATION).clamp(0.0, 1.0);
-        // Vitesse du background au moment de l'arrêt (basée sur la formule du background)
-        let bg_speed_at_stop = 150.0 * (1.0 + 8.0 * 3.0); // base_speed * (1 + factor * 3)
-        let current_speed = bg_speed_at_stop + (BG_FINAL_SPEED - bg_speed_at_stop) * t;
+    // Décélération du background (déclenchée par le niveau via StartBgDeceleration)
+    if let Some(decel_start) = difficulty.bg_decel_start_elapsed {
+        let decel_elapsed = difficulty.elapsed - decel_start;
+        let t = (decel_elapsed / difficulty.bg_decel_duration).clamp(0.0, 1.0);
+        let bg_speed_at_stop = 150.0 * (1.0 + 8.0 * 3.0);
+        let current_speed = bg_speed_at_stop
+            + (difficulty.bg_decel_final_speed - bg_speed_at_stop) * t;
         difficulty.bg_speed_override = Some(current_speed);
     }
-
-    // Note : la musique boss est lancée par boss.rs à la fin de l'animation d'entrée.
 }

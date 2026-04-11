@@ -76,7 +76,7 @@ fn despawn_crosshair(
     windows.single_mut().cursor.visible = true;
 
     for entity in query.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
 }
 

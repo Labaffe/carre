@@ -94,8 +94,8 @@ fn spawn_asteroids(
     difficulty: Res<Difficulty>,
     textures: Res<AsteroidTextures>,
 ) {
-    // Plus de spawn après 26.7s
-    if difficulty.spawning_stopped {
+    // Spawn uniquement si "asteroid" est dans les spawners actifs
+    if !difficulty.active_spawners.contains_key("asteroid") {
         return;
     }
 
@@ -203,7 +203,7 @@ fn move_asteroids(
         transform.translation += asteroid.base_velocity * difficulty.factor * time.delta_seconds();
         // Despawn quand l'astéroïde sort en bas de l'écran
         if transform.translation.y < -(half_h + 200.0) {
-            commands.entity(entity).despawn();
+            if let Some(mut e) = commands.get_entity(entity) { e.despawn(); }
         }
     }
 }

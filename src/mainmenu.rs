@@ -6,6 +6,7 @@
 //! - Sous-menu Paramètres : réglage du volume global.
 
 use crate::GameSettings;
+use crate::game::{CampaignProgress, PlayMode};
 use crate::state::GameState;
 use bevy::app::AppExit;
 use bevy::prelude::*;
@@ -39,6 +40,14 @@ struct MainMenuTile;
 #[derive(Component)]
 struct MainMenuRoot;
 
+/// Marqueur pour le logo du titre.
+#[derive(Component)]
+struct MainMenuLogo;
+
+/// Conteneur des options du menu principal.
+#[derive(Component)]
+struct MenuOptionsContainer;
+
 #[derive(Component)]
 struct MenuOption {
     action: MenuAction,
@@ -47,6 +56,7 @@ struct MenuOption {
 #[derive(Clone, PartialEq)]
 enum MenuAction {
     Play,
+    Primes,
     Settings,
     Quit,
 }
@@ -54,6 +64,7 @@ enum MenuAction {
 /// Marqueur pour les éléments du sous-menu Paramètres.
 #[derive(Component)]
 struct SettingsUI;
+
 
 /// Texte affichant la valeur du volume.
 #[derive(Component)]
@@ -163,7 +174,6 @@ fn setup_main_menu(
                     align_items: AlignItems::Center,
                     justify_content: JustifyContent::Center,
                     flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(30.0),
                     ..default()
                 },
                 background_color: Color::rgba(0.0, 0.0, 0.0, 1.0).into(),
@@ -173,7 +183,7 @@ fn setup_main_menu(
             MainMenuRoot,
         ))
         .with_children(|parent| {
-            // Logo
+            // Logo (centré indépendamment)
             parent.spawn((
                 ImageBundle {
                     image: UiImage::new(asset_server.load("images/main_menu_title.png")),
@@ -187,55 +197,89 @@ fn setup_main_menu(
                     ..default()
                 },
                 MainMenuUI,
+                MainMenuLogo,
             ));
 
-            // Option : Commencer
-            parent.spawn((
-                TextBundle::from_section(
-                    "Commencer",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 42.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+            // Conteneur des options du menu (décalé vers le haut)
+            parent
+                .spawn((
+                    NodeBundle {
+                        style: Style {
+                            flex_direction: FlexDirection::Column,
+                            align_items: AlignItems::Center,
+                            row_gap: Val::Px(20.0),
+                            ..default()
+                        },
+                        ..default()
                     },
-                ),
-                MenuOption {
-                    action: MenuAction::Play,
-                },
-                MainMenuUI,
-            ));
+                    MainMenuUI,
+                    MenuOptionsContainer,
+                ))
+                .with_children(|menu| {
+                    // Option : Commencer
+                    menu.spawn((
+                        TextBundle::from_section(
+                            "Commencer",
+                            TextStyle {
+                                font: font.clone(),
+                                font_size: 36.0,
+                                color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                            },
+                        ),
+                        MenuOption {
+                            action: MenuAction::Play,
+                        },
+                        MainMenuUI,
+                    ));
 
-            // Option : Paramètres
-            parent.spawn((
-                TextBundle::from_section(
-                    "Paramètres",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 42.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 0.0),
-                    },
-                ),
-                MenuOption {
-                    action: MenuAction::Settings,
-                },
-                MainMenuUI,
-            ));
+                    // Option : Primes
+                    menu.spawn((
+                        TextBundle::from_section(
+                            "Primes",
+                            TextStyle {
+                                font: font.clone(),
+                                font_size: 36.0,
+                                color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                            },
+                        ),
+                        MenuOption {
+                            action: MenuAction::Primes,
+                        },
+                        MainMenuUI,
+                    ));
 
-            // Option : Quitter
-            parent.spawn((
-                TextBundle::from_section(
-                    "Quitter",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 42.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 0.0),
-                    },
-                ),
-                MenuOption {
-                    action: MenuAction::Quit,
-                },
-                MainMenuUI,
-            ));
+                    // Option : Paramètres
+                    menu.spawn((
+                        TextBundle::from_section(
+                            "Paramètres",
+                            TextStyle {
+                                font: font.clone(),
+                                font_size: 36.0,
+                                color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                            },
+                        ),
+                        MenuOption {
+                            action: MenuAction::Settings,
+                        },
+                        MainMenuUI,
+                    ));
+
+                    // Option : Quitter
+                    menu.spawn((
+                        TextBundle::from_section(
+                            "Quitter",
+                            TextStyle {
+                                font: font.clone(),
+                                font_size: 36.0,
+                                color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                            },
+                        ),
+                        MenuOption {
+                            action: MenuAction::Quit,
+                        },
+                        MainMenuUI,
+                    ));
+                });
         });
 
     // Indication F1 en haut à droite
@@ -272,18 +316,16 @@ fn setup_main_menu(
 fn animate_main_menu(
     mut anim: ResMut<MainMenuAnim>,
     time: Res<Time>,
-    root_q: Query<&Children, With<MainMenuRoot>>,
     mut bg_root_q: Query<&mut BackgroundColor, With<MainMenuRoot>>,
     mut logo_q: Query<
-        &mut BackgroundColor,
-        (
-            With<MainMenuUI>,
-            Without<MainMenuRoot>,
-            Without<MenuOption>,
-            Without<Text>,
-        ),
+        (&mut BackgroundColor, &mut Style),
+        (With<MainMenuLogo>, Without<MainMenuRoot>),
     >,
-    mut text_q: Query<(&mut Text, &MenuOption, &mut Style)>,
+    mut container_q: Query<
+        &mut Style,
+        (With<MenuOptionsContainer>, Without<MainMenuLogo>),
+    >,
+    mut text_q: Query<(&mut Text, &MenuOption, &mut Style), (Without<MainMenuLogo>, Without<MenuOptionsContainer>)>,
     mut tile_q: Query<&mut Sprite, With<MainMenuTile>>,
     mut volume_text_q: Query<&mut Text, (With<VolumeText>, Without<MenuOption>)>,
     settings: Res<GameSettings>,
@@ -306,19 +348,29 @@ fn animate_main_menu(
         bg.0.set_a(1.0 - alpha);
     }
 
-    // Logo
-    for mut bg in logo_q.iter_mut() {
-        bg.0.set_a(alpha);
-    }
-
-    // Menu options — visibilité dépend de la vue active
-    let mut idx = 0;
-    for (mut text, _option, mut style) in text_q.iter_mut() {
-        if anim.view == MenuView::Settings {
-            // Cacher les options du menu principal quand on est dans Paramètres
+    // Logo — cacher dans les sous-menus
+    for (mut bg, mut style) in logo_q.iter_mut() {
+        if anim.view != MenuView::Main {
             style.display = Display::None;
         } else {
             style.display = Display::Flex;
+            bg.0.set_a(alpha);
+        }
+    }
+
+    // Conteneur des options — cacher dans les sous-menus
+    for mut style in container_q.iter_mut() {
+        if anim.view != MenuView::Main {
+            style.display = Display::None;
+        } else {
+            style.display = Display::Flex;
+        }
+    }
+
+    // Menu options — couleurs de sélection
+    let mut idx = 0;
+    for (mut text, _option, _style) in text_q.iter_mut() {
+        if anim.view == MenuView::Main {
             let is_selected = idx == anim.selected;
             for section in text.sections.iter_mut() {
                 if is_selected {
@@ -395,14 +447,14 @@ fn handle_main_view(
     settings: &ResMut<GameSettings>,
     root_q: &Query<Entity, With<MainMenuRoot>>,
 ) {
-    // Navigation
+    // Navigation (4 options : Commencer, Primes, Paramètres, Quitter)
     if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
         if anim.selected > 0 {
             anim.selected -= 1;
         }
     }
     if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
-        if anim.selected < 2 {
+        if anim.selected < 3 {
             anim.selected += 1;
         }
     }
@@ -414,15 +466,23 @@ fn handle_main_view(
     {
         match anim.selected {
             0 => {
-                next_state.set(GameState::Playing);
+                // Commencer : mode Campagne → sélection de niveaux
+                commands.insert_resource(PlayMode::Campaign);
+                commands.insert_resource(CampaignProgress::default());
+                next_state.set(GameState::LevelSelect);
             }
             1 => {
+                // Primes : mode à la carte → sélection de niveaux
+                commands.insert_resource(PlayMode::Primes);
+                next_state.set(GameState::LevelSelect);
+            }
+            2 => {
                 // Ouvrir le sous-menu Paramètres
                 anim.view = MenuView::Settings;
                 anim.selected = 0;
                 spawn_settings_ui(commands, asset_server, settings, root_q);
             }
-            2 => {
+            3 => {
                 exit.send(AppExit);
             }
             _ => {}
@@ -457,7 +517,7 @@ fn handle_settings_view(
         anim.selected = 1; // Reselect "Paramètres"
         // Despawn le sous-menu
         for entity in settings_ui_q.iter() {
-            commands.entity(entity).despawn_recursive();
+            if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
         }
     }
 }
@@ -532,7 +592,7 @@ fn spawn_settings_ui(
 
 fn cleanup_main_menu(mut commands: Commands, query: Query<Entity, With<MainMenuUI>>) {
     for entity in query.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
     commands.remove_resource::<MainMenuAnim>();
 }

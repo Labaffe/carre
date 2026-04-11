@@ -28,6 +28,7 @@ impl Plugin for GreenUFOPlugin {
             Update,
             (
                 spawn_green_ufos,
+                spawn_green_ufos_oneshot,
                 green_ufo_pattern_executor,
                 green_ufo_rush_movement,
                 green_ufo_animate,
@@ -41,9 +42,7 @@ impl Plugin for GreenUFOPlugin {
 
 // ─── Constantes ─────────────────────────────────────────────────────
 
-/// Temps avant le premier spawn de GreenUFO (secondes).
-const GREEN_UFO_FIRST_SPAWN: f32 = 10.0;
-/// Intervalle entre chaque spawn (secondes).
+/// Intervalle par défaut entre chaque vague (secondes).
 const GREEN_UFO_SPAWN_INTERVAL: f32 = 2.0;
 /// Vitesse du rush vers le joueur (px/s).
 const GREEN_UFO_RUSH_SPEED: f32 = 800.0;
@@ -105,9 +104,14 @@ fn spawn_green_ufos(
     frames: Res<GreenUFOFrames>,
     windows: Query<&Window>,
 ) {
-    // Pas de spawn avant le délai initial ou si le boss est apparu
-    if difficulty.elapsed < GREEN_UFO_FIRST_SPAWN || difficulty.boss_spawned {
+    // Spawning contrôlé par le système de niveau via active_spawners
+    let Some(&(wave_size, target_interval, spawn_pos)) = difficulty.active_spawners.get("green_ufo") else {
         return;
+    };
+
+    // Mettre à jour l'intervalle si le niveau l'a changé
+    if (spawner.timer.duration().as_secs_f32() - target_interval).abs() > 0.01 {
+        spawner.timer.set_duration(std::time::Duration::from_secs_f32(target_interval));
     }
 
     spawner.timer.tick(time.delta());
@@ -116,9 +120,44 @@ fn spawn_green_ufos(
     }
 
     let window = windows.single();
-    let half_w = window.width() / 2.0 - 60.0;
-    let spawn_y = window.height() / 2.0 + 40.0;
-    let spawn_x = (fastrand::f32() - 0.5) * 2.0 * half_w;
+    for _ in 0..wave_size {
+        spawn_one_green_ufo(&mut commands, &frames, window, spawn_pos);
+    }
+}
+
+// ─── Spawn one-shot (via spawn_requests) ────────────────────────────
+
+/// Consomme les requêtes "green_ufo" dans `difficulty.spawn_requests`
+/// et spawne N GreenUFOs par requête.
+fn spawn_green_ufos_oneshot(
+    mut commands: Commands,
+    mut difficulty: ResMut<crate::difficulty::Difficulty>,
+    frames: Res<GreenUFOFrames>,
+    windows: Query<&Window>,
+) {
+    let Some(pos) = difficulty
+        .spawn_requests
+        .iter()
+        .position(|(name, _, _)| *name == "green_ufo")
+    else {
+        return;
+    };
+    let (_name, count, spawn_pos) = difficulty.spawn_requests.remove(pos);
+
+    let window = windows.single();
+    for _ in 0..count {
+        spawn_one_green_ufo(&mut commands, &frames, window, spawn_pos);
+    }
+}
+
+/// Spawne un seul GreenUFO à la position donnée.
+fn spawn_one_green_ufo(
+    commands: &mut Commands,
+    frames: &GreenUFOFrames,
+    window: &Window,
+    spawn_pos: crate::difficulty::SpawnPosition,
+) {
+    let pos = spawn_pos.resolve(window, 60.0);
 
     let phase = &GREEN_UFO.phases[0];
     let first_frame = frames.0.first().cloned().unwrap_or_default();
@@ -130,7 +169,7 @@ fn spawn_green_ufos(
                 custom_size: Some(Vec2::splat(GREEN_UFO.sprite_size)),
                 ..default()
             },
-            transform: Transform::from_xyz(spawn_x, spawn_y, 0.5),
+            transform: Transform::from_xyz(pos.x, pos.y, 0.5),
             ..default()
         },
         Enemy {
@@ -152,10 +191,7 @@ fn spawn_green_ufos(
             current_frame: 0,
         },
         PatternIndex(0),
-        PatternTimer(Timer::from_seconds(
-            phase.patterns.first().map(|p| p.duration).unwrap_or(0.4),
-            TimerMode::Once,
-        )),
+        PatternTimer(Timer::from_seconds(0.0, TimerMode::Once)),
         DropTable {
             drops: &GREEN_UFO_DROP_TABLE,
         },

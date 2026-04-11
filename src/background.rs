@@ -157,8 +157,6 @@ fn scroll_background(
 
 // ─── Planète ────────────────────────────────────────────────────────
 
-/// Temps d'apparition de la planète (secondes).
-const PLANET_APPEAR_TIME: f32 = 28.0;
 /// Durée de l'animation de zoom (secondes).
 const PLANET_ANIM_DURATION: f32 = 10.0;
 /// Vitesse de rotation de la planète pendant le boss (après 3s de musique boss).
@@ -186,9 +184,6 @@ fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows:
     ));
 }
 
-/// Temps du son landing.ogg (6.3s avant la fin de l'animation planète).
-const LANDING_TIME: f32 = PLANET_APPEAR_TIME + PLANET_ANIM_DURATION - 6.3;
-
 fn animate_planet(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -196,8 +191,15 @@ fn animate_planet(
     windows: Query<&Window>,
     mut planet_q: Query<&mut Transform, With<Planet>>,
 ) {
-    // Son landing 5s avant la fin de l'animation
-    if difficulty.elapsed >= LANDING_TIME && !difficulty.landing_played {
+    // Apparition contrôlée par le système de niveau
+    let planet_appear_time = match difficulty.planet_appear_elapsed {
+        Some(t) => t,
+        None => return,
+    };
+
+    // Son landing 6.3s avant la fin de l'animation
+    let landing_time = planet_appear_time + PLANET_ANIM_DURATION - 6.3;
+    if difficulty.elapsed >= landing_time && !difficulty.landing_played {
         difficulty.landing_played = true;
         commands.spawn(AudioBundle {
             source: asset_server.load("audio/landing.ogg"),
@@ -205,7 +207,7 @@ fn animate_planet(
         });
     }
 
-    if difficulty.elapsed < PLANET_APPEAR_TIME {
+    if difficulty.elapsed < planet_appear_time {
         return;
     }
 
@@ -213,7 +215,7 @@ fn animate_planet(
     let half_h = window.height() / 2.0;
 
     let progress =
-        ((difficulty.elapsed - PLANET_APPEAR_TIME) / PLANET_ANIM_DURATION).clamp(0.0, 1.0);
+        ((difficulty.elapsed - planet_appear_time) / PLANET_ANIM_DURATION).clamp(0.0, 1.0);
 
     for mut transform in planet_q.iter_mut() {
         // Courbe ease-in-out : doux au début et à la fin

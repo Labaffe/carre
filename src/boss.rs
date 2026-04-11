@@ -15,6 +15,8 @@ use crate::difficulty::Difficulty;
 use crate::enemies::BOSS;
 use crate::enemy::{Enemy, EnemyState, PatrolMovement, PatternIndex, PatternTimer};
 use crate::explosion::load_frames_from_folder;
+use crate::green_ufo::GreenUFOMarker;
+use crate::level::LevelRunner;
 use crate::pause::not_paused;
 use crate::player::Player;
 use crate::state::GameState;
@@ -54,7 +56,6 @@ impl Plugin for BossPlugin {
 
 // ─── Constantes boss ────────────────────────────────────────────────
 
-const BOSS_SPAWN_TIME: f32 = 35.8;
 const BOSS_START_ANIMATION_DURATION: f32 = 7.0;
 const BOSS_FLEXING_WAIT: f32 = 0.5;
 const BOSS_START_2_ANIMATION_DURATION: f32 = 1.7;
@@ -67,7 +68,9 @@ const BOSS_IDLE_FPS: f32 = 10.0;
 
 // Patrol
 const BOSS_MARGIN: f32 = 80.0;
-const BOSS_PATROL_SPEED_X: f32 = 270.0;
+/// Vitesse de patrol horizontale par phase (px/s).
+/// Phase 1 : lente, Phase 2 : normale, Phase 3 : normale.
+const BOSS_PATROL_SPEEDS_X: [f32; 3] = [200.0, 270.0, 270.0];
 const BOSS_SINE_AMPLITUDE_Y: f32 = 0.85;
 const BOSS_SINE_FREQ_Y: f32 = 4.5;
 
@@ -76,10 +79,14 @@ const BOSS_SINE_FREQ_Y: f32 = 4.5;
 const BOSS_TRANSITION_DURATION: f32 = 2.0;
 /// Amplitude max du tremblement pendant la transition.
 const BOSS_TRANSITION_SHAKE_MAX: f32 = 12.0;
+/// Nombre d'UFOs spawnés à la fin de chaque transition (indexé par next_phase).
+/// Transition 0→1 : 2 UFOs, transition 1→2 : 4 UFOs.
+const BOSS_TRANSITION_UFO_COUNT: [usize; 3] = [0, 2, 4];
 
 // Charge
-/// Vitesse de la charge vers le joueur (px/s).
-const BOSS_CHARGE_SPEED: f32 = 2500.0;
+/// Vitesse de la charge par phase (px/s).
+/// Phase 1 : lente, Phase 2 : moyenne, Phase 3 : rapide.
+const BOSS_CHARGE_SPEEDS: [f32; 3] = [1500.0, 2000.0, 2500.0];
 /// Tolérance en Y pour déclencher la charge (px).
 const BOSS_CHARGE_ALIGN_THRESHOLD: f32 = 50.0;
 /// Vitesse de rotation pendant la charge (rad/s).
@@ -112,8 +119,6 @@ struct BossFlexingSoundPlayed;
 pub struct BossCharge {
     pub direction: Vec2,
 }
-
-
 
 /// Animation de transition entre deux phases (shake + flash, pas d'explosions).
 #[derive(Component)]
@@ -149,75 +154,91 @@ fn spawn_boss(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut difficulty: ResMut<Difficulty>,
-    enemy_q: Query<&Enemy, With<BossMarker>>,
+    _enemy_q: Query<&Enemy, With<BossMarker>>,
     windows: Query<&Window>,
 ) {
-    if difficulty.elapsed < BOSS_SPAWN_TIME || !enemy_q.is_empty() || difficulty.boss_spawned {
+    let Some(req_pos) = difficulty
+        .spawn_requests
+        .iter()
+        .position(|(name, _, _)| *name == "boss")
+    else {
         return;
-    }
+    };
+    let (_name, count, spawn_pos) = difficulty.spawn_requests.remove(req_pos);
+    // Marque le premier spawn (arrête les GreenUFO, etc.) sans bloquer les suivants.
     difficulty.boss_spawned = true;
 
-    let _window = windows.single();
-    let start_y = 50.0;
+    let window = windows.single();
 
     commands.spawn(AudioBundle {
         source: asset_server.load("audio/boss_start.ogg"),
         settings: PlaybackSettings::DESPAWN,
     });
 
-    commands.spawn((
-        SpriteBundle {
-            texture: asset_server.load("images/boss/idle/frame000.png"),
-            sprite: Sprite {
-                custom_size: Some(Vec2::splat(BOSS.sprite_size)),
-                color: Color::WHITE,
+    for i in 0..count {
+        // Résoudre la position de spawn
+        let base_pos = spawn_pos.resolve(window, 60.0);
+        // Décaler les boss en X pour ne pas les superposer
+        let offset_x = if count > 1 {
+            (i as f32 - (count - 1) as f32 / 2.0) * 120.0
+        } else {
+            0.0
+        };
+
+        commands.spawn((
+            SpriteBundle {
+                texture: asset_server.load("images/boss/idle/frame000.png"),
+                sprite: Sprite {
+                    custom_size: Some(Vec2::splat(BOSS.sprite_size)),
+                    color: Color::WHITE,
+                    ..default()
+                },
+                transform: Transform {
+                    translation: Vec3::new(base_pos.x + offset_x, base_pos.y, 0.5),
+                    scale: Vec3::splat(BOSS_INTRO_START_SCALE),
+                    ..default()
+                },
                 ..default()
             },
-            transform: Transform {
-                translation: Vec3::new(0.0, start_y, 0.5),
-                scale: Vec3::splat(BOSS_INTRO_START_SCALE),
-                ..default()
+            Enemy {
+                health: BOSS.phases[0].health,
+                max_health: BOSS.phases[0].health,
+                state: EnemyState::Entering,
+                radius: BOSS.radius,
+                sprite_size: BOSS.sprite_size,
+                anim_timer: Timer::from_seconds(BOSS_START_ANIMATION_DURATION, TimerMode::Once),
+                phases: BOSS.phases,
+                death_duration: BOSS.death_duration,
+                death_shake_max: BOSS.death_shake_max,
+                hit_sound: BOSS.hit_sound,
+                death_explosion_sound: BOSS.death_explosion_sound,
             },
-            ..default()
-        },
-        Enemy {
-            health: BOSS.phases[0].health,
-            max_health: BOSS.phases[0].health,
-            state: EnemyState::Entering,
-            radius: BOSS.radius,
-            sprite_size: BOSS.sprite_size,
-            anim_timer: Timer::from_seconds(BOSS_START_ANIMATION_DURATION, TimerMode::Once),
-            phases: BOSS.phases,
-            death_duration: BOSS.death_duration,
-            death_shake_max: BOSS.death_shake_max,
-            hit_sound: BOSS.hit_sound,
-            death_explosion_sound: BOSS.death_explosion_sound,
-        },
-        BossMarker,
-        BossIdleAnim {
-            timer: Timer::from_seconds(1.0 / BOSS_IDLE_FPS, TimerMode::Repeating),
-            current_frame: 0,
-        },
-        PatternTimer(Timer::from_seconds(
-            BOSS.phases[0]
-                .patterns
-                .first()
-                .map(|p| p.duration)
-                .unwrap_or(1.0),
-            TimerMode::Once,
-        )),
-        PatternIndex(0),
-        PatrolMovement {
-            dir_x: 1.0,
-            sine_time: 0.0,
-            initialized: false,
-            enabled: false,
-            speed_x: BOSS_PATROL_SPEED_X,
-            sine_amplitude_y: BOSS_SINE_AMPLITUDE_Y,
-            sine_freq_y: BOSS_SINE_FREQ_Y,
-            margin: BOSS_MARGIN,
-        },
-    ));
+            BossMarker,
+            BossIdleAnim {
+                timer: Timer::from_seconds(1.0 / BOSS_IDLE_FPS, TimerMode::Repeating),
+                current_frame: 0,
+            },
+            PatternTimer(Timer::from_seconds(
+                BOSS.phases[0]
+                    .patterns
+                    .first()
+                    .map(|p| p.duration)
+                    .unwrap_or(1.0),
+                TimerMode::Once,
+            )),
+            PatternIndex(0),
+            PatrolMovement {
+                dir_x: 1.0,
+                sine_time: 0.0,
+                initialized: false,
+                enabled: false,
+                speed_x: BOSS_PATROL_SPEEDS_X[0],
+                sine_amplitude_y: BOSS_SINE_AMPLITUDE_Y,
+                sine_freq_y: BOSS_SINE_FREQ_Y,
+                margin: BOSS_MARGIN,
+            },
+        ));
+    }
 }
 
 // ─── Intro : spirale ────────────────────────────────────────────────
@@ -404,20 +425,33 @@ fn boss_dying_flexing(
     }
 }
 
-
 // ─── Couper la musique à la mort ────────────────────────────────────
 
+/// Coupe la musique du boss uniquement quand le dernier boss meurt.
+/// Si un boss est en Dying mais qu'un autre est encore vivant, la musique continue.
 fn boss_dying_stop_music(
     mut commands: Commands,
     boss_q: Query<&Enemy, With<BossMarker>>,
     music_q: Query<Entity, With<MusicBoss>>,
 ) {
-    for enemy in boss_q.iter() {
-        if enemy.state != EnemyState::Dying {
-            continue;
-        }
-        for entity in music_q.iter() {
-            commands.entity(entity).despawn_recursive();
+    // Au moins un boss doit être en train de mourir
+    let any_dying = boss_q.iter().any(|e| e.state == EnemyState::Dying);
+    if !any_dying {
+        return;
+    }
+
+    // Vérifier qu'aucun boss n'est encore vivant (ni en intro, ni en combat)
+    let any_alive = boss_q
+        .iter()
+        .any(|e| !matches!(e.state, EnemyState::Dying | EnemyState::Dead));
+    if any_alive {
+        return;
+    }
+
+    // Tous les boss sont morts ou mourants → couper la musique
+    for entity in music_q.iter() {
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
         }
     }
 }
@@ -475,6 +509,7 @@ fn boss_transition_animate(
     mut commands: Commands,
     time: Res<Time>,
     asset_server: Res<AssetServer>,
+    mut difficulty: ResMut<crate::difficulty::Difficulty>,
     mut boss_q: Query<
         (
             Entity,
@@ -550,9 +585,13 @@ fn boss_transition_animate(
             let first_duration = def.patterns.first().map(|p| p.duration).unwrap_or(1.0);
             pattern_timer.0 = Timer::from_seconds(first_duration, TimerMode::Once);
 
-            // Réactiver le patrol
+            // Réactiver le patrol avec la vitesse de la nouvelle phase
             patrol.enabled = true;
             patrol.initialized = false;
+            patrol.speed_x = BOSS_PATROL_SPEEDS_X
+                .get(next_phase)
+                .copied()
+                .unwrap_or(BOSS_PATROL_SPEEDS_X[2]);
 
             // Son d'entrée de phase
             if let Some(sound) = def.enter_sound {
@@ -563,6 +602,22 @@ fn boss_transition_animate(
             }
 
             commands.entity(entity).remove::<BossTransition>();
+
+            // Spawner des GreenUFOs à la fin de la transition
+            // Phase 1→2 : 2 UFOs (haut + bas), Phase 2→3 : 4 UFOs (chaque côté)
+            use crate::difficulty::SpawnPosition;
+            let ufo_count = BOSS_TRANSITION_UFO_COUNT
+                .get(next_phase)
+                .copied()
+                .unwrap_or(4);
+            if ufo_count >= 2 {
+                difficulty.spawn_requests.push(("green_ufo", 1, SpawnPosition::Top));
+                difficulty.spawn_requests.push(("green_ufo", 1, SpawnPosition::Bottom));
+            }
+            if ufo_count >= 4 {
+                difficulty.spawn_requests.push(("green_ufo", 1, SpawnPosition::Left));
+                difficulty.spawn_requests.push(("green_ufo", 1, SpawnPosition::Right));
+            }
         }
     }
 }
@@ -723,10 +778,16 @@ fn boss_charge_movement(
         // Désactiver le patrol pendant la charge
         patrol.enabled = false;
 
+        // Vitesse de charge selon la phase
+        let charge_speed = BOSS_CHARGE_SPEEDS
+            .get(phase_idx)
+            .copied()
+            .unwrap_or(BOSS_CHARGE_SPEEDS[2]);
+
         // Avancer en ligne droite
         let dt = time.delta_seconds();
-        transform.translation.x += charge.direction.x * BOSS_CHARGE_SPEED * dt;
-        transform.translation.y += charge.direction.y * BOSS_CHARGE_SPEED * dt;
+        transform.translation.x += charge.direction.x * charge_speed * dt;
+        transform.translation.y += charge.direction.y * charge_speed * dt;
 
         // Tourner sur lui-même pendant la charge
         transform.rotate_z(BOSS_CHARGE_SPIN_SPEED * dt);
@@ -771,42 +832,66 @@ fn debug_skip_to_boss(
     keyboard: Res<ButtonInput<KeyCode>>,
     asset_server: Res<AssetServer>,
     mut difficulty: ResMut<Difficulty>,
+    runner: Option<ResMut<LevelRunner>>,
     boss_q: Query<Entity, With<BossMarker>>,
     asteroid_q: Query<Entity, With<Asteroid>>,
+    green_ufo_q: Query<Entity, With<GreenUFOMarker>>,
     music_q: Query<Entity, With<MusicMain>>,
     boss_music_q: Query<Entity, With<MusicBoss>>,
+    mut boom_events: EventWriter<crate::difficulty::BoomEvent>,
+    mut countdown_events: EventWriter<crate::countdown::CountdownEvent>,
 ) {
     if !keyboard.just_pressed(KeyCode::F3) {
         return;
     }
 
+    // ─── Nettoyage des entités ──────────────────────────────────
     for entity in asteroid_q.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
-    for entity in music_q.iter() {
-        commands.entity(entity).despawn_recursive();
+    for entity in green_ufo_q.iter() {
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+    }
+    for entity in boss_q.iter() {
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
     for entity in boss_music_q.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
 
-    difficulty.elapsed = BOSS_SPAWN_TIME + 0.1;
-    difficulty.spawning_stopped = true;
-    difficulty.charging_played = true;
-    difficulty.boom_played = true;
-    difficulty.boom_14_played = true;
-    difficulty.boom_18_played = true;
-    difficulty.boom_22_played = true;
+    // ─── Avancer le LevelRunner jusqu'à "boss_spawn" ────────────
+    // Synchroniser difficulty.elapsed AVANT d'exécuter les actions
+    difficulty.elapsed = 35.8;
+
+    if let Some(mut runner) = runner {
+        let all_actions = runner.skip_to("boss_spawn", 35.8);
+        for actions in &all_actions {
+            for action in actions {
+                // Ignorer les actions cosmétiques (sons, booms, countdown, musique, spawns)
+                if !action.should_replay_on_skip() {
+                    continue;
+                }
+                crate::level::execute_action(
+                    action,
+                    &mut commands,
+                    &asset_server,
+                    &mut boom_events,
+                    &mut countdown_events,
+                    &mut difficulty,
+                    &music_q,
+                );
+            }
+        }
+    }
+
+    // ─── État boss-spécifique (non couvert par les actions) ─────
     difficulty.boss_music_played = false;
     difficulty.boss_music_start_time = None;
     difficulty.boss_active_time = None;
     difficulty.landing_played = true;
     difficulty.boss_spawned = true;
 
-    for entity in boss_q.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-
+    // ─── Spawn du boss en Flexing (skip l'intro de 7s) ──────────
     commands.spawn(AudioBundle {
         source: asset_server.load("audio/boss_start_2.ogg"),
         settings: PlaybackSettings::DESPAWN,
@@ -862,7 +947,7 @@ fn debug_skip_to_boss(
             sine_time: 0.0,
             initialized: false,
             enabled: false,
-            speed_x: BOSS_PATROL_SPEED_X,
+            speed_x: BOSS_PATROL_SPEEDS_X[0],
             sine_amplitude_y: BOSS_SINE_AMPLITUDE_Y,
             sine_freq_y: BOSS_SINE_FREQ_Y,
             margin: BOSS_MARGIN,

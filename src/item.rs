@@ -255,7 +255,7 @@ fn setup_bomb_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 fn cleanup_bomb_ui(mut commands: Commands, query: Query<Entity, With<BombUI>>) {
     for entity in query.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
 }
 
@@ -382,7 +382,9 @@ fn bomb_apply_damage(
                     table: table.drops,
                 });
             }
-            commands.entity(entity).despawn();
+            if let Some(mut e) = commands.get_entity(entity) {
+                e.despawn();
+            }
         }
     }
 
@@ -406,7 +408,7 @@ fn bomb_screen_flash(
         sprite.color = Color::rgba(1.0, 1.0, 1.0, 1.0 - t);
 
         if flash.0.finished() {
-            commands.entity(entity).despawn();
+            if let Some(mut e) = commands.get_entity(entity) { e.despawn(); }
         }
     }
 }
@@ -491,7 +493,9 @@ fn cleanup_offscreen_droppables(
     let limit = -window.height() / 2.0 - 50.0;
     for (entity, transform) in query.iter() {
         if transform.translation.y < limit {
-            commands.entity(entity).despawn();
+            if let Some(mut e) = commands.get_entity(entity) {
+                e.despawn();
+            }
         }
     }
 }
@@ -533,6 +537,8 @@ fn player_pickup(
             },
         });
 
-        commands.entity(entity).despawn();
+        if let Some(mut e) = commands.get_entity(entity) {
+            e.despawn();
+        }
     }
 }

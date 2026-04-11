@@ -11,8 +11,11 @@ mod difficulty;
 pub mod enemies;
 pub mod enemy;
 mod explosion;
+pub mod game;
 mod gameover;
 mod green_ufo;
+mod level;
+mod levelselect;
 pub mod item;
 mod mainmenu;
 mod missile;
@@ -25,6 +28,7 @@ mod score;
 use asteroid::{Asteroid, AsteroidPlugin};
 use background::{Background, BackgroundPlugin, Planet};
 use boss::{BossPlugin, MusicBoss};
+use game::{GamePlugin, MusicOutro};
 use collision::CollisionPlugin;
 use countdown::CountdownPlugin;
 use crosshair::CrosshairPlugin;
@@ -34,6 +38,7 @@ use enemy::{Enemy, EnemyPlugin, EnemyProjectile};
 use explosion::{Explosion, ExplosionPlugin};
 use item::{Droppable, ItemPlugin};
 use gameover::GameOverPlugin;
+use level::LevelPlugin;
 use mainmenu::MainMenuPlugin;
 use missile::{Missile, MissilePlugin};
 use pause::PausePlugin;
@@ -78,10 +83,12 @@ fn main() {
             BossPlugin,
             ItemPlugin,
             green_ufo::GreenUFOPlugin,
+            LevelPlugin,
+            GamePlugin,
+            levelselect::LevelSelectPlugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, show_window_after_render.run_if(run_once()))
-        .add_systems(OnEnter(GameState::Playing), start_game_music)
         .add_systems(OnExit(GameState::Playing), cleanup_playing)
         .run();
 }
@@ -116,11 +123,6 @@ fn show_window_after_render(mut windows: Query<&mut Window>) {
     windows.single_mut().visible = true;
 }
 
-/// Système lancé à chaque entrée en Playing : démarre la musique de jeu.
-fn start_game_music(mut commands: Commands, asset_server: Res<AssetServer>) {
-    spawn_main_music(&mut commands, &asset_server);
-}
-
 /// Nettoyage de toutes les entités de jeu quand on quitte l'état Playing.
 fn cleanup_playing(
     mut commands: Commands,
@@ -134,53 +136,26 @@ fn cleanup_playing(
     enemy_projectiles: Query<Entity, With<EnemyProjectile>>,
     music: Query<Entity, With<MusicMain>>,
     boss_music: Query<Entity, With<MusicBoss>>,
+    outro_music: Query<Entity, With<MusicOutro>>,
     droppables: Query<Entity, With<Droppable>>,
 ) {
-    for entity in players.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in asteroids.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in missiles.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in explosions.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in backgrounds.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in planets.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in enemies.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in enemy_projectiles.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in music.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in boss_music.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in droppables.iter() {
-        commands.entity(entity).despawn_recursive();
+    let all_entities = players.iter()
+        .chain(asteroids.iter())
+        .chain(missiles.iter())
+        .chain(explosions.iter())
+        .chain(backgrounds.iter())
+        .chain(planets.iter())
+        .chain(enemies.iter())
+        .chain(enemy_projectiles.iter())
+        .chain(music.iter())
+        .chain(boss_music.iter())
+        .chain(outro_music.iter())
+        .chain(droppables.iter());
+
+    for entity in all_entities {
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
 }
 
-/// Spawn la musique de jeu en boucle.
-pub fn spawn_main_music(commands: &mut Commands, asset_server: &Res<AssetServer>) {
-    commands.spawn((
-        AudioBundle {
-            source: asset_server.load("audio/gradius.ogg"),
-            settings: PlaybackSettings {
-                mode: bevy::audio::PlaybackMode::Once,
-                ..default()
-            },
-        },
-        MusicMain,
-    ));
-}

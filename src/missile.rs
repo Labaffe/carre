@@ -207,7 +207,9 @@ fn missile_asteroid_collision(
                     missile_transform.translation,
                     missile.death_folder,
                 );
-                commands.entity(missile_entity).despawn();
+                if let Some(mut e) = commands.get_entity(missile_entity) {
+                    e.despawn();
+                }
                 despawned_missiles.insert(missile_entity);
                 asteroid.health -= 1;
                 score.add(1);
@@ -233,7 +235,9 @@ fn missile_asteroid_collision(
                                 table: table.drops,
                             });
                         }
-                        commands.entity(asteroid_entity).despawn();
+                        if let Some(mut e) = commands.get_entity(asteroid_entity) {
+                            e.despawn();
+                        }
                         despawned_asteroids.insert(asteroid_entity);
                     }
                 } else if !despawned_asteroids.contains(&asteroid_entity) {
@@ -262,7 +266,9 @@ fn move_missiles(
 
         let p = transform.translation;
         if p.x.abs() > 1200.0 || p.y.abs() > 900.0 {
-            commands.entity(entity).despawn();
+            if let Some(mut e) = commands.get_entity(entity) {
+                e.despawn();
+            }
         }
     }
 }

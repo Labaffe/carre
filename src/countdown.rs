@@ -77,7 +77,7 @@ fn start_countdown(
 
     // Nettoyer un countdown précédent
     for entity in existing_q.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
 
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
@@ -150,7 +150,7 @@ fn update_countdown(
         state.timer += time.delta_seconds();
         if state.timer >= COUNTDOWN_DURATION + GO_LINGER {
             for entity in ui_q.iter() {
-                commands.entity(entity).despawn_recursive();
+                if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
             }
             commands.remove_resource::<CountdownState>();
         }
@@ -234,7 +234,7 @@ fn animate_countdown_text(
 
 fn cleanup_countdown(mut commands: Commands, query: Query<Entity, With<CountdownUI>>) {
     for entity in query.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
     commands.remove_resource::<CountdownState>();
 }
