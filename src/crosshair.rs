@@ -15,7 +15,7 @@ impl Plugin for CrosshairPlugin {
             .add_systems(OnExit(GameState::Playing), despawn_crosshair)
             .add_systems(
                 Update,
-                crosshair_follow_mouse
+                (crosshair_follow_mouse, crosshair_animate)
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),
             );
@@ -25,46 +25,119 @@ impl Plugin for CrosshairPlugin {
 #[derive(Component)]
 pub struct Crosshair;
 
+/// Composant pour l'animation du viseur.
+#[derive(Component)]
+struct CrosshairAnim {
+    elapsed: f32,
+}
+
+// ─── Dimensions du viseur ──────────────────────────────────────────
+
+/// Longueur de chaque branche du viseur (px).
+const ARM_LENGTH: f32 = 10.0;
+/// Epaisseur des branches (px).
+const ARM_THICKNESS: f32 = 2.0;
+/// Espace entre le centre et le début des branches (px).
+const GAP: f32 = 4.0;
+/// Epaisseur du contour noir autour de chaque élément (px).
+const OUTLINE: f32 = 2.0;
+/// Taille du point central (px).
+const DOT_SIZE: f32 = 3.0;
+
 fn spawn_crosshair(mut commands: Commands, mut windows: Query<&mut Window>) {
     let mut window = windows.single_mut();
-    // Masquer le curseur système pendant le jeu
     window.cursor.visible = false;
 
     let half_h = window.height() / 2.0;
-    // Position initiale : juste devant le vaisseau (au-dessus)
     let start_y = -half_h * 0.5 + 150.0;
 
-    let h_bar = commands
-        .spawn(SpriteBundle {
-            sprite: Sprite {
-                color: Color::rgb(1.0, 0.0, 0.0),
-                custom_size: Some(Vec2::new(10.0, 2.0)),
-                ..default()
-            },
-            ..default()
-        })
-        .id();
+    let white = Color::rgba(1.0, 1.0, 1.0, 0.9);
+    let black = Color::rgba(0.0, 0.0, 0.0, 0.8);
 
-    let v_bar = commands
-        .spawn(SpriteBundle {
-            sprite: Sprite {
-                color: Color::rgb(1.0, 0.0, 0.0),
-                custom_size: Some(Vec2::new(2.0, 10.0)),
-                ..default()
-            },
-            ..default()
-        })
-        .id();
+    // Offset de chaque branche depuis le centre
+    let arm_offset = GAP + ARM_LENGTH / 2.0;
 
-    commands
+    // Données : (offset_x, offset_y, width, height)
+    let arms: [(f32, f32, f32, f32); 4] = [
+        (0.0, arm_offset, ARM_THICKNESS, ARM_LENGTH),   // haut
+        (0.0, -arm_offset, ARM_THICKNESS, ARM_LENGTH),  // bas
+        (-arm_offset, 0.0, ARM_LENGTH, ARM_THICKNESS),  // gauche
+        (arm_offset, 0.0, ARM_LENGTH, ARM_THICKNESS),   // droite
+    ];
+
+    let parent = commands
         .spawn((
             SpatialBundle {
-                transform: Transform::from_xyz(0.0, start_y, 1.0),
+                transform: Transform::from_xyz(0.0, start_y, 10.0),
                 ..default()
             },
             Crosshair,
+            CrosshairAnim { elapsed: 0.0 },
         ))
-        .push_children(&[h_bar, v_bar]);
+        .id();
+
+    let mut children = Vec::new();
+
+    // Branches (contour noir + blanc)
+    for (ox, oy, w, h) in arms {
+        // Contour noir (derrière, légèrement plus grand)
+        let outline = commands
+            .spawn(SpriteBundle {
+                sprite: Sprite {
+                    color: black,
+                    custom_size: Some(Vec2::new(w + OUTLINE, h + OUTLINE)),
+                    ..default()
+                },
+                transform: Transform::from_xyz(ox, oy, 0.0),
+                ..default()
+            })
+            .id();
+        children.push(outline);
+
+        // Branche blanche (devant)
+        let arm = commands
+            .spawn(SpriteBundle {
+                sprite: Sprite {
+                    color: white,
+                    custom_size: Some(Vec2::new(w, h)),
+                    ..default()
+                },
+                transform: Transform::from_xyz(ox, oy, 0.1),
+                ..default()
+            })
+            .id();
+        children.push(arm);
+    }
+
+    // Point central — contour noir
+    let dot_outline = commands
+        .spawn(SpriteBundle {
+            sprite: Sprite {
+                color: black,
+                custom_size: Some(Vec2::splat(DOT_SIZE + OUTLINE)),
+                ..default()
+            },
+            transform: Transform::from_xyz(0.0, 0.0, 0.0),
+            ..default()
+        })
+        .id();
+    children.push(dot_outline);
+
+    // Point central — blanc
+    let dot = commands
+        .spawn(SpriteBundle {
+            sprite: Sprite {
+                color: white,
+                custom_size: Some(Vec2::splat(DOT_SIZE)),
+                ..default()
+            },
+            transform: Transform::from_xyz(0.0, 0.0, 0.1),
+            ..default()
+        })
+        .id();
+    children.push(dot);
+
+    commands.entity(parent).push_children(&children);
 }
 
 fn despawn_crosshair(
@@ -72,11 +145,12 @@ fn despawn_crosshair(
     query: Query<Entity, With<Crosshair>>,
     mut windows: Query<&mut Window>,
 ) {
-    // Réafficher le curseur système hors du jeu
     windows.single_mut().cursor.visible = true;
 
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
 }
 
@@ -105,7 +179,25 @@ fn crosshair_follow_mouse(
     if let Some(cursor_pos) = window.cursor_position() {
         if let Some(world_pos) = camera.viewport_to_world_2d(camera_gt, cursor_pos) {
             let (mut crosshair_transform, _) = crosshair_q.single_mut();
-            crosshair_transform.translation = world_pos.extend(1.0);
+            crosshair_transform.translation = world_pos.extend(10.0);
         }
+    }
+}
+
+// ─── Animation ─────────────────────────────────────────────────────
+
+/// Vitesse de la pulsation (cycles par seconde).
+const PULSE_SPEED: f32 = 2.5;
+/// Amplitude de la pulsation (± autour de 1.0).
+const PULSE_AMPLITUDE: f32 = 0.08;
+
+fn crosshair_animate(
+    time: Res<Time>,
+    mut query: Query<(&mut Transform, &mut CrosshairAnim), With<Crosshair>>,
+) {
+    for (mut transform, mut anim) in query.iter_mut() {
+        anim.elapsed += time.delta_seconds();
+        let scale = 1.0 + (anim.elapsed * PULSE_SPEED * std::f32::consts::TAU).sin() * PULSE_AMPLITUDE;
+        transform.scale = Vec3::splat(scale);
     }
 }

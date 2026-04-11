@@ -1,6 +1,7 @@
 ### TODO
-[ ] Améliorer la visibilité du viseur
+[X] Améliorer la visibilité du viseur
 [x] Level up par palier
+[X] Ecran de passage de niveau avec choix d'un bonus (shield +1, health +1, dégat + x%, nouvel arme etc.)
 
 ### Idées (pls mettre un avis et après on le met en todo)
 - Ecran de passage de niveau avec choix d'un bonus (shield +1, health +1, dégat + x%, nouvel arme etc.)
