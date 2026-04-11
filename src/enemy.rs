@@ -191,9 +191,8 @@ fn enemy_hit_flash(
             sprite.color = Color::WHITE;
             commands.entity(entity).remove::<EnemyHitFlash>();
         } else {
-            let t = flash.0.fraction();
-            let v = 1.0 + (1.0 - t) * 2.0;
-            sprite.color = Color::rgba(v, v, v, 1.0);
+            // Blanc pur intense (même style que les astéroïdes)
+            sprite.color = Color::rgba(100.0, 100.0, 100.0, 1.0);
         }
     }
 }
