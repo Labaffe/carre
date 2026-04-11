@@ -90,8 +90,6 @@ pub struct MusicOutro;
 
 /// Délai entre la mort du boss et le début de l'outro (secondes).
 const OUTRO_COUNTDOWN: f32 = 3.0;
-/// Durée du fondu d'apparition du texte (secondes).
-const OUTRO_FADE_DURATION: f32 = 2.0;
 /// Délai minimum avant d'accepter l'input pour continuer (secondes).
 const OUTRO_INPUT_DELAY: f32 = 3.0;
 
@@ -184,14 +182,12 @@ fn detect_level_complete(
     }
 }
 
-/// Anime l'écran d'outro : musique + fondu du texte.
+/// Anime l'écran d'outro : musique.
 fn level_outro_animate(
     mut commands: Commands,
     time: Res<Time>,
     outro: Option<ResMut<LevelOutro>>,
     asset_server: Res<AssetServer>,
-    mut text_q: Query<(&mut Text, &mut Transform), With<OutroUI>>,
-    mut bg_q: Query<&mut BackgroundColor, With<OutroUI>>,
 ) {
     let Some(mut outro) = outro else { return };
     outro.elapsed += time.delta_seconds();
@@ -206,21 +202,6 @@ fn level_outro_animate(
             },
             MusicOutro,
         ));
-    }
-
-    // Fondu du texte (0 → 1 sur OUTRO_FADE_DURATION secondes)
-    let progress = (outro.elapsed / OUTRO_FADE_DURATION).clamp(0.0, 1.0);
-    for (mut text, mut transform) in text_q.iter_mut() {
-        for section in text.sections.iter_mut() {
-            section.style.color.set_a(progress);
-        }
-        let scale = 0.5 + progress * 0.5;
-        transform.scale = Vec3::splat(scale);
-    }
-
-    // Fond semi-transparent
-    for mut bg in bg_q.iter_mut() {
-        bg.0 = Color::rgba(0.0, 0.0, 0.0, progress * 0.6);
     }
 }
 
@@ -334,7 +315,7 @@ fn spawn_outro_ui(commands: &mut Commands, asset_server: &Res<AssetServer>) {
                     row_gap: Val::Px(30.0),
                     ..default()
                 },
-                background_color: Color::rgba(0.0, 0.0, 0.0, 0.0).into(),
+                background_color: Color::rgba(0.0, 0.0, 0.0, 0.6).into(),
                 z_index: ZIndex::Global(90),
                 ..default()
             },
@@ -348,7 +329,7 @@ fn spawn_outro_ui(commands: &mut Commands, asset_server: &Res<AssetServer>) {
                     TextStyle {
                         font: font.clone(),
                         font_size: 64.0,
-                        color: Color::rgba(1.0, 0.85, 0.0, 0.0),
+                        color: Color::rgba(1.0, 0.85, 0.0, 1.0),
                     },
                 ),
                 OutroUI,
@@ -360,7 +341,7 @@ fn spawn_outro_ui(commands: &mut Commands, asset_server: &Res<AssetServer>) {
                     TextStyle {
                         font,
                         font_size: 24.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                        color: Color::rgba(1.0, 1.0, 1.0, 1.0),
                     },
                 ),
                 OutroUI,
