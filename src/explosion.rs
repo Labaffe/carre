@@ -181,7 +181,7 @@ fn animate_explosions(
         if explosion.timer.just_finished() {
             explosion.current_frame += 1;
             if explosion.current_frame >= explosion.frames.len() {
-                commands.entity(entity).despawn();
+                if let Some(mut e) = commands.get_entity(entity) { e.despawn(); }
             } else {
                 *texture = explosion.frames[explosion.current_frame].clone();
             }

@@ -326,7 +326,9 @@ fn enemy_dying(
 
         if enemy.anim_timer.finished() {
             enemy.state = EnemyState::Dead;
-            commands.entity(entity).despawn_recursive();
+            if let Some(e) = commands.get_entity(entity) {
+                e.despawn_recursive();
+            }
         }
     }
 }
@@ -340,6 +342,8 @@ fn missile_enemy_collision(
     missile_q: Query<(Entity, &Transform, &Missile)>,
     mut enemy_q: Query<(Entity, &Transform, &mut Enemy)>,
 ) {
+    let mut despawned_missiles = std::collections::HashSet::new();
+
     for (enemy_entity, enemy_transform, mut enemy) in enemy_q.iter_mut() {
         // Invincible sauf en Active
         match &enemy.state {
@@ -347,6 +351,9 @@ fn missile_enemy_collision(
             _ => continue,
         }
         for (missile_entity, missile_transform, missile) in missile_q.iter() {
+            if despawned_missiles.contains(&missile_entity) {
+                continue;
+            }
             let hit = missile_hits_circle(
                 missile_transform.translation.truncate(),
                 missile_transform.rotation,
@@ -357,7 +364,10 @@ fn missile_enemy_collision(
             if hit {
                 enemy.health -= 1;
                 score.add(1);
-                commands.entity(missile_entity).despawn();
+                if let Some(mut e) = commands.get_entity(missile_entity) {
+                    e.despawn();
+                }
+                despawned_missiles.insert(missile_entity);
 
                 if let Some(mut ent) = commands.get_entity(enemy_entity) {
                     ent.insert(EnemyHitFlash(Timer::from_seconds(
@@ -370,6 +380,7 @@ fn missile_enemy_collision(
                     source: asset_server.load(enemy.hit_sound),
                     settings: PlaybackSettings::DESPAWN,
                 });
+                break; // Ce missile est consommé, passer au suivant
             }
         }
     }
@@ -395,7 +406,9 @@ fn cleanup_enemy_projectiles_offscreen(
     for (entity, transform) in query.iter() {
         let p = transform.translation;
         if p.x.abs() > 1200.0 || p.y.abs() > 900.0 {
-            commands.entity(entity).despawn();
+            if let Some(mut e) = commands.get_entity(entity) {
+                e.despawn();
+            }
         }
     }
 }

@@ -116,7 +116,7 @@ fn toggle_debug(
         difficulty.bg_speed_override = Some(bg_speed_at_stop + (50.0 - bg_speed_at_stop) * t);
 
         for entity in music_q.iter() {
-            commands.entity(entity).despawn_recursive();
+            if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
         }
     }
 
@@ -388,7 +388,7 @@ fn manage_asteroid_labels(
 ) {
     for (label_entity, label, _, _) in label_q.iter() {
         if asteroid_q.get(label.0).is_err() {
-            commands.entity(label_entity).despawn();
+            if let Some(mut e) = commands.get_entity(label_entity) { e.despawn(); }
         }
     }
 

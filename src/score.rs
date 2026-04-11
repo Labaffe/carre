@@ -94,7 +94,7 @@ fn setup_score_ui(
 
 fn cleanup_score_ui(mut commands: Commands, query: Query<Entity, With<ScoreUI>>) {
     for entity in query.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
 }
 

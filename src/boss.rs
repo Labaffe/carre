@@ -112,8 +112,6 @@ pub struct BossCharge {
     pub direction: Vec2,
 }
 
-
-
 /// Animation de transition entre deux phases (shake + flash, pas d'explosions).
 #[derive(Component)]
 struct BossTransition {
@@ -418,7 +416,6 @@ fn boss_dying_flexing(
     }
 }
 
-
 // ─── Couper la musique à la mort ────────────────────────────────────
 
 /// Coupe la musique du boss uniquement quand le dernier boss meurt.
@@ -435,16 +432,18 @@ fn boss_dying_stop_music(
     }
 
     // Vérifier qu'aucun boss n'est encore vivant (ni en intro, ni en combat)
-    let any_alive = boss_q.iter().any(|e| {
-        !matches!(e.state, EnemyState::Dying | EnemyState::Dead)
-    });
+    let any_alive = boss_q
+        .iter()
+        .any(|e| !matches!(e.state, EnemyState::Dying | EnemyState::Dead));
     if any_alive {
         return;
     }
 
     // Tous les boss sont morts ou mourants → couper la musique
     for entity in music_q.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
 }
 
@@ -501,7 +500,7 @@ fn boss_transition_animate(
     mut commands: Commands,
     time: Res<Time>,
     asset_server: Res<AssetServer>,
-    mut level_events: EventWriter<crate::level::LevelActionEvent>,
+    mut difficulty: ResMut<crate::difficulty::Difficulty>,
     mut boss_q: Query<
         (
             Entity,
@@ -591,10 +590,8 @@ fn boss_transition_animate(
 
             commands.entity(entity).remove::<BossTransition>();
 
-            // Injecter des actions dans le niveau à la fin de la transition
-            level_events.send(crate::level::LevelActionEvent(vec![
-                crate::level::Action::SpawnEnemy("green_ufo", 8),
-            ]));
+            // Spawner des GreenUFOs à la fin de la transition (effet immédiat)
+            difficulty.spawn_requests.push(("green_ufo", 8));
         }
     }
 }
@@ -813,13 +810,19 @@ fn debug_skip_to_boss(
     }
 
     for entity in asteroid_q.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
     for entity in music_q.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
     for entity in boss_music_q.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
 
     difficulty.spawning_stopped = true;
@@ -832,7 +835,9 @@ fn debug_skip_to_boss(
     difficulty.boss_spawned = true;
 
     for entity in boss_q.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
 
     commands.spawn(AudioBundle {

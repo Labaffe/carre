@@ -446,7 +446,7 @@ fn execute_action(
         }
         Action::StopMainMusic => {
             for entity in music_q.iter() {
-                commands.entity(entity).despawn_recursive();
+                if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
             }
         }
         Action::StartCountdown => {

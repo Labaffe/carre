@@ -457,7 +457,7 @@ fn handle_settings_view(
         anim.selected = 1; // Reselect "Paramètres"
         // Despawn le sous-menu
         for entity in settings_ui_q.iter() {
-            commands.entity(entity).despawn_recursive();
+            if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
         }
     }
 }
@@ -532,7 +532,7 @@ fn spawn_settings_ui(
 
 fn cleanup_main_menu(mut commands: Commands, query: Query<Entity, With<MainMenuUI>>) {
     for entity in query.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
     commands.remove_resource::<MainMenuAnim>();
 }

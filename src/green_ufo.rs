@@ -188,10 +188,7 @@ fn spawn_one_green_ufo(commands: &mut Commands, frames: &GreenUFOFrames, window:
             current_frame: 0,
         },
         PatternIndex(0),
-        PatternTimer(Timer::from_seconds(
-            phase.patterns.first().map(|p| p.duration).unwrap_or(0.4),
-            TimerMode::Once,
-        )),
+        PatternTimer(Timer::from_seconds(0.0, TimerMode::Once)),
         DropTable {
             drops: &GREEN_UFO_DROP_TABLE,
         },

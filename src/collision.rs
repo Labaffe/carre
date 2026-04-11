@@ -112,7 +112,9 @@ fn player_collision<T: Hittable>(
 
         if distance < combined_radius {
             if hittable.despawn_on_hit() {
-                commands.entity(hostile_entity).despawn();
+                if let Some(mut e) = commands.get_entity(hostile_entity) {
+                    e.despawn();
+                }
             }
 
             lives.lives -= 1;
@@ -126,7 +128,7 @@ fn player_collision<T: Hittable>(
             });
 
             if lives.lives <= 0 {
-                commands.entity(player_entity).despawn_recursive();
+                if let Some(e) = commands.get_entity(player_entity) { e.despawn_recursive(); }
                 next_state.set(GameState::GameOver);
             } else {
                 commands.entity(player_entity).insert(

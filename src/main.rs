@@ -133,38 +133,22 @@ fn cleanup_playing(
     boss_music: Query<Entity, With<MusicBoss>>,
     droppables: Query<Entity, With<Droppable>>,
 ) {
-    for entity in players.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in asteroids.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in missiles.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in explosions.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in backgrounds.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in planets.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in enemies.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in enemy_projectiles.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in music.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in boss_music.iter() {
-        commands.entity(entity).despawn_recursive();
-    }
-    for entity in droppables.iter() {
-        commands.entity(entity).despawn_recursive();
+    let all_entities = players.iter()
+        .chain(asteroids.iter())
+        .chain(missiles.iter())
+        .chain(explosions.iter())
+        .chain(backgrounds.iter())
+        .chain(planets.iter())
+        .chain(enemies.iter())
+        .chain(enemy_projectiles.iter())
+        .chain(music.iter())
+        .chain(boss_music.iter())
+        .chain(droppables.iter());
+
+    for entity in all_entities {
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
 }
 

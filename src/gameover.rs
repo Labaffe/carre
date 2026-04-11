@@ -109,7 +109,7 @@ fn setup_gameover_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 fn stop_main_music(mut commands: Commands, main_music_q: Query<Entity, With<MusicMain>>) {
     for entity in main_music_q.iter() {
-        commands.entity(entity).despawn();
+        if let Some(mut e) = commands.get_entity(entity) { e.despawn(); }
     }
 }
 
@@ -167,7 +167,7 @@ fn animate_gameover(
 
 fn cleanup_gameover_ui(mut commands: Commands, query: Query<Entity, With<GameOverUI>>) {
     for entity in query.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
 }
 
@@ -185,7 +185,7 @@ fn handle_restart(
 ) {
     if keyboard.just_pressed(KeyCode::KeyR) {
         for entity in gameover_music_q.iter() {
-            commands.entity(entity).despawn();
+            if let Some(mut e) = commands.get_entity(entity) { e.despawn(); }
         }
         // Le joueur, background et musique sont spawnés par les systèmes OnEnter(Playing)
         next_state.set(GameState::Playing);

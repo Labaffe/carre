@@ -429,6 +429,6 @@ fn update_lives_ui(lives: Res<PlayerLives>, mut icons: Query<(&LifeIcon, &mut Vi
 
 fn cleanup_lives_ui(mut commands: Commands, query: Query<Entity, With<LivesUI>>) {
     for entity in query.iter() {
-        commands.entity(entity).despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
 }
