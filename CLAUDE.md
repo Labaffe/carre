@@ -13,7 +13,8 @@ Shoot'em up vertical en Rust avec le moteur [Bevy](https://bevyengine.org/) (v0.
 ```
 src/
   main.rs        — point d'entrée, enregistrement des plugins
-  state.rs       — GameState (MainMenu, Playing, GameOver)
+  state.rs       — GameState (MainMenu, Playing, LevelTransition, GameOver)
+  game.rs        — progression multi-niveaux, outro (freeze + musique + victoire)
   player.rs      — joueur, vies, invincibilité
   missile.rs     — tir et collision missiles/astéroïdes
   weapon.rs      — définition des hitboxes (Circle, Rect)
@@ -29,12 +30,12 @@ src/
   difficulty.rs  — ressource Difficulty (hub de communication level → systèmes de jeu)
   countdown.rs   — countdown "3-2-1-GO" avec animations pop
   background.rs  — scrolling de fond, planète
-  mainmenu.rs    — menu principal avec tiles aléatoirement invisibles
+  mainmenu.rs    — menu principal (Commencer, Niveaux, Paramètres, Quitter)
   gameover.rs    — écran game over
   pause.rs       — pause (Echap), run condition not_paused()
   crosshair.rs   — viseur
   score.rs       — score du joueur, UI
-  debug.rs       — overlay debug (F1), skip (F2/F3), hitboxes, timeline niveau
+  debug.rs       — overlay debug (F1), skip (F2/F3/F4), hitboxes, timeline niveau
 ```
 
 ## Contrôles
@@ -45,7 +46,7 @@ src/
 | Tir | Automatique |
 | Bombe | Espace (si disponible) |
 | Pause | Echap |
-| Debug | F1 (overlay + timeline), F2 (skip astéroïdes), F3 (skip au boss) |
+| Debug | F1 (overlay + timeline), F2 (skip astéroïdes), F3 (skip au boss), F4 (win niveau) |
 
 ## Framework ennemi — Machine à état
 
@@ -92,8 +93,21 @@ Un ennemi simple peut spawner directement en `Active(0)` sans passer par `Enteri
 
 | Ennemi | États utilisés | Mort |
 |--------|---------------|------|
-| **Boss** | `Entering` → `Flexing` → `Idle` → `Active(0)` → `Transitioning(1)` → `Active(1)` → … → `Dying` → `Dead` | Longue (4s, shake + explosions + flexing accéléré) |
+| **Boss** | `Entering` → `Flexing` → `Idle` → `Active(0)` → `Transitioning(1)` → `Active(1)` → `Transitioning(2)` → `Active(2)` → `Dying` → `Dead` | Longue (4s, shake + explosions + flexing accéléré) |
 | **GreenUFO** | `Active(0)` → `Dying` → `Dead` | Instantanée (explosion style astéroïde) |
+
+### Boss — Difficulté progressive par phase
+
+Le boss a 3 phases de 100 PV chacune (300 PV total). La difficulté augmente à chaque phase :
+
+| Paramètre | Phase 1 | Phase 2 | Phase 3 |
+|-----------|---------|---------|---------|
+| Vitesse de charge | 1500 | 2000 | 2500 |
+| Vitesse de patrol X | 200 | 270 | 270 |
+| Durée patrol avant charge | 5.0s | 4.0s | 3.0s |
+| UFOs en transition | — | 2 | 4 |
+
+Les valeurs sont dans des tableaux indexés par phase : `BOSS_CHARGE_SPEEDS`, `BOSS_PATROL_SPEEDS_X`, `BOSS_TRANSITION_UFO_COUNT` (dans `boss.rs`).
 
 ## Système d'items
 
@@ -156,11 +170,11 @@ Le trigger `After` permet de chaîner des événements à n'importe quelle étap
 
 ```rust
 LevelStep::at(35.8, "boss_spawn")
-    .with(Action::SpawnEnemy("boss", 1)),
+    .with(Action::SpawnEnemy("boss", 1, SpawnPosition::At(0.0, 50.0))),
 
 // 10s après "boss_spawn" : vague de 4 GreenUFOs
 LevelStep::after_step("boss_spawn", 10.0, "boss1_ufos")
-    .with(Action::SpawnEnemy("green_ufo", 4)),
+    .with(Action::SpawnEnemy("green_ufo", 4, SpawnPosition::Top)),
 ```
 
 ### Actions disponibles
@@ -192,11 +206,23 @@ pub struct LevelRunner {
 }
 
 // Dans Difficulty (hub de communication) :
-pub spawn_requests: Vec<(&str, usize)>,  // spawns one-shot (nom, quantité)
-pub active_spawners: HashMap<&str, (usize, f32)>, // spawners continus (nom → (quantité, intervalle))
+pub spawn_requests: Vec<(&str, usize, SpawnPosition)>,  // spawns one-shot (nom, quantité, position)
+pub active_spawners: HashMap<&str, (usize, f32, SpawnPosition)>, // spawners continus (nom → (quantité, intervalle, position))
 ```
 
+**SpawnPosition** — position d'apparition des ennemis :
+
+| Variant | Description |
+|---------|-------------|
+| `Top` | Haut de l'écran (position X aléatoire) |
+| `Bottom` | Bas de l'écran |
+| `Left` | Gauche de l'écran |
+| `Right` | Droite de l'écran |
+| `At(f32, f32)` | Position exacte (x, y) |
+
 Le runner parcourt les étapes dans l'ordre. Quand le déclencheur d'une étape est atteint, toutes ses actions s'exécutent et le temps est enregistré dans `trigger_times` pour les `After`.
+
+**LevelActionEvent** — n'importe quel système peut injecter des actions dans le pipeline du niveau en envoyant un `LevelActionEvent(Vec<Action>)`. Utilisé par le boss pour spawner des GreenUFOs pendant ses transitions.
 
 ### Niveau 1 — Timeline
 
@@ -232,21 +258,21 @@ LevelStep::after_step("boss_spawn", 10.0, "boss_rage")
 
 1. Définir ses `PhaseDef` et `EnemyDef` dans `enemies.rs`
 2. Créer son module avec un système de spawn qui lit `difficulty.spawn_requests` (one-shot) ou `difficulty.active_spawners` (continu)
-3. Ajouter le spawn dans la timeline : `Action::SpawnEnemy("nom", N)` ou `Action::StartSpawning("nom", interval)`
+3. Ajouter le spawn dans la timeline : `Action::SpawnEnemy("nom", N, pos)` ou `Action::StartSpawning("nom", N, interval, pos)`
 
 Exemple pour un spawn one-shot (N ennemis d'un coup) :
 ```rust
 // Dans le système de spawn du nouvel ennemi :
-let Some(pos) = difficulty.spawn_requests.iter().position(|(name, _)| *name == "mon_ennemi") else { return; };
-let (_name, count) = difficulty.spawn_requests.remove(pos);
-for _ in 0..count { /* spawner un ennemi */ }
+let Some(pos) = difficulty.spawn_requests.iter().position(|(name, _, _)| *name == "mon_ennemi") else { return; };
+let (_name, count, spawn_pos) = difficulty.spawn_requests.remove(pos);
+for _ in 0..count { /* spawner un ennemi à spawn_pos */ }
 ```
 
 Exemple pour un spawner continu :
 ```rust
 // Dans le système de spawn du nouvel ennemi :
-let Some(&(wave_size, interval)) = difficulty.active_spawners.get("mon_ennemi") else { return; };
-// ... utiliser wave_size et interval pour le timer de spawn
+let Some(&(wave_size, interval, spawn_pos)) = difficulty.active_spawners.get("mon_ennemi") else { return; };
+// ... utiliser wave_size, interval et spawn_pos pour le timer de spawn
 ```
 
 ### Ajouter une nouvelle Action
@@ -263,6 +289,60 @@ L'overlay debug affiche un panneau à droite avec la timeline du niveau :
 - `NEXT` : prochaine étape (avec le temps restant)
 - `....` : étapes futures
 - Liens de causalité affichés pour les triggers `After`
+
+## Système de jeu — Progression et outro
+
+Le fichier `game.rs` gère la progression multi-niveaux et la séquence d'outro (victoire).
+
+### GameState — États du jeu
+
+```
+MainMenu → Playing → LevelTransition → Playing → … → MainMenu
+                  └→ GameOver → MainMenu
+```
+
+| État | Description |
+|------|-------------|
+| `MainMenu` | Menu principal (Commencer, Niveaux, Paramètres, Quitter) |
+| `Playing` | Niveau en cours |
+| `LevelTransition` | État transitoire entre deux niveaux (déclenche cleanup puis setup) |
+| `GameOver` | Écran de game over |
+
+### GameProgress — Progression
+
+```rust
+pub struct GameProgress {
+    pub current_level: usize,  // niveau en cours (1-indexed)
+    pub total_levels: usize,   // nombre total de niveaux
+}
+```
+
+- « Commencer » lance depuis le niveau 1
+- Le menu « Niveaux » permet de choisir un niveau directement
+- `setup_level` dans `level.rs` lit `GameProgress.current_level` pour sélectionner le bon builder (`build_level_1()`, etc.)
+
+### Outro — Séquence de victoire
+
+```
+Boss meurt → 3s countdown → outro (freeze + musique + texte)
+  → Entrée/Espace → LevelTransition (niveau suivant)
+                   ou MainMenu (dernier niveau terminé)
+```
+
+1. **Détection** : `detect_level_complete` vérifie `boss_spawned && boss_q.is_empty()`
+2. **Countdown** : `OutroCountdown(Timer)` — 3 secondes d'attente
+3. **`start_outro()`** — helper partagé qui :
+   - Freeze le jeu via `PauseState.outro_active = true` (les systèmes gatés par `not_paused()` s'arrêtent, mais le temps réel continue)
+   - Despawn les musiques (`MusicMain` + `MusicBoss`)
+   - Stoppe le background (`difficulty.bg_speed_override = Some(0.0)`)
+   - Spawne l'UI de victoire (titre + instruction, apparition instantanée)
+4. **Musique** : `stage_clear.ogg` jouée une seule fois
+5. **Input** : après 3s de délai, Entrée/Espace continue
+6. **Transition** : si `current_level < total_levels` → niveau suivant via `LevelTransition`, sinon retour au `MainMenu`
+
+### Debug : F4 — Win instantané
+
+F4 tue tous les ennemis et astéroïdes, puis appelle `start_outro()` directement (sans countdown).
 
 ## Commandes
 
