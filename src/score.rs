@@ -6,18 +6,9 @@ pub struct ScorePlugin;
 impl Plugin for ScorePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Score>()
-        .add_systems(
-            OnEnter(GameState::Playing),
-            setup_score_ui,
-        )
-        .add_systems(
-            OnExit(GameState::Playing),
-            cleanup_score_ui,
-        )
-        .add_systems(
-            Update,
-            score_update.run_if(in_state(GameState::Playing)),
-        );
+            .add_systems(OnEnter(GameState::Playing), setup_score_ui)
+            .add_systems(OnExit(GameState::Playing), cleanup_score_ui)
+            .add_systems(Update, score_update.run_if(in_state(GameState::Playing)));
     }
 }
 
@@ -28,41 +19,44 @@ struct ScoreUI;
 struct ScoreText;
 
 #[derive(Resource)]
-pub struct Score
-{
-    value:i32,
-    multiplier:i32,
-    current_time:f32,
-    last_add_time:f32
+pub struct Score {
+    value: i32,
+    multiplier: i32,
+    current_time: f32,
+    last_add_time: f32,
 }
 
 impl Score {
-    pub fn add(self:&mut Self,value_to_add:i32) {
+    pub fn add(self: &mut Self, value_to_add: i32) {
         self.value += value_to_add * self.multiplier;
         self.last_add_time = self.current_time;
     }
-    fn get_size_coeff(self:&Self)->f32{
-        (self.current_time-self.last_add_time).clamp(0.0, 1.0)
+    fn get_size_coeff(self: &Self) -> f32 {
+        (self.current_time - self.last_add_time).clamp(0.0, 1.0)
     }
-    fn text(self:&Self)->String{
+    fn text(self: &Self) -> String {
         self.value.to_string()
     }
 }
 
-impl Default for Score{
+impl Default for Score {
     fn default() -> Self {
-        Score{
-            value:0,
-            multiplier:1,
-            current_time:0.0,
-            last_add_time:0.0
+        Score {
+            value: 0,
+            multiplier: 1,
+            current_time: 0.0,
+            last_add_time: 0.0,
         }
     }
 }
 
-fn setup_score_ui(mut commands: Commands,mut score:ResMut<Score>, asset_server: Res<AssetServer>) {
+fn setup_score_ui(
+    mut commands: Commands,
+    mut score: ResMut<Score>,
+    asset_server: Res<AssetServer>,
+) {
     *score = Score::default();
-    let font = asset_server.load("fonts/optimus_princeps.ttf");
+    let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     commands
         .spawn((
             NodeBundle {
@@ -93,7 +87,6 @@ fn setup_score_ui(mut commands: Commands,mut score:ResMut<Score>, asset_server: 
                 ScoreText,
             ));
         });
-
 }
 
 fn cleanup_score_ui(mut commands: Commands, query: Query<Entity, With<ScoreUI>>) {
@@ -102,11 +95,10 @@ fn cleanup_score_ui(mut commands: Commands, query: Query<Entity, With<ScoreUI>>)
     }
 }
 
-
 fn score_update(
     time: Res<Time>,
     mut text_q: Query<(&mut Text, &mut Transform), With<ScoreText>>,
-    mut score:ResMut<Score>
+    mut score: ResMut<Score>,
 ) {
     score.current_time += time.delta_seconds();
 
@@ -116,7 +108,7 @@ fn score_update(
             section.value = score.text();
         }
         let coef = score.get_size_coeff();
-        let scale = 0.3 * coef + 1.0 * (1.0-coef);
+        let scale = 0.3 * coef + 1.0 * (1.0 - coef);
         transform.scale = Vec3::splat(scale);
     }
 }
