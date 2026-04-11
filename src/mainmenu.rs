@@ -69,6 +69,10 @@ struct SettingsUI;
 #[derive(Component)]
 struct LevelsUI;
 
+/// Marqueur pour une option de niveau dans le sous-menu (index 0-based).
+#[derive(Component)]
+struct LevelOption(usize);
+
 /// Texte affichant la valeur du volume.
 #[derive(Component)]
 struct VolumeText;
@@ -329,9 +333,10 @@ fn animate_main_menu(
         &mut Style,
         (With<MenuOptionsContainer>, Without<MainMenuLogo>),
     >,
-    mut text_q: Query<(&mut Text, &MenuOption, &mut Style), (Without<MainMenuLogo>, Without<MenuOptionsContainer>)>,
+    mut text_q: Query<(&mut Text, &MenuOption, &mut Style), (Without<MainMenuLogo>, Without<MenuOptionsContainer>, Without<LevelOption>)>,
+    mut level_text_q: Query<(&mut Text, &LevelOption), (Without<MenuOption>, Without<VolumeText>)>,
     mut tile_q: Query<&mut Sprite, With<MainMenuTile>>,
-    mut volume_text_q: Query<&mut Text, (With<VolumeText>, Without<MenuOption>)>,
+    mut volume_text_q: Query<&mut Text, (With<VolumeText>, Without<MenuOption>, Without<LevelOption>)>,
     settings: Res<GameSettings>,
 ) {
     anim.elapsed += time.delta_seconds();
@@ -385,6 +390,20 @@ fn animate_main_menu(
             }
         }
         idx += 1;
+    }
+
+    // Sous-menu Niveaux — couleurs de sélection
+    if anim.view == MenuView::Levels {
+        for (mut text, level_opt) in level_text_q.iter_mut() {
+            let is_selected = level_opt.0 == anim.selected;
+            for section in text.sections.iter_mut() {
+                if is_selected {
+                    section.style.color = Color::rgba(1.0, 0.85, 0.0, 1.0);
+                } else {
+                    section.style.color = Color::rgba(0.6, 0.6, 0.6, 1.0);
+                }
+            }
+        }
     }
 
     // Mettre à jour le texte du volume dans le sous-menu
@@ -623,13 +642,16 @@ fn spawn_levels_ui(
                     } else {
                         Color::rgba(0.6, 0.6, 0.6, 1.0)
                     };
-                    parent.spawn(TextBundle::from_section(
-                        format!("Niveau {}", i + 1),
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 32.0,
-                            color,
-                        },
+                    parent.spawn((
+                        TextBundle::from_section(
+                            format!("Niveau {}", i + 1),
+                            TextStyle {
+                                font: font.clone(),
+                                font_size: 32.0,
+                                color,
+                            },
+                        ),
+                        LevelOption(i),
                     ));
                 }
 

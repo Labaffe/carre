@@ -60,7 +60,7 @@ impl Default for GameProgress {
     fn default() -> Self {
         Self {
             current_level: 1,
-            total_levels: 1,
+            total_levels: 2,
         }
     }
 }

@@ -106,6 +106,10 @@ pub enum Action {
     /// Fait apparaître la planète.
     ShowPlanet,
 
+    // ─── Progression ─────────────────────────────────────────────
+    /// Marque le niveau comme terminé (déclenche le countdown → outro).
+    MarkLevelComplete,
+
     // ─── Log (debug) ────────────────────────────────────────────
     /// Affiche un message dans la console (debug uniquement).
     Log(&'static str),
@@ -331,6 +335,7 @@ impl Action {
                 format!("BgDecel({}s,{})", duration, final_speed)
             }
             Action::ShowPlanet => "Planet".to_string(),
+            Action::MarkLevelComplete => "LevelComplete".to_string(),
             Action::Log(msg) => format!("Log({})", msg),
         }
     }
@@ -402,14 +407,27 @@ pub fn build_level_1() -> Vec<LevelStep> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  Définition du niveau 2
+// ═══════════════════════════════════════════════════════════════════════
+
+pub fn build_level_2() -> Vec<LevelStep> {
+    vec![
+        LevelStep::at(0.0, "game_start")
+            .with(Action::Log("Niveau 2 démarré")),
+        LevelStep::at(2.0, "level_complete")
+            .with(Action::MarkLevelComplete)
+            .with(Action::Log("Niveau 2 terminé")),
+    ]
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  Systèmes
 // ═══════════════════════════════════════════════════════════════════════
 
 fn setup_level(mut commands: Commands, progress: Res<crate::game::GameProgress>) {
     let steps = match progress.current_level {
         1 => build_level_1(),
-        // Ajouter ici les niveaux suivants :
-        // 2 => build_level_2(),
+        2 => build_level_2(),
         _ => build_level_1(), // fallback
     };
     commands.insert_resource(LevelRunner::new(steps));
@@ -535,6 +553,9 @@ pub(crate) fn execute_action(
         }
         Action::ShowPlanet => {
             difficulty.planet_appear_elapsed = Some(difficulty.elapsed);
+        }
+        Action::MarkLevelComplete => {
+            difficulty.boss_spawned = true;
         }
         Action::Log(msg) => {
             info!("[Level] {}", msg);
