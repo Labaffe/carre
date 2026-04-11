@@ -9,7 +9,7 @@
 
 use crate::enemies::GREEN_UFO;
 use crate::enemy::{Enemy, EnemyState, PatternIndex, PatternTimer};
-use crate::explosion::{load_frames_from_folder, spawn_explosion};
+use crate::explosion::{load_frames_from_folder, spawn_custom_anim};
 use crate::item::{DropTable, ItemType};
 use crate::pause::not_paused;
 use crate::player::Player;
@@ -77,9 +77,13 @@ struct GreenUFOAnim {
 
 // ─── Ressources ─────────────────────────────────────────────────────
 
-/// Frames préchargées du GreenUFO.
+/// Frames préchargées du GreenUFO (idle).
 #[derive(Resource)]
 struct GreenUFOFrames(Vec<Handle<Image>>);
+
+/// Frames préchargées de l'animation de mort du GreenUFO.
+#[derive(Resource)]
+struct GreenUFODeathFrames(Vec<Handle<Image>>);
 
 #[derive(Resource)]
 struct GreenUFOSpawner {
@@ -92,6 +96,10 @@ fn preload_green_ufo_frames(mut commands: Commands, asset_server: Res<AssetServe
     let frames = load_frames_from_folder(&asset_server, "images/green_ufo")
         .expect("green_ufo frames folder missing or empty");
     commands.insert_resource(GreenUFOFrames(frames));
+
+    let death_frames = load_frames_from_folder(&asset_server, "images/green_ufo/death")
+        .expect("green_ufo death frames folder missing or empty");
+    commands.insert_resource(GreenUFODeathFrames(death_frames));
 }
 
 // ─── Spawn ──────────────────────────────────────────────────────────
@@ -349,6 +357,7 @@ fn green_ufo_animate(
 fn green_ufo_death(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    death_frames: Res<GreenUFODeathFrames>,
     query: Query<(Entity, &Enemy, &Transform), (With<GreenUFOMarker>, Changed<Enemy>)>,
 ) {
     for (_entity, enemy, transform) in query.iter() {
@@ -356,19 +365,17 @@ fn green_ufo_death(
             continue;
         }
 
-        // Explosion style astéroïde
-        spawn_explosion(
+        // Animation de mort custom (frames green_ufo/death/)
+        spawn_custom_anim(
             &mut commands,
-            &asset_server,
+            death_frames.0.clone(),
             transform.translation,
             Vec2::splat(GREEN_UFO.sprite_size),
-            0,
-            Vec3::ZERO,
-            Quat::IDENTITY,
+            0.4,
         );
 
         commands.spawn(AudioBundle {
-            source: asset_server.load("audio/asteroid_die.ogg"),
+            source: asset_server.load("audio/green_ufo_death.ogg"),
             settings: PlaybackSettings::DESPAWN,
         });
     }

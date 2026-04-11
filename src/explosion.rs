@@ -107,6 +107,35 @@ fn spawn_anim(
     ));
 }
 
+/// Spawn une animation à partir de frames préchargées avec une durée custom.
+/// Durée totale = `duration` secondes, la durée par frame est calculée.
+pub fn spawn_custom_anim(
+    commands: &mut Commands,
+    frames: Vec<Handle<Image>>,
+    position: Vec3,
+    size: Vec2,
+    duration: f32,
+) {
+    let frame_duration = duration / frames.len() as f32;
+    commands.spawn((
+        SpriteBundle {
+            texture: frames[0].clone(),
+            sprite: Sprite {
+                custom_size: Some(size),
+                ..default()
+            },
+            transform: Transform::from_translation(position),
+            ..default()
+        },
+        Explosion {
+            frames,
+            current_frame: 0,
+            timer: Timer::from_seconds(frame_duration, TimerMode::Repeating),
+            velocity: Vec3::ZERO,
+        },
+    ));
+}
+
 // ─── Explosion astéroïde ─────────────────────────────────────────────
 
 /// Charge les frames par défaut (explosion générique).
