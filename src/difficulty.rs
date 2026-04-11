@@ -92,8 +92,6 @@ pub struct Difficulty {
     pub boss_music_start_time: Option<f32>,
     /// Instant (elapsed) où le boss est passé en Active (fin du flexing).
     pub boss_active_time: Option<f32>,
-    /// Les astéroïdes ne spawnent plus.
-    pub spawning_stopped: bool,
     /// Vitesse du background indépendante de la difficulté.
     /// None = utilise le calcul basé sur factor. Some(v) = vitesse fixe décroissante.
     pub bg_speed_override: Option<f32>,
@@ -134,7 +132,6 @@ impl Default for Difficulty {
             boss_music_played: false,
             boss_music_start_time: None,
             boss_active_time: None,
-            spawning_stopped: false,
             bg_speed_override: None,
             boss_bg_initialized: false,
             landing_played: false,
@@ -157,9 +154,6 @@ impl Difficulty {
         (1.0 / self.factor).max(0.15)
     }
 }
-
-/// Temps à partir duquel les astéroïdes ne spawnent plus (utilisé par F2 debug).
-pub const SPAWN_STOP_TIME: f32 = 27.7;
 
 fn reset_difficulty(mut difficulty: ResMut<Difficulty>) {
     *difficulty = Difficulty::default();

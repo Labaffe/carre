@@ -94,8 +94,8 @@ fn spawn_asteroids(
     difficulty: Res<Difficulty>,
     textures: Res<AsteroidTextures>,
 ) {
-    // Plus de spawn après 26.7s
-    if difficulty.spawning_stopped {
+    // Spawn uniquement si "asteroid" est dans les spawners actifs
+    if !difficulty.active_spawners.contains_key("asteroid") {
         return;
     }
 

@@ -99,8 +99,6 @@ pub enum Action {
     StartSpawning(&'static str, usize, f32, SpawnPosition),
     /// Désactive le spawn continu d'un type d'ennemi.
     StopSpawning(&'static str),
-    /// Arrête le spawn des astéroïdes.
-    StopAsteroidSpawning,
 
     // ─── Environnement ──────────────────────────────────────────
     /// Démarre la décélération du fond (durée, vitesse finale).
@@ -281,7 +279,6 @@ impl Action {
             Action::SetDifficulty(_)
                 | Action::StopMainMusic
                 | Action::StopSpawning(_)
-                | Action::StopAsteroidSpawning
                 | Action::StartBgDeceleration { .. }
                 | Action::ShowPlanet
         )
@@ -327,7 +324,6 @@ impl Action {
                 format!("Start({}×{},{}s{})", count, name, interval, pos_str)
             }
             Action::StopSpawning(name) => format!("Stop({})", name),
-            Action::StopAsteroidSpawning => "StopAst".to_string(),
             Action::StartBgDeceleration {
                 duration,
                 final_speed,
@@ -361,6 +357,7 @@ pub fn build_level_1() -> Vec<LevelStep> {
         LevelStep::at(0.0, "game_start")
             .with(Action::StartMusic("audio/gradius.ogg"))
             .with(Action::SetDifficulty(0.5))
+            .with(Action::StartSpawning("asteroid", 1, 1.0, SpawnPosition::Top))
             .with(Action::Log("Niveau 1 démarré")),
         // ─── Countdown (7-10s) ──────────────────────────────────
         LevelStep::at(7.0, "countdown")
@@ -386,7 +383,7 @@ pub fn build_level_1() -> Vec<LevelStep> {
             .with(Action::SendBoom),
         // ─── Transition vers le boss ────────────────────────────
         LevelStep::at(27.7, "pre_boss")
-            .with(Action::StopAsteroidSpawning)
+            .with(Action::StopSpawning("asteroid"))
             .with(Action::StopSpawning("green_ufo"))
             .with(Action::StartBgDeceleration {
                 duration: 9.0,
@@ -530,9 +527,6 @@ pub(crate) fn execute_action(
         }
         Action::StopSpawning(name) => {
             difficulty.active_spawners.remove(name);
-        }
-        Action::StopAsteroidSpawning => {
-            difficulty.spawning_stopped = true;
         }
         Action::StartBgDeceleration {
             duration,

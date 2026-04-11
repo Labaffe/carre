@@ -132,8 +132,8 @@ Le fichier `level.rs` pilote le déroulement du jeu via une timeline déclarativ
 level.rs (LevelRunner)          difficulty.rs (Difficulty)         systèmes de jeu
 ────────────────────           ──────────────────────────         ─────────────────
 SetDifficulty(3.5)     ──→     difficulty.factor = 3.5      ──→  asteroid spawn rate
-StopAsteroidSpawning   ──→     difficulty.spawning_stopped  ──→  asteroid.rs arrête
-StartSpawning("x",4,2) ──→     difficulty.active_spawners   ──→  green_ufo.rs: 4×/2s
+StartSpawning("x",4,2) ──→     difficulty.active_spawners   ──→  green_ufo.rs, asteroid.rs
+StopSpawning("x")      ──→     difficulty.active_spawners   ──→  retire le spawner
 SpawnEnemy("boss",2)   ──→     difficulty.spawn_requests    ──→  boss.rs spawne 2×
 StartBgDeceleration    ──→     difficulty.bg_decel_*        ──→  difficulty.rs calcule
 ShowPlanet             ──→     difficulty.planet_appear_*   ──→  background.rs anime
@@ -173,10 +173,9 @@ LevelStep::after_step("boss_spawn", 10.0, "boss1_ufos")
 | `StopMainMusic` | Despawn toutes les entités `MusicMain` |
 | `StartCountdown` | Envoie `CountdownEvent` (READY-3-2-1-GO) |
 | `SendBoom` | Envoie `BoomEvent` (flash visuel) |
-| `SpawnEnemy(&str, usize)` | Spawn N ennemis d'un type via `spawn_requests` (ex: `"boss", 2`) |
-| `StartSpawning(&str, usize, f32)` | Spawner continu : N ennemis toutes les Xs (ex: `"green_ufo", 4, 5.0`) |
-| `StopSpawning(&str)` | Désactive un spawner continu |
-| `StopAsteroidSpawning` | `difficulty.spawning_stopped = true` |
+| `SpawnEnemy(&str, usize, SpawnPosition)` | Spawn N ennemis d'un type via `spawn_requests` (ex: `"boss", 1, At(0,50)`) |
+| `StartSpawning(&str, usize, f32, SpawnPosition)` | Spawner continu (ex: `"green_ufo", 4, 5.0, Top`). Pour `"asteroid"`, les valeurs count/interval sont ignorées (système propre basé sur `difficulty.factor`). |
+| `StopSpawning(&str)` | Désactive un spawner continu (fonctionne pour tous les types : `"asteroid"`, `"green_ufo"`, etc.) |
 | `StartBgDeceleration { duration, final_speed }` | Décélération progressive du background |
 | `ShowPlanet` | Déclenche l'animation d'apparition de la planète |
 | `Log(&str)` | `info!()` en console (debug uniquement) |
@@ -202,13 +201,13 @@ Le runner parcourt les étapes dans l'ordre. Quand le déclencheur d'une étape 
 ### Niveau 1 — Timeline
 
 ```
- 0.0s  game_start      Music(gradius.ogg), Diff(0.5)
+ 0.0s  game_start      Music(gradius.ogg), Diff(0.5), Start(asteroid)
  7.0s  countdown       Sound(charging.ogg), Countdown
-10.0s  phase_2_start   Diff(3.5), Start(4×green_ufo,2s)
+10.0s  phase_2_start   Diff(3.5), Start(2×green_ufo,4s)
 14.3s  boom_1          Diff(4.5), Sound(t_go.wav), Boom
 18.3s  boom_2          Diff(6.5), Sound(t_go.wav), Boom
 22.6s  boom_3          Diff(7.5), Sound(t_go.wav), Boom
-27.7s  pre_boss        StopAst, Stop(green_ufo), BgDecel(9s,30)
+27.7s  pre_boss        Stop(asteroid), Stop(green_ufo), BgDecel(9s,30)
 28.0s  planet_appear   Planet
 35.8s  boss_spawn      Spawn(1×boss), StopMusic
       +10s boss1_ufos  Start(4×green_ufo,5s)  [-> boss_spawn]
