@@ -16,11 +16,12 @@
 //! ```
 
 use crate::asteroid::Asteroid;
-use crate::boss::BossMarker;
+use crate::boss::{BossMarker, MusicBoss};
 use crate::difficulty::Difficulty;
 use crate::enemy::{Enemy, EnemyState};
 use crate::pause::PauseState;
 use crate::state::GameState;
+use crate::MusicMain;
 use bevy::prelude::*;
 
 pub struct GamePlugin;
@@ -96,17 +97,57 @@ const OUTRO_INPUT_DELAY: f32 = 3.0;
 
 // ─── Systèmes ───────────────────────────────────────────────────────
 
+/// Lance la séquence d'outro : freeze le jeu, coupe les musiques,
+/// stoppe le background, affiche l'UI.
+fn start_outro(
+    commands: &mut Commands,
+    pause: &mut ResMut<PauseState>,
+    difficulty: &mut ResMut<Difficulty>,
+    asset_server: &Res<AssetServer>,
+    music_q: &Query<Entity, With<MusicMain>>,
+    boss_music_q: &Query<Entity, With<MusicBoss>>,
+) {
+    // Freeze le jeu via le flag outro (pas d'appel à time.pause(),
+    // le temps réel continue pour animer l'outro)
+    pause.outro_active = true;
+
+    // Couper les musiques
+    for entity in music_q.iter() {
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
+    }
+    for entity in boss_music_q.iter() {
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
+    }
+
+    // Stopper le background
+    difficulty.bg_speed_override = Some(0.0);
+
+    commands.remove_resource::<OutroCountdown>();
+    commands.insert_resource(LevelOutro {
+        elapsed: 0.0,
+        music_spawned: false,
+    });
+
+    spawn_outro_ui(commands, asset_server);
+}
+
 /// Détecte quand tous les boss sont morts (entités despawnées) et lance
 /// le countdown de 3s avant l'outro.
 fn detect_level_complete(
     mut commands: Commands,
     time: Res<Time>,
-    difficulty: Res<Difficulty>,
+    mut difficulty: ResMut<Difficulty>,
     boss_q: Query<&Enemy, With<BossMarker>>,
     countdown: Option<ResMut<OutroCountdown>>,
     outro: Option<Res<LevelOutro>>,
     mut pause: ResMut<PauseState>,
     asset_server: Res<AssetServer>,
+    music_q: Query<Entity, With<MusicMain>>,
+    boss_music_q: Query<Entity, With<MusicBoss>>,
 ) {
     // Déjà en outro → rien à faire
     if outro.is_some() {
@@ -125,18 +166,14 @@ fn detect_level_complete(
     if let Some(mut cd) = countdown {
         cd.0.tick(time.delta());
         if cd.0.finished() {
-            commands.remove_resource::<OutroCountdown>();
-
-            // Freeze le jeu via le flag outro (pas d'appel à time.pause(),
-            // le temps réel continue pour animer l'outro)
-            pause.outro_active = true;
-
-            commands.insert_resource(LevelOutro {
-                elapsed: 0.0,
-                music_spawned: false,
-            });
-
-            spawn_outro_ui(&mut commands, &asset_server);
+            start_outro(
+                &mut commands,
+                &mut pause,
+                &mut difficulty,
+                &asset_server,
+                &music_q,
+                &boss_music_q,
+            );
         }
     } else {
         // Premier frame de détection → démarrer le countdown
@@ -237,6 +274,8 @@ fn debug_skip_to_outro(
     asset_server: Res<AssetServer>,
     enemy_q: Query<(Entity, &Enemy)>,
     asteroid_q: Query<Entity, With<Asteroid>>,
+    music_q: Query<Entity, With<MusicMain>>,
+    boss_music_q: Query<Entity, With<MusicBoss>>,
 ) {
     if !keyboard.just_pressed(KeyCode::F4) {
         return;
@@ -268,13 +307,14 @@ fn debug_skip_to_outro(
     difficulty.active_spawners.clear();
 
     // Lancer l'outro immédiatement (sans countdown)
-    pause.outro_active = true;
-    commands.remove_resource::<OutroCountdown>();
-    commands.insert_resource(LevelOutro {
-        elapsed: 0.0,
-        music_spawned: false,
-    });
-    spawn_outro_ui(&mut commands, &asset_server);
+    start_outro(
+        &mut commands,
+        &mut pause,
+        &mut difficulty,
+        &asset_server,
+        &music_q,
+        &boss_music_q,
+    );
 }
 
 // ─── UI de l'outro ──────────────────────────────────────────────────

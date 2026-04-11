@@ -268,7 +268,8 @@ fn update_debug_ui(
              \n\
              F1 : Debug Mode ON/OFF\n\
              F2 : Skip asteroides\n\
-             F3 : Skip au boss",
+             F3 : Skip au boss\n\
+             F4 : Win niveau (outro)",
             fps, minutes, seconds, factor,
             lives.lives,
             score.value(),
