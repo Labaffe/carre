@@ -6,8 +6,7 @@
 //! - Sous-menu Paramètres : réglage du volume global.
 
 use crate::GameSettings;
-use crate::game::GameProgress;
-use crate::level::level_name;
+use crate::game::{CampaignProgress, PlayMode};
 use crate::state::GameState;
 use bevy::app::AppExit;
 use bevy::prelude::*;
@@ -57,7 +56,7 @@ struct MenuOption {
 #[derive(Clone, PartialEq)]
 enum MenuAction {
     Play,
-    Levels,
+    Primes,
     Settings,
     Quit,
 }
@@ -66,13 +65,6 @@ enum MenuAction {
 #[derive(Component)]
 struct SettingsUI;
 
-/// Marqueur pour les éléments du sous-menu Niveaux.
-#[derive(Component)]
-struct LevelsUI;
-
-/// Marqueur pour une option de niveau dans le sous-menu (index 0-based).
-#[derive(Component)]
-struct LevelOption(usize);
 
 /// Texte affichant la valeur du volume.
 #[derive(Component)]
@@ -82,7 +74,6 @@ struct VolumeText;
 #[derive(Clone, PartialEq)]
 enum MenuView {
     Main,
-    Levels,
     Settings,
 }
 
@@ -241,10 +232,10 @@ fn setup_main_menu(
                         MainMenuUI,
                     ));
 
-                    // Option : Niveaux
+                    // Option : Primes
                     menu.spawn((
                         TextBundle::from_section(
-                            "Niveaux",
+                            "Primes",
                             TextStyle {
                                 font: font.clone(),
                                 font_size: 36.0,
@@ -252,7 +243,7 @@ fn setup_main_menu(
                             },
                         ),
                         MenuOption {
-                            action: MenuAction::Levels,
+                            action: MenuAction::Primes,
                         },
                         MainMenuUI,
                     ));
@@ -334,10 +325,9 @@ fn animate_main_menu(
         &mut Style,
         (With<MenuOptionsContainer>, Without<MainMenuLogo>),
     >,
-    mut text_q: Query<(&mut Text, &MenuOption, &mut Style), (Without<MainMenuLogo>, Without<MenuOptionsContainer>, Without<LevelOption>)>,
-    mut level_text_q: Query<(&mut Text, &LevelOption), (Without<MenuOption>, Without<VolumeText>)>,
+    mut text_q: Query<(&mut Text, &MenuOption, &mut Style), (Without<MainMenuLogo>, Without<MenuOptionsContainer>)>,
     mut tile_q: Query<&mut Sprite, With<MainMenuTile>>,
-    mut volume_text_q: Query<&mut Text, (With<VolumeText>, Without<MenuOption>, Without<LevelOption>)>,
+    mut volume_text_q: Query<&mut Text, (With<VolumeText>, Without<MenuOption>)>,
     settings: Res<GameSettings>,
 ) {
     anim.elapsed += time.delta_seconds();
@@ -393,20 +383,6 @@ fn animate_main_menu(
         idx += 1;
     }
 
-    // Sous-menu Niveaux — couleurs de sélection
-    if anim.view == MenuView::Levels {
-        for (mut text, level_opt) in level_text_q.iter_mut() {
-            let is_selected = level_opt.0 == anim.selected;
-            for section in text.sections.iter_mut() {
-                if is_selected {
-                    section.style.color = Color::rgba(1.0, 0.85, 0.0, 1.0);
-                } else {
-                    section.style.color = Color::rgba(0.6, 0.6, 0.6, 1.0);
-                }
-            }
-        }
-    }
-
     // Mettre à jour le texte du volume dans le sous-menu
     for mut text in volume_text_q.iter_mut() {
         let pct = (settings.master_volume * 100.0).round() as i32;
@@ -427,9 +403,7 @@ fn handle_menu_input(
     mut global_volume: ResMut<GlobalVolume>,
     asset_server: Res<AssetServer>,
     settings_ui_q: Query<Entity, With<SettingsUI>>,
-    levels_ui_q: Query<Entity, With<LevelsUI>>,
     root_q: Query<Entity, With<MainMenuRoot>>,
-    mut game_progress: ResMut<GameProgress>,
 ) {
     if anim.elapsed < FADE_DELAY {
         return;
@@ -447,17 +421,6 @@ fn handle_menu_input(
                 &asset_server,
                 &settings,
                 &root_q,
-                &mut game_progress,
-            );
-        }
-        MenuView::Levels => {
-            handle_levels_view(
-                &keyboard,
-                &mut anim,
-                &mut next_state,
-                &mut commands,
-                &levels_ui_q,
-                &mut game_progress,
             );
         }
         MenuView::Settings => {
@@ -483,9 +446,8 @@ fn handle_main_view(
     asset_server: &Res<AssetServer>,
     settings: &ResMut<GameSettings>,
     root_q: &Query<Entity, With<MainMenuRoot>>,
-    game_progress: &mut ResMut<GameProgress>,
 ) {
-    // Navigation (4 options : Commencer, Niveaux, Paramètres, Quitter)
+    // Navigation (4 options : Commencer, Primes, Paramètres, Quitter)
     if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
         if anim.selected > 0 {
             anim.selected -= 1;
@@ -504,15 +466,15 @@ fn handle_main_view(
     {
         match anim.selected {
             0 => {
-                // Commencer : lancer le jeu depuis le niveau 1
-                game_progress.current_level = 1;
-                next_state.set(GameState::Playing);
+                // Commencer : mode Campagne → sélection de niveaux
+                commands.insert_resource(PlayMode::Campaign);
+                commands.insert_resource(CampaignProgress::default());
+                next_state.set(GameState::LevelSelect);
             }
             1 => {
-                // Ouvrir le sous-menu Niveaux
-                anim.view = MenuView::Levels;
-                anim.selected = 0;
-                spawn_levels_ui(commands, asset_server, game_progress, root_q);
+                // Primes : mode à la carte → sélection de niveaux
+                commands.insert_resource(PlayMode::Primes);
+                next_state.set(GameState::LevelSelect);
             }
             2 => {
                 // Ouvrir le sous-menu Paramètres
@@ -558,115 +520,6 @@ fn handle_settings_view(
             if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
         }
     }
-}
-
-fn handle_levels_view(
-    keyboard: &Res<ButtonInput<KeyCode>>,
-    anim: &mut ResMut<MainMenuAnim>,
-    next_state: &mut ResMut<NextState<GameState>>,
-    commands: &mut Commands,
-    levels_ui_q: &Query<Entity, With<LevelsUI>>,
-    game_progress: &mut ResMut<GameProgress>,
-) {
-    // Navigation (sélection du niveau)
-    if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
-        if anim.selected > 0 {
-            anim.selected -= 1;
-        }
-    }
-    if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
-        if anim.selected < game_progress.total_levels - 1 {
-            anim.selected += 1;
-        }
-    }
-
-    // Lancer le niveau sélectionné
-    if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
-        game_progress.current_level = anim.selected + 1;
-        next_state.set(GameState::Playing);
-    }
-
-    // Retour au menu principal
-    if keyboard.just_pressed(KeyCode::Escape) {
-        anim.view = MenuView::Main;
-        anim.selected = 1; // Resélectionner "Niveaux"
-        for entity in levels_ui_q.iter() {
-            if let Some(e) = commands.get_entity(entity) {
-                e.despawn_recursive();
-            }
-        }
-    }
-}
-
-/// Spawn l'UI du sous-menu Niveaux (enfant du root).
-fn spawn_levels_ui(
-    commands: &mut Commands,
-    asset_server: &Res<AssetServer>,
-    game_progress: &ResMut<GameProgress>,
-    root_q: &Query<Entity, With<MainMenuRoot>>,
-) {
-    let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
-
-    let Ok(root_entity) = root_q.get_single() else {
-        return;
-    };
-
-    commands.entity(root_entity).with_children(|parent| {
-        parent
-            .spawn((
-                NodeBundle {
-                    style: Style {
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Center,
-                        row_gap: Val::Px(30.0),
-                        ..default()
-                    },
-                    ..default()
-                },
-                LevelsUI,
-            ))
-            .with_children(|parent| {
-                // Titre
-                parent.spawn(TextBundle::from_section(
-                    "NIVEAUX",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 48.0,
-                        color: Color::WHITE,
-                    },
-                ));
-
-                // Liste des niveaux
-                for i in 0..game_progress.total_levels {
-                    let color = if i == 0 {
-                        Color::rgba(1.0, 0.85, 0.0, 1.0) // Premier sélectionné
-                    } else {
-                        Color::rgba(0.6, 0.6, 0.6, 1.0)
-                    };
-                    parent.spawn((
-                        TextBundle::from_section(
-                            format!("{}. {}", i + 1, level_name(i + 1)),
-                            TextStyle {
-                                font: font.clone(),
-                                font_size: 32.0,
-                                color,
-                            },
-                        ),
-                        LevelOption(i),
-                    ));
-                }
-
-                // Instruction
-                parent.spawn(TextBundle::from_section(
-                    "Entree pour jouer | Echap pour revenir",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 18.0,
-                        color: Color::rgba(0.5, 0.5, 0.5, 1.0),
-                    },
-                ));
-            });
-    });
 }
 
 /// Spawn l'UI du sous-menu Paramètres (enfant du root).

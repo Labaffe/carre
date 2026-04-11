@@ -4,6 +4,10 @@
 //! Un overlay s'affiche avec les options "Reprendre" et "Quitter".
 //! Le temps de jeu est gelé tant que la pause est active.
 
+use crate::game::{
+    CampaignProgress, ConfirmOptionMarker, ConfirmPopup, ConfirmPopupUI, PlayMode,
+    despawn_confirm_popup, spawn_confirm_popup,
+};
 use crate::state::GameState;
 use crate::MusicMain;
 use crate::boss::MusicBoss;
@@ -68,11 +72,63 @@ fn handle_pause_input(
     mut exit: EventWriter<AppExit>,
     mut next_state: ResMut<NextState<GameState>>,
     pause_ui_q: Query<Entity, With<PauseUI>>,
-    mut text_q: Query<(&mut Text, &PauseOption)>,
+    mut text_q: Query<(&mut Text, &PauseOption), Without<ConfirmOptionMarker>>,
     asset_server: Res<AssetServer>,
     music_q: Query<&AudioSink, With<MusicMain>>,
     boss_music_q: Query<&AudioSink, With<MusicBoss>>,
+    play_mode: Option<Res<PlayMode>>,
+    confirm: Option<ResMut<ConfirmPopup>>,
+    confirm_ui_q: Query<Entity, With<ConfirmPopupUI>>,
+    mut confirm_text_q: Query<(&mut Text, &ConfirmOptionMarker), Without<PauseOption>>,
 ) {
+    // ─── Popup de confirmation active ───────────────────────────
+    if let Some(mut popup) = confirm {
+        // Mise à jour des couleurs Oui/Non
+        for (mut text, marker) in confirm_text_q.iter_mut() {
+            let is_sel = marker.0 == popup.selected;
+            for section in text.sections.iter_mut() {
+                if is_sel {
+                    section.style.color = Color::rgba(1.0, 0.85, 0.0, 1.0);
+                } else {
+                    section.style.color = Color::rgba(0.6, 0.6, 0.6, 1.0);
+                }
+            }
+        }
+
+        // Navigation gauche/droite
+        if keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyQ) {
+            popup.selected = 0;
+        }
+        if keyboard.just_pressed(KeyCode::ArrowRight) || keyboard.just_pressed(KeyCode::KeyD) {
+            popup.selected = 1;
+        }
+
+        if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
+            if popup.selected == 1 {
+                // Oui → abandon campagne
+                commands.remove_resource::<CampaignProgress>();
+                commands.remove_resource::<PlayMode>();
+                commands.remove_resource::<ConfirmPopup>();
+                despawn_confirm_popup(&mut commands, &confirm_ui_q);
+                unpause(&mut commands, &mut pause, &mut time, &pause_ui_q);
+                next_state.set(GameState::MainMenu);
+            } else {
+                // Non → fermer la popup
+                commands.remove_resource::<ConfirmPopup>();
+                despawn_confirm_popup(&mut commands, &confirm_ui_q);
+            }
+        }
+
+        if keyboard.just_pressed(KeyCode::Escape) {
+            // Fermer la popup → retour au menu pause
+            commands.remove_resource::<ConfirmPopup>();
+            despawn_confirm_popup(&mut commands, &confirm_ui_q);
+        }
+
+        return;
+    }
+
+    // ─── Gestion normale de la pause ────────────────────────────
     if keyboard.just_pressed(KeyCode::Escape) {
         // Bloquer la pause pendant l'outro de niveau
         if pause.outro_active {
@@ -159,9 +215,18 @@ fn handle_pause_input(
                 unpause(&mut commands, &mut pause, &mut time, &pause_ui_q);
             }
             1 => {
-                // Retour au menu principal
-                unpause(&mut commands, &mut pause, &mut time, &pause_ui_q);
-                next_state.set(GameState::MainMenu);
+                // Menu principal
+                let is_campaign = play_mode.map(|m| *m) == Some(PlayMode::Campaign);
+                if is_campaign {
+                    // Afficher la popup de confirmation
+                    commands.insert_resource(ConfirmPopup { selected: 0 });
+                    spawn_confirm_popup(&mut commands, &asset_server);
+                } else {
+                    // Retour direct
+                    commands.remove_resource::<PlayMode>();
+                    unpause(&mut commands, &mut pause, &mut time, &pause_ui_q);
+                    next_state.set(GameState::MainMenu);
+                }
             }
             2 => {
                 // Quitter le jeu
@@ -270,12 +335,17 @@ fn cleanup_pause(
     mut pause: ResMut<PauseState>,
     mut time: ResMut<Time<Virtual>>,
     pause_ui_q: Query<Entity, With<PauseUI>>,
+    confirm_ui_q: Query<Entity, With<ConfirmPopupUI>>,
 ) {
     if pause.paused {
         pause.paused = false;
         time.unpause();
     }
+    commands.remove_resource::<ConfirmPopup>();
     for entity in pause_ui_q.iter() {
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+    }
+    for entity in confirm_ui_q.iter() {
         if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
 }

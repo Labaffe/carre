@@ -15,6 +15,8 @@
 //!                ou MainMenu (dernier niveau terminé)
 //! ```
 
+use std::collections::HashSet;
+
 use crate::asteroid::Asteroid;
 use crate::boss::{BossMarker, MusicBoss};
 use crate::difficulty::Difficulty;
@@ -44,6 +46,12 @@ impl Plugin for GamePlugin {
             .add_systems(
                 OnEnter(GameState::LevelTransition),
                 auto_start_next_level,
+            )
+            .add_systems(OnEnter(GameState::Credits), setup_credits)
+            .add_systems(OnExit(GameState::Credits), cleanup_credits)
+            .add_systems(
+                Update,
+                handle_credits_input.run_if(in_state(GameState::Credits)),
             );
     }
 }
@@ -65,6 +73,35 @@ impl Default for GameProgress {
         }
     }
 }
+
+/// Mode de jeu actif. Inséré quand le joueur choisit Commencer ou Primes.
+#[derive(Resource, Clone, Copy, PartialEq, Eq)]
+pub enum PlayMode {
+    /// Campagne : finir tous les niveaux, progression perdue si mort/quit.
+    Campaign,
+    /// Primes : jouer un niveau à la carte.
+    Primes,
+}
+
+/// Progression de la campagne en cours. Supprimée si abandon ou fin.
+#[derive(Resource, Default)]
+pub struct CampaignProgress {
+    pub completed: HashSet<usize>,
+}
+
+/// Popup de confirmation active (abandon campagne).
+#[derive(Resource)]
+pub struct ConfirmPopup {
+    pub selected: usize, // 0 = Non, 1 = Oui
+}
+
+/// Marqueur pour les éléments UI de la popup de confirmation.
+#[derive(Component)]
+pub struct ConfirmPopupUI;
+
+/// Marqueur pour les options Oui/Non de la popup (0=Non, 1=Oui).
+#[derive(Component)]
+pub struct ConfirmOptionMarker(pub usize);
 
 /// Countdown avant le déclenchement de l'outro (3s après la mort du boss).
 #[derive(Resource)]
@@ -216,7 +253,9 @@ fn level_outro_input(
     outro: Option<Res<LevelOutro>>,
     mut next_state: ResMut<NextState<GameState>>,
     mut pause: ResMut<PauseState>,
-    mut progress: ResMut<GameProgress>,
+    progress: Res<GameProgress>,
+    play_mode: Option<Res<PlayMode>>,
+    mut campaign: Option<ResMut<CampaignProgress>>,
     music_q: Query<Entity, With<MusicOutro>>,
 ) {
     let Some(outro) = outro else { return };
@@ -227,7 +266,7 @@ fn level_outro_input(
     }
 
     if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
-        // Nettoyage
+        // Nettoyage musique outro
         for entity in music_q.iter() {
             if let Some(e) = commands.get_entity(entity) {
                 e.despawn_recursive();
@@ -236,13 +275,31 @@ fn level_outro_input(
         pause.outro_active = false;
         commands.remove_resource::<LevelOutro>();
 
-        if progress.current_level < progress.total_levels {
-            // Niveau suivant
-            progress.current_level += 1;
-            next_state.set(GameState::LevelTransition);
-        } else {
-            // Jeu terminé → retour au menu
-            next_state.set(GameState::MainMenu);
+        let level = progress.current_level;
+        let mode = play_mode.map(|m| *m);
+
+        match mode {
+            Some(PlayMode::Campaign) => {
+                if let Some(ref mut camp) = campaign {
+                    camp.completed.insert(level);
+                    // Tous les niveaux terminés ?
+                    if camp.completed.len() >= progress.total_levels {
+                        commands.remove_resource::<CampaignProgress>();
+                        commands.remove_resource::<PlayMode>();
+                        next_state.set(GameState::Credits);
+                    } else {
+                        next_state.set(GameState::LevelSelect);
+                    }
+                }
+            }
+            Some(PlayMode::Primes) => {
+                // Pas de tracking en Primes — le joueur peut rejouer librement
+                next_state.set(GameState::LevelSelect);
+            }
+            None => {
+                // Fallback (ne devrait pas arriver)
+                next_state.set(GameState::MainMenu);
+            }
         }
     }
 }
@@ -368,9 +425,9 @@ fn spawn_outro_ui(commands: &mut Commands, asset_server: &Res<AssetServer>, prog
         });
 }
 
-/// Transition automatique LevelTransition → Playing (niveau suivant).
+/// Transition automatique LevelTransition → LevelSelect.
 fn auto_start_next_level(mut next_state: ResMut<NextState<GameState>>) {
-    next_state.set(GameState::Playing);
+    next_state.set(GameState::LevelSelect);
 }
 
 /// Nettoyage de l'outro en sortant de Playing.
@@ -379,16 +436,193 @@ fn cleanup_outro(
     mut pause: ResMut<PauseState>,
     outro_ui_q: Query<Entity, With<OutroUI>>,
     music_q: Query<Entity, With<MusicOutro>>,
+    confirm_ui_q: Query<Entity, With<ConfirmPopupUI>>,
 ) {
     pause.outro_active = false;
     commands.remove_resource::<LevelOutro>();
     commands.remove_resource::<OutroCountdown>();
+    commands.remove_resource::<ConfirmPopup>();
     for entity in outro_ui_q.iter() {
         if let Some(e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
     for entity in music_q.iter() {
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
+    }
+    for entity in confirm_ui_q.iter() {
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
+    }
+}
+
+// ─── Popup de confirmation partagée ─────────────────────────────────
+
+/// Spawne la popup de confirmation "Votre progression sera perdue."
+pub(crate) fn spawn_confirm_popup(commands: &mut Commands, asset_server: &Res<AssetServer>) {
+    let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
+
+    commands
+        .spawn((
+            NodeBundle {
+                style: Style {
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(30.0),
+                    ..default()
+                },
+                background_color: Color::rgba(0.0, 0.0, 0.0, 0.8).into(),
+                z_index: ZIndex::Global(110),
+                ..default()
+            },
+            ConfirmPopupUI,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                TextBundle::from_section(
+                    "Votre progression sera perdue.",
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 28.0,
+                        color: Color::WHITE,
+                    },
+                ),
+                ConfirmPopupUI,
+            ));
+            parent.spawn((
+                TextBundle::from_section(
+                    "Continuer ?",
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 28.0,
+                        color: Color::WHITE,
+                    },
+                ),
+                ConfirmPopupUI,
+            ));
+            // Options côte à côte
+            parent
+                .spawn((
+                    NodeBundle {
+                        style: Style {
+                            flex_direction: FlexDirection::Row,
+                            column_gap: Val::Px(80.0),
+                            margin: UiRect::top(Val::Px(20.0)),
+                            ..default()
+                        },
+                        ..default()
+                    },
+                    ConfirmPopupUI,
+                ))
+                .with_children(|row| {
+                    row.spawn((
+                        TextBundle::from_section(
+                            "Non",
+                            TextStyle {
+                                font: font.clone(),
+                                font_size: 36.0,
+                                color: Color::rgba(1.0, 0.85, 0.0, 1.0), // sélectionné par défaut
+                            },
+                        ),
+                        ConfirmPopupUI,
+                        ConfirmOptionMarker(0),
+                    ));
+                    row.spawn((
+                        TextBundle::from_section(
+                            "Oui",
+                            TextStyle {
+                                font,
+                                font_size: 36.0,
+                                color: Color::rgba(0.6, 0.6, 0.6, 1.0),
+                            },
+                        ),
+                        ConfirmPopupUI,
+                        ConfirmOptionMarker(1),
+                    ));
+                });
+        });
+}
+
+/// Despawn tous les éléments de la popup de confirmation.
+pub(crate) fn despawn_confirm_popup(
+    commands: &mut Commands,
+    confirm_ui_q: &Query<Entity, With<ConfirmPopupUI>>,
+) {
+    for entity in confirm_ui_q.iter() {
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
+    }
+}
+
+// ─── Écran de fin (Credits) ─────────────────────────────────────────
+
+#[derive(Component)]
+struct CreditsUI;
+
+fn setup_credits(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
+
+    commands
+        .spawn((
+            NodeBundle {
+                style: Style {
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(40.0),
+                    ..default()
+                },
+                background_color: Color::rgba(0.0, 0.0, 0.0, 1.0).into(),
+                ..default()
+            },
+            CreditsUI,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                TextBundle::from_section(
+                    "MERCI D'AVOIR JOUE",
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 48.0,
+                        color: Color::WHITE,
+                    },
+                ),
+                CreditsUI,
+            ));
+            parent.spawn((
+                TextBundle::from_section(
+                    "Appuyez sur Entree",
+                    TextStyle {
+                        font,
+                        font_size: 24.0,
+                        color: Color::rgba(0.5, 0.5, 0.5, 1.0),
+                    },
+                ),
+                CreditsUI,
+            ));
+        });
+}
+
+fn handle_credits_input(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
+        next_state.set(GameState::MainMenu);
+    }
+}
+
+fn cleanup_credits(mut commands: Commands, ui_q: Query<Entity, With<CreditsUI>>) {
+    for entity in ui_q.iter() {
         if let Some(e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }

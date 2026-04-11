@@ -15,6 +15,7 @@ pub mod game;
 mod gameover;
 mod green_ufo;
 mod level;
+mod levelselect;
 pub mod item;
 mod mainmenu;
 mod missile;
@@ -84,6 +85,7 @@ fn main() {
             green_ufo::GreenUFOPlugin,
             LevelPlugin,
             GamePlugin,
+            levelselect::LevelSelectPlugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, show_window_after_render.run_if(run_once()))
