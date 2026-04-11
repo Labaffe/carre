@@ -75,9 +75,9 @@ pub enum Action {
     SendBoom,
 
     // ─── Spawning ───────────────────────────────────────────────
-    /// Spawn un ennemi une seule fois (ex: "boss"). La requête est
-    /// consommée par le système cible après le spawn.
-    SpawnEnemy(&'static str),
+    /// Spawn N ennemis d'un type donné (ex: "boss", 2 → 2 boss).
+    /// La requête est consommée par le système de spawn du type cible.
+    SpawnEnemy(&'static str, usize),
     /// Active le spawn continu d'un type d'ennemi (ex: "green_ufo", 2.0).
     StartSpawning(&'static str, f32),
     /// Désactive le spawn continu d'un type d'ennemi.
@@ -232,7 +232,13 @@ impl Action {
             Action::StopMainMusic => "StopMusic".to_string(),
             Action::StartCountdown => "Countdown".to_string(),
             Action::SendBoom => "Boom".to_string(),
-            Action::SpawnEnemy(name) => format!("Spawn({})", name),
+            Action::SpawnEnemy(name, count) => {
+                if *count == 1 {
+                    format!("Spawn({})", name)
+                } else {
+                    format!("Spawn({}×{})", count, name)
+                }
+            }
             Action::StartSpawning(name, i) => format!("Start({},{}s)", name, i),
             Action::StopSpawning(name) => format!("Stop({})", name),
             Action::StopAsteroidSpawning => "StopAst".to_string(),
@@ -307,16 +313,26 @@ pub fn build_level_1() -> Vec<LevelStep> {
             .with(Action::ShowPlanet),
 
         LevelStep::at(35.8, "boss_spawn")
-            .with(Action::SpawnEnemy("boss"))
+            .with(Action::SpawnEnemy("boss", 1))
             .with(Action::StopMainMusic)
             .with(Action::Log("Boss 1 spawné !")),
+
+        // 10s après le premier boss : vague de 4 GreenUFOs
+        LevelStep::after_step("boss_spawn", 10.0, "boss1_ufos")
+            .with(Action::SpawnEnemy("green_ufo", 4))
+            .with(Action::Log("Vague de 4 GreenUFOs pour Boss 1")),
 
         // ─── Deuxième boss ─────────────────────────────────────
         // 30s après le premier boss, un deuxième apparaît.
         // La musique boss ne s'arrête qu'à la mort du dernier.
         LevelStep::after_step("boss_spawn", 30.0, "boss_spawn_2")
-            .with(Action::SpawnEnemy("boss"))
+            .with(Action::SpawnEnemy("boss", 1))
             .with(Action::Log("Boss 2 spawné !")),
+
+        // 10s après le deuxième boss : vague de 4 GreenUFOs
+        LevelStep::after_step("boss_spawn_2", 10.0, "boss2_ufos")
+            .with(Action::SpawnEnemy("green_ufo", 4))
+            .with(Action::Log("Vague de 4 GreenUFOs pour Boss 2")),
 
         // ─── Les événements suivants sont gérés par boss.rs ─────
         // Chaque boss gère sa propre séquence interne :
@@ -439,8 +455,8 @@ fn execute_action(
         Action::SendBoom => {
             boom_events.send(BoomEvent);
         }
-        Action::SpawnEnemy(name) => {
-            difficulty.spawn_requests.push(name);
+        Action::SpawnEnemy(name, count) => {
+            difficulty.spawn_requests.push((name, *count));
         }
         Action::StartSpawning(name, interval) => {
             difficulty.active_spawners.insert(name, *interval);

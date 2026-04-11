@@ -60,9 +60,10 @@ pub struct Difficulty {
     pub phase3_boom_played: bool,
 
     // ─── Communication Level → systèmes de jeu ─────────────────
-    /// File de requêtes de spawn one-shot (ex: "boss"). Consommées une par une
-    /// par le système cible. Un Vec permet d'empiler plusieurs spawns du même type.
-    pub spawn_requests: Vec<&'static str>,
+    /// File de requêtes de spawn one-shot : (nom, quantité).
+    /// Ex: `("boss", 2)` spawne 2 boss, `("green_ufo", 4)` spawne 4 GreenUFO.
+    /// Consommées par le système de spawn de chaque ennemi.
+    pub spawn_requests: Vec<(&'static str, usize)>,
     /// Spawners continus actifs : nom → intervalle en secondes (ex: "green_ufo" → 2.0).
     pub active_spawners: HashMap<&'static str, f32>,
     /// Instant (elapsed) où la décélération du background a commencé.

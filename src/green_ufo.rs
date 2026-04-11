@@ -28,6 +28,7 @@ impl Plugin for GreenUFOPlugin {
             Update,
             (
                 spawn_green_ufos,
+                spawn_green_ufos_oneshot,
                 green_ufo_pattern_executor,
                 green_ufo_rush_movement,
                 green_ufo_animate,
@@ -122,6 +123,79 @@ fn spawn_green_ufos(
     }
 
     let window = windows.single();
+    let half_w = window.width() / 2.0 - 60.0;
+    let spawn_y = window.height() / 2.0 + 40.0;
+    let spawn_x = (fastrand::f32() - 0.5) * 2.0 * half_w;
+
+    let phase = &GREEN_UFO.phases[0];
+    let first_frame = frames.0.first().cloned().unwrap_or_default();
+
+    commands.spawn((
+        SpriteBundle {
+            texture: first_frame,
+            sprite: Sprite {
+                custom_size: Some(Vec2::splat(GREEN_UFO.sprite_size)),
+                ..default()
+            },
+            transform: Transform::from_xyz(spawn_x, spawn_y, 0.5),
+            ..default()
+        },
+        Enemy {
+            health: phase.health,
+            max_health: phase.health,
+            state: EnemyState::Active(0),
+            radius: GREEN_UFO.radius,
+            sprite_size: GREEN_UFO.sprite_size,
+            anim_timer: Timer::from_seconds(0.01, TimerMode::Once),
+            phases: GREEN_UFO.phases,
+            death_duration: GREEN_UFO.death_duration,
+            death_shake_max: GREEN_UFO.death_shake_max,
+            hit_sound: GREEN_UFO.hit_sound,
+            death_explosion_sound: GREEN_UFO.death_explosion_sound,
+        },
+        GreenUFOMarker,
+        GreenUFOAnim {
+            timer: Timer::from_seconds(1.0 / GREEN_UFO_ANIM_FPS, TimerMode::Repeating),
+            current_frame: 0,
+        },
+        PatternIndex(0),
+        PatternTimer(Timer::from_seconds(
+            phase.patterns.first().map(|p| p.duration).unwrap_or(0.4),
+            TimerMode::Once,
+        )),
+        DropTable {
+            drops: &GREEN_UFO_DROP_TABLE,
+        },
+    ));
+}
+
+// ─── Spawn one-shot (via spawn_requests) ────────────────────────────
+
+/// Consomme les requêtes "green_ufo" dans `difficulty.spawn_requests`
+/// et spawne N GreenUFOs par requête.
+fn spawn_green_ufos_oneshot(
+    mut commands: Commands,
+    mut difficulty: ResMut<crate::difficulty::Difficulty>,
+    frames: Res<GreenUFOFrames>,
+    windows: Query<&Window>,
+) {
+    let Some(pos) = difficulty
+        .spawn_requests
+        .iter()
+        .position(|(name, _)| *name == "green_ufo")
+    else {
+        return;
+    };
+    let (_name, count) = difficulty.spawn_requests.remove(pos);
+
+    let window = windows.single();
+    for _ in 0..count {
+        spawn_one_green_ufo(&mut commands, &frames, window);
+    }
+}
+
+/// Spawne un seul GreenUFO à une position aléatoire en haut de l'écran.
+fn spawn_one_green_ufo(commands: &mut Commands, frames: &GreenUFOFrames, window: &Window) {
     let half_w = window.width() / 2.0 - 60.0;
     let spawn_y = window.height() / 2.0 + 40.0;
     let spawn_x = (fastrand::f32() - 0.5) * 2.0 * half_w;

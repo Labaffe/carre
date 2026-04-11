@@ -134,7 +134,7 @@ level.rs (LevelRunner)          difficulty.rs (Difficulty)         systèmes de 
 SetDifficulty(3.5)     ──→     difficulty.factor = 3.5      ──→  asteroid spawn rate
 StopAsteroidSpawning   ──→     difficulty.spawning_stopped  ──→  asteroid.rs arrête
 StartSpawning("x",2)   ──→     difficulty.active_spawners   ──→  green_ufo.rs active
-SpawnEnemy("boss")     ──→     difficulty.spawn_requests    ──→  boss.rs spawne
+SpawnEnemy("boss",2)   ──→     difficulty.spawn_requests    ──→  boss.rs spawne 2×
 StartBgDeceleration    ──→     difficulty.bg_decel_*        ──→  difficulty.rs calcule
 ShowPlanet             ──→     difficulty.planet_appear_*   ──→  background.rs anime
 StartMusic / PlaySound ──→     commands.spawn(AudioBundle)  ──→  audio direct
@@ -156,11 +156,11 @@ Le trigger `After` permet de chaîner des événements à n'importe quelle étap
 
 ```rust
 LevelStep::at(35.8, "boss_spawn")
-    .with(Action::SpawnBoss),
+    .with(Action::SpawnEnemy("boss", 1)),
 
-// 5s après "boss_spawn", peu importe les étapes entre les deux
-LevelStep::after_step("boss_spawn", 5.0, "boss_music")
-    .with(Action::StartMusic("audio/boss.ogg")),
+// 10s après "boss_spawn" : vague de 4 GreenUFOs
+LevelStep::after_step("boss_spawn", 10.0, "boss1_ufos")
+    .with(Action::SpawnEnemy("green_ufo", 4)),
 ```
 
 ### Actions disponibles
@@ -173,7 +173,7 @@ LevelStep::after_step("boss_spawn", 5.0, "boss_music")
 | `StopMainMusic` | Despawn toutes les entités `MusicMain` |
 | `StartCountdown` | Envoie `CountdownEvent` (READY-3-2-1-GO) |
 | `SendBoom` | Envoie `BoomEvent` (flash visuel) |
-| `SpawnEnemy(&str)` | Spawn one-shot via `spawn_requests` (ex: `"boss"`) |
+| `SpawnEnemy(&str, usize)` | Spawn N ennemis d'un type via `spawn_requests` (ex: `"boss", 2`) |
 | `StartSpawning(&str, f32)` | Spawner continu via `active_spawners` (ex: `"green_ufo"`, 2.0) |
 | `StopSpawning(&str)` | Désactive un spawner continu |
 | `StopAsteroidSpawning` | `difficulty.spawning_stopped = true` |
@@ -193,7 +193,7 @@ pub struct LevelRunner {
 }
 
 // Dans Difficulty (hub de communication) :
-pub spawn_requests: HashSet<&str>,       // spawns one-shot (consommés)
+pub spawn_requests: Vec<(&str, usize)>,  // spawns one-shot (nom, quantité)
 pub active_spawners: HashMap<&str, f32>, // spawners continus (nom → intervalle)
 ```
 
@@ -210,8 +210,10 @@ Le runner parcourt les étapes dans l'ordre. Quand le déclencheur d'une étape 
 22.6s  boom_3          Diff(7.5), Sound(t_go.wav), Boom
 27.7s  pre_boss        StopAst, Stop(green_ufo), BgDecel(9s,30)
 28.0s  planet_appear   Planet
-35.8s  boss_spawn      Spawn(boss), StopMusic
-      boss_spawn_2    Spawn(boss)  [+30s -> boss_spawn]
+35.8s  boss_spawn      Spawn(1×boss), StopMusic
+      +10s boss1_ufos  Spawn(4×green_ufo)  [-> boss_spawn]
+      +30s boss_spawn_2 Spawn(1×boss)  [-> boss_spawn]
+      +10s boss2_ufos  Spawn(4×green_ufo)  [-> boss_spawn_2]
 ```
 
 Chaque boss gère sa propre séquence interne (Entering → Flexing → Idle → Active) car elle dépend de l'état du boss, pas du temps absolu. La musique boss (`boss.ogg`) est lancée une seule fois quand le premier boss atteint Idle, et ne s'arrête qu'à la mort du **dernier** boss vivant.
@@ -234,7 +236,15 @@ LevelStep::after_step("boss_spawn", 10.0, "boss_rage")
 
 1. Définir ses `PhaseDef` et `EnemyDef` dans `enemies.rs`
 2. Créer son module avec un système de spawn qui lit `difficulty.spawn_requests` (one-shot) ou `difficulty.active_spawners` (continu)
-3. Ajouter le spawn dans la timeline : `Action::SpawnEnemy("nom")` ou `Action::StartSpawning("nom", interval)`
+3. Ajouter le spawn dans la timeline : `Action::SpawnEnemy("nom", N)` ou `Action::StartSpawning("nom", interval)`
+
+Exemple pour un spawn one-shot (N ennemis d'un coup) :
+```rust
+// Dans le système de spawn du nouvel ennemi :
+let Some(pos) = difficulty.spawn_requests.iter().position(|(name, _)| *name == "mon_ennemi") else { return; };
+let (_name, count) = difficulty.spawn_requests.remove(pos);
+for _ in 0..count { /* spawner un ennemi */ }
+```
 
 Exemple pour un spawner continu :
 ```rust

@@ -148,77 +148,90 @@ fn spawn_boss(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut difficulty: ResMut<Difficulty>,
-    enemy_q: Query<&Enemy, With<BossMarker>>,
+    _enemy_q: Query<&Enemy, With<BossMarker>>,
     windows: Query<&Window>,
 ) {
-    let Some(pos) = difficulty.spawn_requests.iter().position(|&n| n == "boss") else {
+    let Some(pos) = difficulty
+        .spawn_requests
+        .iter()
+        .position(|(name, _)| *name == "boss")
+    else {
         return;
     };
-    difficulty.spawn_requests.remove(pos);
+    let (_name, count) = difficulty.spawn_requests.remove(pos);
     // Marque le premier spawn (arrête les GreenUFO, etc.) sans bloquer les suivants.
     difficulty.boss_spawned = true;
 
     let _window = windows.single();
-    let start_y = 50.0;
 
     commands.spawn(AudioBundle {
         source: asset_server.load("audio/boss_start.ogg"),
         settings: PlaybackSettings::DESPAWN,
     });
 
-    commands.spawn((
-        SpriteBundle {
-            texture: asset_server.load("images/boss/idle/frame000.png"),
-            sprite: Sprite {
-                custom_size: Some(Vec2::splat(BOSS.sprite_size)),
-                color: Color::WHITE,
+    for i in 0..count {
+        // Décaler les boss en X pour ne pas les superposer
+        let offset_x = if count > 1 {
+            (i as f32 - (count - 1) as f32 / 2.0) * 120.0
+        } else {
+            0.0
+        };
+        let start_y = 50.0;
+
+        commands.spawn((
+            SpriteBundle {
+                texture: asset_server.load("images/boss/idle/frame000.png"),
+                sprite: Sprite {
+                    custom_size: Some(Vec2::splat(BOSS.sprite_size)),
+                    color: Color::WHITE,
+                    ..default()
+                },
+                transform: Transform {
+                    translation: Vec3::new(offset_x, start_y, 0.5),
+                    scale: Vec3::splat(BOSS_INTRO_START_SCALE),
+                    ..default()
+                },
                 ..default()
             },
-            transform: Transform {
-                translation: Vec3::new(0.0, start_y, 0.5),
-                scale: Vec3::splat(BOSS_INTRO_START_SCALE),
-                ..default()
+            Enemy {
+                health: BOSS.phases[0].health,
+                max_health: BOSS.phases[0].health,
+                state: EnemyState::Entering,
+                radius: BOSS.radius,
+                sprite_size: BOSS.sprite_size,
+                anim_timer: Timer::from_seconds(BOSS_START_ANIMATION_DURATION, TimerMode::Once),
+                phases: BOSS.phases,
+                death_duration: BOSS.death_duration,
+                death_shake_max: BOSS.death_shake_max,
+                hit_sound: BOSS.hit_sound,
+                death_explosion_sound: BOSS.death_explosion_sound,
             },
-            ..default()
-        },
-        Enemy {
-            health: BOSS.phases[0].health,
-            max_health: BOSS.phases[0].health,
-            state: EnemyState::Entering,
-            radius: BOSS.radius,
-            sprite_size: BOSS.sprite_size,
-            anim_timer: Timer::from_seconds(BOSS_START_ANIMATION_DURATION, TimerMode::Once),
-            phases: BOSS.phases,
-            death_duration: BOSS.death_duration,
-            death_shake_max: BOSS.death_shake_max,
-            hit_sound: BOSS.hit_sound,
-            death_explosion_sound: BOSS.death_explosion_sound,
-        },
-        BossMarker,
-        BossIdleAnim {
-            timer: Timer::from_seconds(1.0 / BOSS_IDLE_FPS, TimerMode::Repeating),
-            current_frame: 0,
-        },
-        PatternTimer(Timer::from_seconds(
-            BOSS.phases[0]
-                .patterns
-                .first()
-                .map(|p| p.duration)
-                .unwrap_or(1.0),
-            TimerMode::Once,
-        )),
-        PatternIndex(0),
-        PatrolMovement {
-            dir_x: 1.0,
-            sine_time: 0.0,
-            initialized: false,
-            enabled: false,
-            speed_x: BOSS_PATROL_SPEED_X,
-            sine_amplitude_y: BOSS_SINE_AMPLITUDE_Y,
-            sine_freq_y: BOSS_SINE_FREQ_Y,
-            margin: BOSS_MARGIN,
-        },
-    ));
+            BossMarker,
+            BossIdleAnim {
+                timer: Timer::from_seconds(1.0 / BOSS_IDLE_FPS, TimerMode::Repeating),
+                current_frame: 0,
+            },
+            PatternTimer(Timer::from_seconds(
+                BOSS.phases[0]
+                    .patterns
+                    .first()
+                    .map(|p| p.duration)
+                    .unwrap_or(1.0),
+                TimerMode::Once,
+            )),
+            PatternIndex(0),
+            PatrolMovement {
+                dir_x: 1.0,
+                sine_time: 0.0,
+                initialized: false,
+                enabled: false,
+                speed_x: BOSS_PATROL_SPEED_X,
+                sine_amplitude_y: BOSS_SINE_AMPLITUDE_Y,
+                sine_freq_y: BOSS_SINE_FREQ_Y,
+                margin: BOSS_MARGIN,
+            },
+        ));
+    }
 }
 
 // ─── Intro : spirale ────────────────────────────────────────────────
