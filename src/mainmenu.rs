@@ -40,6 +40,14 @@ struct MainMenuTile;
 #[derive(Component)]
 struct MainMenuRoot;
 
+/// Marqueur pour le logo du titre.
+#[derive(Component)]
+struct MainMenuLogo;
+
+/// Conteneur des options du menu principal.
+#[derive(Component)]
+struct MenuOptionsContainer;
+
 #[derive(Component)]
 struct MenuOption {
     action: MenuAction,
@@ -170,7 +178,6 @@ fn setup_main_menu(
                     align_items: AlignItems::Center,
                     justify_content: JustifyContent::Center,
                     flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(30.0),
                     ..default()
                 },
                 background_color: Color::rgba(0.0, 0.0, 0.0, 1.0).into(),
@@ -180,7 +187,7 @@ fn setup_main_menu(
             MainMenuRoot,
         ))
         .with_children(|parent| {
-            // Logo
+            // Logo (centré indépendamment)
             parent.spawn((
                 ImageBundle {
                     image: UiImage::new(asset_server.load("images/main_menu_title.png")),
@@ -194,71 +201,89 @@ fn setup_main_menu(
                     ..default()
                 },
                 MainMenuUI,
+                MainMenuLogo,
             ));
 
-            // Option : Commencer
-            parent.spawn((
-                TextBundle::from_section(
-                    "Commencer",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 42.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+            // Conteneur des options du menu (décalé vers le haut)
+            parent
+                .spawn((
+                    NodeBundle {
+                        style: Style {
+                            flex_direction: FlexDirection::Column,
+                            align_items: AlignItems::Center,
+                            row_gap: Val::Px(20.0),
+                            ..default()
+                        },
+                        ..default()
                     },
-                ),
-                MenuOption {
-                    action: MenuAction::Play,
-                },
-                MainMenuUI,
-            ));
+                    MainMenuUI,
+                    MenuOptionsContainer,
+                ))
+                .with_children(|menu| {
+                    // Option : Commencer
+                    menu.spawn((
+                        TextBundle::from_section(
+                            "Commencer",
+                            TextStyle {
+                                font: font.clone(),
+                                font_size: 36.0,
+                                color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                            },
+                        ),
+                        MenuOption {
+                            action: MenuAction::Play,
+                        },
+                        MainMenuUI,
+                    ));
 
-            // Option : Niveaux
-            parent.spawn((
-                TextBundle::from_section(
-                    "Niveaux",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 42.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 0.0),
-                    },
-                ),
-                MenuOption {
-                    action: MenuAction::Levels,
-                },
-                MainMenuUI,
-            ));
+                    // Option : Niveaux
+                    menu.spawn((
+                        TextBundle::from_section(
+                            "Niveaux",
+                            TextStyle {
+                                font: font.clone(),
+                                font_size: 36.0,
+                                color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                            },
+                        ),
+                        MenuOption {
+                            action: MenuAction::Levels,
+                        },
+                        MainMenuUI,
+                    ));
 
-            // Option : Paramètres
-            parent.spawn((
-                TextBundle::from_section(
-                    "Paramètres",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 42.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 0.0),
-                    },
-                ),
-                MenuOption {
-                    action: MenuAction::Settings,
-                },
-                MainMenuUI,
-            ));
+                    // Option : Paramètres
+                    menu.spawn((
+                        TextBundle::from_section(
+                            "Paramètres",
+                            TextStyle {
+                                font: font.clone(),
+                                font_size: 36.0,
+                                color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                            },
+                        ),
+                        MenuOption {
+                            action: MenuAction::Settings,
+                        },
+                        MainMenuUI,
+                    ));
 
-            // Option : Quitter
-            parent.spawn((
-                TextBundle::from_section(
-                    "Quitter",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 42.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 0.0),
-                    },
-                ),
-                MenuOption {
-                    action: MenuAction::Quit,
-                },
-                MainMenuUI,
-            ));
+                    // Option : Quitter
+                    menu.spawn((
+                        TextBundle::from_section(
+                            "Quitter",
+                            TextStyle {
+                                font: font.clone(),
+                                font_size: 36.0,
+                                color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                            },
+                        ),
+                        MenuOption {
+                            action: MenuAction::Quit,
+                        },
+                        MainMenuUI,
+                    ));
+                });
         });
 
     // Indication F1 en haut à droite
@@ -295,18 +320,16 @@ fn setup_main_menu(
 fn animate_main_menu(
     mut anim: ResMut<MainMenuAnim>,
     time: Res<Time>,
-    root_q: Query<&Children, With<MainMenuRoot>>,
     mut bg_root_q: Query<&mut BackgroundColor, With<MainMenuRoot>>,
     mut logo_q: Query<
-        &mut BackgroundColor,
-        (
-            With<MainMenuUI>,
-            Without<MainMenuRoot>,
-            Without<MenuOption>,
-            Without<Text>,
-        ),
+        (&mut BackgroundColor, &mut Style),
+        (With<MainMenuLogo>, Without<MainMenuRoot>),
     >,
-    mut text_q: Query<(&mut Text, &MenuOption, &mut Style)>,
+    mut container_q: Query<
+        &mut Style,
+        (With<MenuOptionsContainer>, Without<MainMenuLogo>),
+    >,
+    mut text_q: Query<(&mut Text, &MenuOption, &mut Style), (Without<MainMenuLogo>, Without<MenuOptionsContainer>)>,
     mut tile_q: Query<&mut Sprite, With<MainMenuTile>>,
     mut volume_text_q: Query<&mut Text, (With<VolumeText>, Without<MenuOption>)>,
     settings: Res<GameSettings>,
@@ -329,19 +352,29 @@ fn animate_main_menu(
         bg.0.set_a(1.0 - alpha);
     }
 
-    // Logo
-    for mut bg in logo_q.iter_mut() {
-        bg.0.set_a(alpha);
-    }
-
-    // Menu options — visibilité dépend de la vue active
-    let mut idx = 0;
-    for (mut text, _option, mut style) in text_q.iter_mut() {
+    // Logo — cacher dans les sous-menus
+    for (mut bg, mut style) in logo_q.iter_mut() {
         if anim.view != MenuView::Main {
-            // Cacher les options du menu principal quand on est dans un sous-menu
             style.display = Display::None;
         } else {
             style.display = Display::Flex;
+            bg.0.set_a(alpha);
+        }
+    }
+
+    // Conteneur des options — cacher dans les sous-menus
+    for mut style in container_q.iter_mut() {
+        if anim.view != MenuView::Main {
+            style.display = Display::None;
+        } else {
+            style.display = Display::Flex;
+        }
+    }
+
+    // Menu options — couleurs de sélection
+    let mut idx = 0;
+    for (mut text, _option, _style) in text_q.iter_mut() {
+        if anim.view == MenuView::Main {
             let is_selected = idx == anim.selected;
             for section in text.sections.iter_mut() {
                 if is_selected {
