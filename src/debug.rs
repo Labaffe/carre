@@ -10,6 +10,7 @@ use crate::difficulty::Difficulty;
 use crate::enemy::{Enemy, EnemyProjectile, EnemyState, PatternTimer};
 use crate::missile::Missile;
 use crate::player::{Player, PlayerLives};
+use crate::score::Score;
 use crate::weapon::HitboxShape;
 use bevy::prelude::*;
 
@@ -107,6 +108,7 @@ fn update_debug_ui(
     time: Res<Time>,
     difficulty: Res<Difficulty>,
     lives: Res<PlayerLives>,
+    score: Res<Score>,
     mut ui_q: Query<&mut Text, With<DebugUI>>,
     player_q: Query<&Transform, With<Player>>,
     enemy_q: Query<
@@ -187,6 +189,7 @@ fn update_debug_ui(
              Timer      : {:02}:{:02}\n\
              Difficulte : x{:.2}\n\
              Vies       : {}\n\
+             Score      : {}\n\
              Player     : {}\n\
              Asteroides : {}\n\
              Missiles   : {}\n\
@@ -198,6 +201,7 @@ fn update_debug_ui(
              F3 : Skip au boss",
             fps, minutes, seconds, factor,
             lives.lives,
+            score.value,
             player_pos,
             asteroid_count,
             missile_count,
