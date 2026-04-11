@@ -11,6 +11,7 @@ mod difficulty;
 pub mod enemies;
 pub mod enemy;
 mod explosion;
+pub mod game;
 mod gameover;
 mod green_ufo;
 mod level;
@@ -26,6 +27,7 @@ mod score;
 use asteroid::{Asteroid, AsteroidPlugin};
 use background::{Background, BackgroundPlugin, Planet};
 use boss::{BossPlugin, MusicBoss};
+use game::{GamePlugin, MusicOutro};
 use collision::CollisionPlugin;
 use countdown::CountdownPlugin;
 use crosshair::CrosshairPlugin;
@@ -81,6 +83,7 @@ fn main() {
             ItemPlugin,
             green_ufo::GreenUFOPlugin,
             LevelPlugin,
+            GamePlugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, show_window_after_render.run_if(run_once()))
@@ -131,6 +134,7 @@ fn cleanup_playing(
     enemy_projectiles: Query<Entity, With<EnemyProjectile>>,
     music: Query<Entity, With<MusicMain>>,
     boss_music: Query<Entity, With<MusicBoss>>,
+    outro_music: Query<Entity, With<MusicOutro>>,
     droppables: Query<Entity, With<Droppable>>,
 ) {
     let all_entities = players.iter()
@@ -143,6 +147,7 @@ fn cleanup_playing(
         .chain(enemy_projectiles.iter())
         .chain(music.iter())
         .chain(boss_music.iter())
+        .chain(outro_music.iter())
         .chain(droppables.iter());
 
     for entity in all_entities {

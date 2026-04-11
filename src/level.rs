@@ -405,8 +405,13 @@ pub fn build_level_1() -> Vec<LevelStep> {
 //  Systèmes
 // ═══════════════════════════════════════════════════════════════════════
 
-fn setup_level(mut commands: Commands) {
-    let steps = build_level_1();
+fn setup_level(mut commands: Commands, progress: Res<crate::game::GameProgress>) {
+    let steps = match progress.current_level {
+        1 => build_level_1(),
+        // Ajouter ici les niveaux suivants :
+        // 2 => build_level_2(),
+        _ => build_level_1(), // fallback
+    };
     commands.insert_resource(LevelRunner::new(steps));
 }
 

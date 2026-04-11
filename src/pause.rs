@@ -25,9 +25,9 @@ impl Plugin for PausePlugin {
 
 // ─── Run condition partagée ─────────────────────────────────────────
 
-/// Run condition : le jeu n'est pas en pause.
+/// Run condition : le jeu n'est pas en pause et pas en outro.
 pub fn not_paused(pause: Res<PauseState>) -> bool {
-    !pause.paused
+    !pause.paused && !pause.outro_active
 }
 
 // ─── Ressource ──────────────────────────────────────────────────────
@@ -35,6 +35,8 @@ pub fn not_paused(pause: Res<PauseState>) -> bool {
 #[derive(Resource, Default)]
 pub struct PauseState {
     pub paused: bool,
+    /// Vrai pendant l'outro de niveau — bloque la pause et freeze le jeu.
+    pub outro_active: bool,
     selected: usize,
 }
 
@@ -72,6 +74,10 @@ fn handle_pause_input(
     boss_music_q: Query<&AudioSink, With<MusicBoss>>,
 ) {
     if keyboard.just_pressed(KeyCode::Escape) {
+        // Bloquer la pause pendant l'outro de niveau
+        if pause.outro_active {
+            return;
+        }
         if pause.paused {
             // Reprendre la musique
             for sink in music_q.iter() {
