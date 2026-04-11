@@ -149,18 +149,18 @@ fn spawn_boss(
     _enemy_q: Query<&Enemy, With<BossMarker>>,
     windows: Query<&Window>,
 ) {
-    let Some(pos) = difficulty
+    let Some(req_pos) = difficulty
         .spawn_requests
         .iter()
-        .position(|(name, _)| *name == "boss")
+        .position(|(name, _, _)| *name == "boss")
     else {
         return;
     };
-    let (_name, count) = difficulty.spawn_requests.remove(pos);
+    let (_name, count, spawn_pos) = difficulty.spawn_requests.remove(req_pos);
     // Marque le premier spawn (arrête les GreenUFO, etc.) sans bloquer les suivants.
     difficulty.boss_spawned = true;
 
-    let _window = windows.single();
+    let window = windows.single();
 
     commands.spawn(AudioBundle {
         source: asset_server.load("audio/boss_start.ogg"),
@@ -168,13 +168,14 @@ fn spawn_boss(
     });
 
     for i in 0..count {
+        // Résoudre la position de spawn
+        let base_pos = spawn_pos.resolve(window, 60.0);
         // Décaler les boss en X pour ne pas les superposer
         let offset_x = if count > 1 {
             (i as f32 - (count - 1) as f32 / 2.0) * 120.0
         } else {
             0.0
         };
-        let start_y = 50.0;
 
         commands.spawn((
             SpriteBundle {
@@ -185,7 +186,7 @@ fn spawn_boss(
                     ..default()
                 },
                 transform: Transform {
-                    translation: Vec3::new(offset_x, start_y, 0.5),
+                    translation: Vec3::new(base_pos.x + offset_x, base_pos.y, 0.5),
                     scale: Vec3::splat(BOSS_INTRO_START_SCALE),
                     ..default()
                 },
@@ -590,8 +591,12 @@ fn boss_transition_animate(
 
             commands.entity(entity).remove::<BossTransition>();
 
-            // Spawner des GreenUFOs à la fin de la transition (effet immédiat)
-            difficulty.spawn_requests.push(("green_ufo", 8));
+            // Spawner 1 GreenUFO de chaque côté de l'écran à la fin de la transition
+            use crate::difficulty::SpawnPosition;
+            difficulty.spawn_requests.push(("green_ufo", 1, SpawnPosition::Top));
+            difficulty.spawn_requests.push(("green_ufo", 1, SpawnPosition::Bottom));
+            difficulty.spawn_requests.push(("green_ufo", 1, SpawnPosition::Left));
+            difficulty.spawn_requests.push(("green_ufo", 1, SpawnPosition::Right));
         }
     }
 }

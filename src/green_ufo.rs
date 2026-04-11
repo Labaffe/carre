@@ -105,7 +105,7 @@ fn spawn_green_ufos(
     windows: Query<&Window>,
 ) {
     // Spawning contrôlé par le système de niveau via active_spawners
-    let Some(&(wave_size, target_interval)) = difficulty.active_spawners.get("green_ufo") else {
+    let Some(&(wave_size, target_interval, spawn_pos)) = difficulty.active_spawners.get("green_ufo") else {
         return;
     };
 
@@ -121,7 +121,7 @@ fn spawn_green_ufos(
 
     let window = windows.single();
     for _ in 0..wave_size {
-        spawn_one_green_ufo(&mut commands, &frames, window);
+        spawn_one_green_ufo(&mut commands, &frames, window, spawn_pos);
     }
 }
 
@@ -138,23 +138,26 @@ fn spawn_green_ufos_oneshot(
     let Some(pos) = difficulty
         .spawn_requests
         .iter()
-        .position(|(name, _)| *name == "green_ufo")
+        .position(|(name, _, _)| *name == "green_ufo")
     else {
         return;
     };
-    let (_name, count) = difficulty.spawn_requests.remove(pos);
+    let (_name, count, spawn_pos) = difficulty.spawn_requests.remove(pos);
 
     let window = windows.single();
     for _ in 0..count {
-        spawn_one_green_ufo(&mut commands, &frames, window);
+        spawn_one_green_ufo(&mut commands, &frames, window, spawn_pos);
     }
 }
 
-/// Spawne un seul GreenUFO à une position aléatoire en haut de l'écran.
-fn spawn_one_green_ufo(commands: &mut Commands, frames: &GreenUFOFrames, window: &Window) {
-    let half_w = window.width() / 2.0 - 60.0;
-    let spawn_y = window.height() / 2.0 + 40.0;
-    let spawn_x = (fastrand::f32() - 0.5) * 2.0 * half_w;
+/// Spawne un seul GreenUFO à la position donnée.
+fn spawn_one_green_ufo(
+    commands: &mut Commands,
+    frames: &GreenUFOFrames,
+    window: &Window,
+    spawn_pos: crate::difficulty::SpawnPosition,
+) {
+    let pos = spawn_pos.resolve(window, 60.0);
 
     let phase = &GREEN_UFO.phases[0];
     let first_frame = frames.0.first().cloned().unwrap_or_default();
@@ -166,7 +169,7 @@ fn spawn_one_green_ufo(commands: &mut Commands, frames: &GreenUFOFrames, window:
                 custom_size: Some(Vec2::splat(GREEN_UFO.sprite_size)),
                 ..default()
             },
-            transform: Transform::from_xyz(spawn_x, spawn_y, 0.5),
+            transform: Transform::from_xyz(pos.x, pos.y, 0.5),
             ..default()
         },
         Enemy {

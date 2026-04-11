@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 
-use crate::difficulty::{BoomEvent, Difficulty};
+use crate::difficulty::{BoomEvent, Difficulty, SpawnPosition};
 use crate::pause::not_paused;
 use crate::state::GameState;
 use bevy::prelude::*;
@@ -90,13 +90,13 @@ pub enum Action {
     SendBoom,
 
     // ─── Spawning ───────────────────────────────────────────────
-    /// Spawn N ennemis d'un type donné (ex: "boss", 2 → 2 boss).
-    /// La requête est consommée par le système de spawn du type cible.
-    SpawnEnemy(&'static str, usize),
+    /// Spawn N ennemis d'un type donné à une position donnée.
+    /// Ex: `SpawnEnemy("boss", 1, SpawnPosition::At(0.0, 50.0))`.
+    SpawnEnemy(&'static str, usize, SpawnPosition),
     /// Active le spawn continu d'un type d'ennemi.
-    /// (nom, quantité par vague, intervalle en secondes)
-    /// Ex: `StartSpawning("green_ufo", 4, 5.0)` → 4 GreenUFOs toutes les 5s.
-    StartSpawning(&'static str, usize, f32),
+    /// (nom, quantité par vague, intervalle en secondes, position)
+    /// Ex: `StartSpawning("green_ufo", 4, 5.0, SpawnPosition::Top)`.
+    StartSpawning(&'static str, usize, f32, SpawnPosition),
     /// Désactive le spawn continu d'un type d'ennemi.
     StopSpawning(&'static str),
     /// Arrête le spawn des astéroïdes.
@@ -249,15 +249,29 @@ impl Action {
             Action::StopMainMusic => "StopMusic".to_string(),
             Action::StartCountdown => "Countdown".to_string(),
             Action::SendBoom => "Boom".to_string(),
-            Action::SpawnEnemy(name, count) => {
+            Action::SpawnEnemy(name, count, pos) => {
+                let pos_str = match pos {
+                    SpawnPosition::Top => "",
+                    SpawnPosition::Bottom => " ↓",
+                    SpawnPosition::Left => " ←",
+                    SpawnPosition::Right => " →",
+                    SpawnPosition::At(x, y) => return format!("Spawn({}×{} @{:.0},{:.0})", count, name, x, y),
+                };
                 if *count == 1 {
-                    format!("Spawn({})", name)
+                    format!("Spawn({}{})", name, pos_str)
                 } else {
-                    format!("Spawn({}×{})", count, name)
+                    format!("Spawn({}×{}{})", count, name, pos_str)
                 }
             }
-            Action::StartSpawning(name, count, interval) => {
-                format!("Start({}×{},{}s)", count, name, interval)
+            Action::StartSpawning(name, count, interval, pos) => {
+                let pos_str = match pos {
+                    SpawnPosition::Top => "",
+                    SpawnPosition::Bottom => " ↓",
+                    SpawnPosition::Left => " ←",
+                    SpawnPosition::Right => " →",
+                    SpawnPosition::At(x, y) => return format!("Start({}×{},{}s @{:.0},{:.0})", count, name, interval, x, y),
+                };
+                format!("Start({}×{},{}s{})", count, name, interval, pos_str)
             }
             Action::StopSpawning(name) => format!("Stop({})", name),
             Action::StopAsteroidSpawning => "StopAst".to_string(),
@@ -304,7 +318,7 @@ pub fn build_level_1() -> Vec<LevelStep> {
         // ─── Phase 2 : montée en difficulté ─────────────────────
         LevelStep::at(10.0, "phase_2_start")
             .with(Action::SetDifficulty(3.5))
-            .with(Action::StartSpawning("green_ufo", 2, 4.0)),
+            .with(Action::StartSpawning("green_ufo", 2, 4.0, SpawnPosition::Top)),
         LevelStep::at(14.3, "boom_1")
             .with(Action::SetDifficulty(4.5))
             .with(Action::PlaySound("audio/t_go.wav"))
@@ -327,14 +341,14 @@ pub fn build_level_1() -> Vec<LevelStep> {
             }),
         LevelStep::at(28.0, "planet_appear").with(Action::ShowPlanet),
         LevelStep::at(35.8, "boss_spawn")
-            .with(Action::SpawnEnemy("boss", 1))
+            .with(Action::SpawnEnemy("boss", 1, SpawnPosition::At(0.0, 50.0)))
             .with(Action::StopMainMusic)
             .with(Action::Log("Boss 1 spawné !")),
         // ─── Deuxième boss ─────────────────────────────────────
         // 30s après le premier boss, un deuxième apparaît.
         // La musique boss ne s'arrête qu'à la mort du dernier.
         LevelStep::after_step("boss_spawn", 30.0, "boss_spawn_2")
-            .with(Action::SpawnEnemy("boss", 1))
+            .with(Action::SpawnEnemy("boss", 1, SpawnPosition::At(0.0, 50.0)))
             .with(Action::Log("Boss 2 spawné !")),
         // ─── Les événements suivants sont gérés par boss.rs ─────
         // Chaque boss gère sa propre séquence interne :
@@ -455,11 +469,11 @@ fn execute_action(
         Action::SendBoom => {
             boom_events.send(BoomEvent);
         }
-        Action::SpawnEnemy(name, count) => {
-            difficulty.spawn_requests.push((name, *count));
+        Action::SpawnEnemy(name, count, pos) => {
+            difficulty.spawn_requests.push((name, *count, *pos));
         }
-        Action::StartSpawning(name, count, interval) => {
-            difficulty.active_spawners.insert(name, (*count, *interval));
+        Action::StartSpawning(name, count, interval, pos) => {
+            difficulty.active_spawners.insert(name, (*count, *interval, *pos));
         }
         Action::StopSpawning(name) => {
             difficulty.active_spawners.remove(name);

@@ -14,6 +14,55 @@ use crate::pause::not_paused;
 use crate::state::GameState;
 use bevy::prelude::*;
 
+/// Position de spawn d'un ennemi.
+#[derive(Clone, Copy, Debug)]
+pub enum SpawnPosition {
+    /// Position aléatoire sur le bord haut de l'écran (défaut pour les UFOs).
+    Top,
+    /// Position aléatoire sur le bord bas.
+    Bottom,
+    /// Position aléatoire sur le bord gauche.
+    Left,
+    /// Position aléatoire sur le bord droit.
+    Right,
+    /// Position exacte en pixels (x, y).
+    At(f32, f32),
+}
+
+impl SpawnPosition {
+    /// Résout la position de spawn en coordonnées monde.
+    /// `margin` = marge intérieure par rapport au bord.
+    pub fn resolve(self, window: &bevy::window::Window, margin: f32) -> bevy::math::Vec2 {
+        let half_w = window.width() / 2.0 - margin;
+        let half_h = window.height() / 2.0;
+        match self {
+            SpawnPosition::Top => {
+                let x = (fastrand::f32() - 0.5) * 2.0 * half_w;
+                bevy::math::Vec2::new(x, half_h + 40.0)
+            }
+            SpawnPosition::Bottom => {
+                let x = (fastrand::f32() - 0.5) * 2.0 * half_w;
+                bevy::math::Vec2::new(x, -half_h - 40.0)
+            }
+            SpawnPosition::Left => {
+                let y = (fastrand::f32() - 0.5) * 2.0 * half_h;
+                bevy::math::Vec2::new(-half_w - 40.0, y)
+            }
+            SpawnPosition::Right => {
+                let y = (fastrand::f32() - 0.5) * 2.0 * half_h;
+                bevy::math::Vec2::new(half_w + 40.0, y)
+            }
+            SpawnPosition::At(x, y) => bevy::math::Vec2::new(x, y),
+        }
+    }
+}
+
+impl Default for SpawnPosition {
+    fn default() -> Self {
+        SpawnPosition::Top
+    }
+}
+
 /// Événement envoyé à chaque boom (palier de difficulté).
 #[derive(Event)]
 pub struct BoomEvent;
@@ -60,13 +109,13 @@ pub struct Difficulty {
     pub phase3_boom_played: bool,
 
     // ─── Communication Level → systèmes de jeu ─────────────────
-    /// File de requêtes de spawn one-shot : (nom, quantité).
-    /// Ex: `("boss", 2)` spawne 2 boss, `("green_ufo", 4)` spawne 4 GreenUFO.
+    /// File de requêtes de spawn one-shot : (nom, quantité, position).
+    /// Ex: `("boss", 2, SpawnPosition::At(0.0, 50.0))` spawne 2 boss à (0, 50).
     /// Consommées par le système de spawn de chaque ennemi.
-    pub spawn_requests: Vec<(&'static str, usize)>,
-    /// Spawners continus actifs : nom → (quantité par vague, intervalle en secondes).
-    /// Ex: `"green_ufo" → (4, 5.0)` spawne 4 GreenUFOs toutes les 5s.
-    pub active_spawners: HashMap<&'static str, (usize, f32)>,
+    pub spawn_requests: Vec<(&'static str, usize, SpawnPosition)>,
+    /// Spawners continus actifs : nom → (quantité par vague, intervalle, position).
+    /// Ex: `"green_ufo" → (4, 5.0, SpawnPosition::Top)` spawne 4 GreenUFOs/5s depuis le haut.
+    pub active_spawners: HashMap<&'static str, (usize, f32, SpawnPosition)>,
     /// Instant (elapsed) où la décélération du background a commencé.
     pub bg_decel_start_elapsed: Option<f32>,
     /// Durée de la décélération du background (secondes).
