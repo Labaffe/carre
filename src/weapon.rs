@@ -72,7 +72,7 @@ pub struct WeaponDef {
 
 pub const STANDARD_MISSILE: WeaponDef = WeaponDef {
     name: "Standard Missile",
-    texture_path: "images/missile.png",
+    texture_path: "images/projectiles/missile.png",
     hitbox: HitboxShape::Circle(6.0),
     speed: 900.0,
     fire_rate: 0.2,
@@ -82,7 +82,7 @@ pub const STANDARD_MISSILE: WeaponDef = WeaponDef {
 
 pub const RED_PROJECTILE: WeaponDef = WeaponDef {
     name: "Red Projectile",
-    texture_path: "images/red_projectile.png",
+    texture_path: "images/projectiles/red_projectile.png",
     hitbox: HitboxShape::Rect { half_length: 32.0, half_width: 4.0 },
     speed: 1100.0,
     fire_rate: 0.15,
@@ -96,7 +96,7 @@ pub const RED_PROJECTILE: WeaponDef = WeaponDef {
 
 pub const BLUE_PROJECTILE: WeaponDef = WeaponDef {
     name: "Blue Projectiles",
-    texture_path: "images/blue_projectile.png",
+    texture_path: "images/projectiles/blue_projectile.png",
     hitbox: HitboxShape::Rect { half_length: 32.0, half_width: 4.0 },
     speed: 3300.0, // vitesse triplée par rapport à Red Projectile
     fire_rate: 0.15,

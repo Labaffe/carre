@@ -31,11 +31,11 @@ const COUNTDOWN_DURATION: f32 = 3.0;
 
 /// Étapes du countdown : (temps relatif, texte, son).
 const STEPS: &[(f32, &str, &str)] = &[
-    (0.0, "READY", "audio/t_ready.ogg"),
-    (0.75, "3", "audio/t_1.ogg"),
-    (1.5, "2", "audio/t_1.ogg"),
-    (2.25, "1", "audio/t_1.ogg"),
-    (3.0, "GO!", "audio/t_go.wav"),
+    (0.0, "READY", "audio/sfx/t_ready.ogg"),
+    (0.75, "3", "audio/sfx/t_1.ogg"),
+    (1.5, "2", "audio/sfx/t_1.ogg"),
+    (2.25, "1", "audio/sfx/t_1.ogg"),
+    (3.0, "GO!", "audio/sfx/t_go.wav"),
 ];
 
 /// Durée d'affichage de "GO!" avant de disparaître.

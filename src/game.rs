@@ -238,7 +238,7 @@ fn level_outro_animate(
         outro.music_spawned = true;
         commands.spawn((
             AudioBundle {
-                source: asset_server.load("audio/stage_clear.ogg"),
+                source: asset_server.load("audio/music/stage_clear.ogg"),
                 settings: PlaybackSettings::ONCE,
             },
             MusicOutro,

@@ -1,51 +1,68 @@
 use bevy::prelude::*;
 
-mod asteroid;
-mod background;
-mod boss;
-mod collision;
-mod countdown;
-mod crosshair;
-mod debug;
-mod difficulty;
-pub mod enemies;
-pub mod enemy;
-mod explosion;
-pub mod game;
-mod gameover;
-mod green_ufo;
-mod level;
-mod levelselect;
-pub mod item;
-mod mainmenu;
-mod missile;
-pub mod pause;
-mod player;
+// ─── Core ──────────────────────────────────────────────────────────
 mod state;
+mod difficulty;
+mod level;
+pub mod game;
+
+// ─── Joueur & armes ────────────────────────────────────────────────
+mod player;
+mod missile;
 mod weapon;
+mod crosshair;
+mod collision;
+
+// ─── Ennemis ───────────────────────────────────────────────────────
+pub mod enemy;
+pub mod enemies;
+mod boss;
+mod green_ufo;
+
+// ─── Entités & effets ──────────────────────────────────────────────
+mod asteroid;
+mod explosion;
+pub mod item;
+
+// ─── UI & écrans ───────────────────────────────────────────────────
+mod mainmenu;
+mod levelselect;
+mod gameover;
+pub mod pause;
+mod countdown;
 mod score;
 
-use asteroid::{Asteroid, AsteroidPlugin};
-use background::{Background, BackgroundPlugin, Planet};
-use boss::{BossPlugin, MusicBoss};
+// ─── Rendu & debug ─────────────────────────────────────────────────
+mod background;
+mod debug;
+
+// ─── Imports ───────────────────────────────────────────────────────
+use state::GameState;
 use game::{GamePlugin, MusicOutro};
-use collision::CollisionPlugin;
-use countdown::CountdownPlugin;
-use crosshair::CrosshairPlugin;
-use debug::DebugPlugin;
 use difficulty::DifficultyPlugin;
+use level::LevelPlugin;
+
+use player::{Player, PlayerPlugin};
+use missile::{Missile, MissilePlugin};
+use weapon::WeaponPlugin;
+use crosshair::CrosshairPlugin;
+use collision::CollisionPlugin;
+
 use enemy::{Enemy, EnemyPlugin, EnemyProjectile};
+use boss::{BossPlugin, MusicBoss};
+
+use asteroid::{Asteroid, AsteroidPlugin};
 use explosion::{Explosion, ExplosionPlugin};
 use item::{Droppable, ItemPlugin};
-use gameover::GameOverPlugin;
-use level::LevelPlugin;
+
 use mainmenu::MainMenuPlugin;
-use missile::{Missile, MissilePlugin};
+use gameover::GameOverPlugin;
 use pause::PausePlugin;
-use player::{Player, PlayerPlugin};
-use state::GameState;
-use weapon::WeaponPlugin;
+use countdown::CountdownPlugin;
 use score::ScorePlugin;
+
+use background::{Background, BackgroundPlugin, Planet};
+use debug::DebugPlugin;
 
 fn main() {
     App::new()
@@ -61,31 +78,45 @@ fn main() {
         .insert_resource(ClearColor(Color::BLACK))
         .init_resource::<GameSettings>()
         .init_state::<GameState>()
+        // Core
         .add_plugins((
-            BackgroundPlugin,
-            CrosshairPlugin,
-            PlayerPlugin,
-            AsteroidPlugin,
-            CollisionPlugin,
-            CountdownPlugin,
-            GameOverPlugin,
-            MainMenuPlugin,
-            DebugPlugin,
             DifficultyPlugin,
-            MissilePlugin,
-            ExplosionPlugin,
-            WeaponPlugin,
-            PausePlugin,
-            ScorePlugin
+            LevelPlugin,
+            GamePlugin,
         ))
+        // Joueur & armes
+        .add_plugins((
+            PlayerPlugin,
+            MissilePlugin,
+            WeaponPlugin,
+            CrosshairPlugin,
+            CollisionPlugin,
+        ))
+        // Ennemis
         .add_plugins((
             EnemyPlugin,
             BossPlugin,
-            ItemPlugin,
             green_ufo::GreenUFOPlugin,
-            LevelPlugin,
-            GamePlugin,
+        ))
+        // Entités & effets
+        .add_plugins((
+            AsteroidPlugin,
+            ExplosionPlugin,
+            ItemPlugin,
+        ))
+        // UI & écrans
+        .add_plugins((
+            MainMenuPlugin,
             levelselect::LevelSelectPlugin,
+            GameOverPlugin,
+            PausePlugin,
+            CountdownPlugin,
+            ScorePlugin,
+        ))
+        // Rendu & debug
+        .add_plugins((
+            BackgroundPlugin,
+            DebugPlugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, show_window_after_render.run_if(run_once()))

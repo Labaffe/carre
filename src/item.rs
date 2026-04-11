@@ -81,8 +81,8 @@ pub enum ItemType {
 impl ItemType {
     fn pickup_sound(&self) -> &'static str {
         match self {
-            ItemType::Bomb => "audio/level_up.ogg",
-            ItemType::BonusScore => "audio/level_up.ogg",
+            ItemType::Bomb => "audio/sfx/level_up.ogg",
+            ItemType::BonusScore => "audio/sfx/level_up.ogg",
         }
     }
 }
@@ -325,7 +325,7 @@ fn bomb_input(
 
         // Son de bombe
         commands.spawn(AudioBundle {
-            source: asset_server.load("audio/bomb.ogg"),
+            source: asset_server.load("audio/sfx/bomb.ogg"),
             settings: PlaybackSettings {
                 volume: bevy::audio::Volume::new(3.0),
                 ..PlaybackSettings::DESPAWN
@@ -454,7 +454,7 @@ fn process_drop_events(
 
             // Son générique d'apparition d'item
             commands.spawn(AudioBundle {
-                source: asset_server.load("audio/level_up.ogg"),
+                source: asset_server.load("audio/sfx/level_up.ogg"),
                 settings: PlaybackSettings {
                     volume: bevy::audio::Volume::new(3.0),
                     ..PlaybackSettings::DESPAWN

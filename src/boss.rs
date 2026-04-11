@@ -171,7 +171,7 @@ fn spawn_boss(
     let window = windows.single();
 
     commands.spawn(AudioBundle {
-        source: asset_server.load("audio/boss_start.ogg"),
+        source: asset_server.load("audio/sfx/boss_start.ogg"),
         settings: PlaybackSettings::DESPAWN,
     });
 
@@ -337,7 +337,7 @@ fn boss_flexing_sound(
         }
         commands.entity(entity).insert(BossFlexingSoundPlayed);
         commands.spawn(AudioBundle {
-            source: asset_server.load("audio/boss_start_2.ogg"),
+            source: asset_server.load("audio/sfx/boss_start_2.ogg"),
             settings: PlaybackSettings::DESPAWN,
         });
     }
@@ -363,7 +363,7 @@ fn boss_music_delayed(
     difficulty.boss_music_start_time = Some(difficulty.elapsed);
     commands.spawn((
         AudioBundle {
-            source: asset_server.load("audio/boss.ogg"),
+            source: asset_server.load("audio/music/boss.ogg"),
             settings: PlaybackSettings::LOOP,
         },
         MusicBoss,
@@ -548,7 +548,7 @@ fn boss_transition_animate(
         if !transition.sound_played {
             transition.sound_played = true;
             commands.spawn(AudioBundle {
-                source: asset_server.load("audio/boss_start_2.ogg"),
+                source: asset_server.load("audio/sfx/boss_start_2.ogg"),
                 settings: PlaybackSettings::DESPAWN,
             });
         }
@@ -735,7 +735,7 @@ fn boss_pattern_executor(
                     direction: Vec2::new(dir_x, 0.0),
                 });
                 commands.spawn(AudioBundle {
-                    source: asset_server.load("audio/t_go.wav"),
+                    source: asset_server.load("audio/sfx/t_go.wav"),
                     settings: PlaybackSettings::DESPAWN,
                 });
             }
@@ -893,7 +893,7 @@ fn debug_skip_to_boss(
 
     // ─── Spawn du boss en Flexing (skip l'intro de 7s) ──────────
     commands.spawn(AudioBundle {
-        source: asset_server.load("audio/boss_start_2.ogg"),
+        source: asset_server.load("audio/sfx/boss_start_2.ogg"),
         settings: PlaybackSettings::DESPAWN,
     });
 

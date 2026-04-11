@@ -164,7 +164,7 @@ fn shoot(
     }
 
     commands.spawn(AudioBundle {
-        source: asset_server.load("audio/projectile.ogg"),
+        source: asset_server.load("audio/sfx/projectile.ogg"),
         settings: PlaybackSettings::DESPAWN,
     });
 }
@@ -226,7 +226,7 @@ fn missile_asteroid_collision(
                             asteroid_transform.rotation,
                         );
                         commands.spawn(AudioBundle {
-                            source: asset_server.load("audio/asteroid_die.ogg"),
+                            source: asset_server.load("audio/sfx/asteroid_die.ogg"),
                             settings: PlaybackSettings::DESPAWN,
                         });
                         if let Some(table) = drop_table {
@@ -243,7 +243,7 @@ fn missile_asteroid_collision(
                 } else if !despawned_asteroids.contains(&asteroid_entity) {
                     commands.entity(asteroid_entity).insert(HitFlash(Timer::from_seconds(0.06, TimerMode::Once)));
                     commands.spawn(AudioBundle {
-                        source: asset_server.load("audio/asteroid_hit.ogg"),
+                        source: asset_server.load("audio/sfx/asteroid_hit.ogg"),
                         settings: PlaybackSettings::DESPAWN,
                     });
                 }

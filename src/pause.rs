@@ -158,7 +158,7 @@ fn handle_pause_input(
             }
             // Son de pause
             commands.spawn(AudioBundle {
-                source: asset_server.load("audio/pause.ogg"),
+                source: asset_server.load("audio/sfx/pause.ogg"),
                 settings: PlaybackSettings::ONCE,
             });
             spawn_pause_ui(&mut commands, &asset_server);

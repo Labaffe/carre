@@ -10,7 +10,7 @@
 //! ## Exemple
 //! ```ignore
 //! LevelStep::at(7.0, "countdown")
-//!     .with(Action::PlaySound("audio/charging.ogg"))
+//!     .with(Action::PlaySound("audio/sfx/charging.ogg"))
 //!     .with(Action::StartCountdown)
 //! ```
 
@@ -375,13 +375,13 @@ pub fn build_level_1() -> Vec<LevelStep> {
     vec![
         // ─── Phase d'intro (0-7s) ───────────────────────────────
         LevelStep::at(0.0, "game_start")
-            .with(Action::StartMusic("audio/gradius.ogg"))
+            .with(Action::StartMusic("audio/music/gradius.ogg"))
             .with(Action::SetDifficulty(0.5))
             .with(Action::StartSpawning("asteroid", 1, 1.0, SpawnPosition::Top))
             .with(Action::Log("Niveau 1 démarré")),
         // ─── Countdown (7-10s) ──────────────────────────────────
         LevelStep::at(7.0, "countdown")
-            .with(Action::PlaySound("audio/charging.ogg"))
+            .with(Action::PlaySound("audio/sfx/charging.ogg"))
             .with(Action::StartCountdown),
         // Note : le countdown envoie un BoomEvent au "GO!" (10s)
 
@@ -391,15 +391,15 @@ pub fn build_level_1() -> Vec<LevelStep> {
             .with(Action::StartSpawning("green_ufo", 2, 4.0, SpawnPosition::Top)),
         LevelStep::at(14.3, "boom_1")
             .with(Action::SetDifficulty(4.5))
-            .with(Action::PlaySound("audio/t_go.wav"))
+            .with(Action::PlaySound("audio/sfx/t_go.wav"))
             .with(Action::SendBoom),
         LevelStep::at(18.3, "boom_2")
             .with(Action::SetDifficulty(6.5))
-            .with(Action::PlaySound("audio/t_go.wav"))
+            .with(Action::PlaySound("audio/sfx/t_go.wav"))
             .with(Action::SendBoom),
         LevelStep::at(22.6, "boom_3")
             .with(Action::SetDifficulty(7.5))
-            .with(Action::PlaySound("audio/t_go.wav"))
+            .with(Action::PlaySound("audio/sfx/t_go.wav"))
             .with(Action::SendBoom),
         // ─── Transition vers le boss ────────────────────────────
         LevelStep::at(27.7, "pre_boss")

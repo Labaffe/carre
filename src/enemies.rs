@@ -55,7 +55,7 @@ pub static BOSS_PHASES: [PhaseDef; 3] = [
     // Phase 1 : patrol 5s + charge, transition vers phase 2
     PhaseDef {
         health: 100,
-        enter_sound: Some("audio/t_go.wav"),
+        enter_sound: Some("audio/sfx/t_go.wav"),
         patterns: &[
             PatternDef {
                 name: "patrol",
@@ -71,7 +71,7 @@ pub static BOSS_PHASES: [PhaseDef; 3] = [
     // Phase 2 : patrol 4s + charge, transition vers phase 3
     PhaseDef {
         health: 100,
-        enter_sound: Some("audio/t_go.wav"),
+        enter_sound: Some("audio/sfx/t_go.wav"),
         patterns: &[
             PatternDef {
                 name: "patrol",
@@ -87,7 +87,7 @@ pub static BOSS_PHASES: [PhaseDef; 3] = [
     // Phase 3 : patrol 2.5s + charge, pas de transition → mort
     PhaseDef {
         health: 100,
-        enter_sound: Some("audio/t_go.wav"),
+        enter_sound: Some("audio/sfx/t_go.wav"),
         patterns: &[
             PatternDef {
                 name: "patrol",
@@ -109,8 +109,8 @@ pub static BOSS: EnemyDef = EnemyDef {
     phases: &BOSS_PHASES,
     death_duration: 4.0,
     death_shake_max: 20.0,
-    hit_sound: "audio/asteroid_hit.ogg",
-    death_explosion_sound: "audio/boss_explosion.ogg",
+    hit_sound: "audio/sfx/asteroid_hit.ogg",
+    death_explosion_sound: "audio/sfx/boss_explosion.ogg",
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -148,8 +148,8 @@ pub static GREEN_UFO: EnemyDef = EnemyDef {
     phases: &GREEN_UFO_PHASES,
     death_duration: 0.05,
     death_shake_max: 0.0,
-    hit_sound: "audio/asteroid_hit.ogg",
-    death_explosion_sound: "audio/asteroid_die.ogg",
+    hit_sound: "audio/sfx/asteroid_hit.ogg",
+    death_explosion_sound: "audio/sfx/asteroid_die.ogg",
 };
 
 // ═══════════════════════════════════════════════════════════════════════

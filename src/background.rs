@@ -49,7 +49,7 @@ fn setup_background(
         return;
     }
 
-    let bg = asset_server.load("images/space_background_tile.png");
+    let bg = asset_server.load("images/backgrounds/space_background_tile.png");
 
     for i in 0..2 {
         commands.spawn((
@@ -90,7 +90,7 @@ fn scroll_background(
             difficulty.boss_bg_initialized = true;
 
             // Ajouter 4 tiles (2 au-dessus, 2 en dessous) — les 2 existantes restent
-            let bg = asset_server.load("images/space_background_tile.png");
+            let bg = asset_server.load("images/backgrounds/space_background_tile.png");
             for row in [-2_i32, -1, 2, 3] {
                 commands.spawn((
                     SpriteBundle {
@@ -168,7 +168,7 @@ fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows:
 
     commands.spawn((
         SpriteBundle {
-            texture: asset_server.load("images/planete.png"),
+            texture: asset_server.load("images/backgrounds/planete.png"),
             sprite: Sprite {
                 color: Color::WHITE,
                 ..default()
@@ -202,7 +202,7 @@ fn animate_planet(
     if difficulty.elapsed >= landing_time && !difficulty.landing_played {
         difficulty.landing_played = true;
         commands.spawn(AudioBundle {
-            source: asset_server.load("audio/landing.ogg"),
+            source: asset_server.load("audio/sfx/landing.ogg"),
             settings: PlaybackSettings::DESPAWN,
         });
     }

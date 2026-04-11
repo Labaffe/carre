@@ -103,7 +103,7 @@ fn setup_main_menu(
     camera_q: Query<(&Camera, &GlobalTransform, &OrthographicProjection)>,
 ) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
-    let tile_texture = asset_server.load("images/space_tile_1.png");
+    let tile_texture = asset_server.load("images/backgrounds/space_tile_1.png");
 
     // ── Tiles de fond (world-space sprites) ───────────────────────
     let (half_w, half_h) = if let Ok((_cam, _gt, proj)) = camera_q.get_single() {
@@ -157,7 +157,7 @@ fn setup_main_menu(
     // Musique du menu
     commands.spawn((
         AudioBundle {
-            source: asset_server.load("audio/main_menu.ogg"),
+            source: asset_server.load("audio/music/main_menu.ogg"),
             settings: PlaybackSettings::LOOP,
         },
         MainMenuMusic,
@@ -186,7 +186,7 @@ fn setup_main_menu(
             // Logo (centré indépendamment)
             parent.spawn((
                 ImageBundle {
-                    image: UiImage::new(asset_server.load("images/main_menu_title.png")),
+                    image: UiImage::new(asset_server.load("images/ui/main_menu_title.png")),
                     style: Style {
                         width: Val::Px(750.0),
                         height: Val::Auto,

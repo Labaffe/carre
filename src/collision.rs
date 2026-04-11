@@ -120,7 +120,7 @@ fn player_collision<T: Hittable>(
             lives.lives -= 1;
 
             commands.spawn(AudioBundle {
-                source: asset_server.load("audio/hurt.ogg"),
+                source: asset_server.load("audio/sfx/hurt.ogg"),
                 settings: PlaybackSettings {
                     volume: bevy::audio::Volume::new(3.0),
                     ..PlaybackSettings::DESPAWN

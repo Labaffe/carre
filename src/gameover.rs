@@ -142,7 +142,7 @@ fn animate_gameover(
         anim.music_spawned = true;
         commands.spawn((
             AudioBundle {
-                source: asset_server.load("audio/you_died.ogg"),
+                source: asset_server.load("audio/sfx/you_died.ogg"),
                 settings: PlaybackSettings::ONCE,
             },
             MusicGameOver,

@@ -157,7 +157,7 @@ fn level_update(
     if levelup {
         level.value += 1;
         commands.spawn(AudioBundle {
-            source: asset_server.load("audio/level_up.ogg"),
+            source: asset_server.load("audio/sfx/level_up.ogg"),
             settings: PlaybackSettings::DESPAWN,
         });
     }

@@ -263,7 +263,7 @@ fn green_ufo_pattern_executor(
                 commands.entity(entity).insert(GreenUFORush { direction });
                 // Son de rush
                 commands.spawn(AudioBundle {
-                    source: asset_server.load("audio/green_ufo.ogg"),
+                    source: asset_server.load("audio/sfx/green_ufo.ogg"),
                     settings: PlaybackSettings {
                         volume: bevy::audio::Volume::new(0.8),
                         ..default()
@@ -383,7 +383,7 @@ fn green_ufo_death(
         );
 
         commands.spawn(AudioBundle {
-            source: asset_server.load("audio/green_ufo_death.ogg"),
+            source: asset_server.load("audio/sfx/green_ufo_death.ogg"),
             settings: PlaybackSettings::DESPAWN,
         });
     }
