@@ -15,9 +15,10 @@
 //!                ou MainMenu (dernier niveau terminé)
 //! ```
 
+use crate::asteroid::Asteroid;
 use crate::boss::BossMarker;
 use crate::difficulty::Difficulty;
-use crate::enemy::Enemy;
+use crate::enemy::{Enemy, EnemyState};
 use crate::pause::PauseState;
 use crate::state::GameState;
 use bevy::prelude::*;
@@ -29,7 +30,12 @@ impl Plugin for GamePlugin {
         app.init_resource::<GameProgress>()
             .add_systems(
                 Update,
-                (detect_level_complete, level_outro_animate, level_outro_input)
+                (
+                    detect_level_complete,
+                    debug_skip_to_outro,
+                    level_outro_animate,
+                    level_outro_input,
+                )
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(OnExit(GameState::Playing), cleanup_outro)
@@ -217,6 +223,58 @@ fn level_outro_input(
             next_state.set(GameState::MainMenu);
         }
     }
+}
+
+// ─── F4 : skip direct à l'outro ─────────────────────────────────────
+
+/// F4 : tue tous les ennemis et déclenche l'outro immédiatement.
+fn debug_skip_to_outro(
+    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    outro: Option<Res<LevelOutro>>,
+    mut pause: ResMut<PauseState>,
+    mut difficulty: ResMut<Difficulty>,
+    asset_server: Res<AssetServer>,
+    enemy_q: Query<(Entity, &Enemy)>,
+    asteroid_q: Query<Entity, With<Asteroid>>,
+) {
+    if !keyboard.just_pressed(KeyCode::F4) {
+        return;
+    }
+    if outro.is_some() {
+        return;
+    }
+
+    // Tuer tous les ennemis
+    for (entity, enemy) in enemy_q.iter() {
+        if matches!(enemy.state, EnemyState::Dying | EnemyState::Dead) {
+            continue;
+        }
+        // Despawn direct (pas d'animation de mort)
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
+    }
+
+    // Despawn tous les astéroïdes
+    for entity in asteroid_q.iter() {
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
+    }
+
+    // Marquer le boss comme spawné pour que detect_level_complete se déclenche
+    difficulty.boss_spawned = true;
+    difficulty.active_spawners.clear();
+
+    // Lancer l'outro immédiatement (sans countdown)
+    pause.outro_active = true;
+    commands.remove_resource::<OutroCountdown>();
+    commands.insert_resource(LevelOutro {
+        elapsed: 0.0,
+        music_spawned: false,
+    });
+    spawn_outro_ui(&mut commands, &asset_server);
 }
 
 // ─── UI de l'outro ──────────────────────────────────────────────────
