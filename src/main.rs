@@ -12,6 +12,7 @@ pub mod enemies;
 pub mod enemy;
 mod explosion;
 mod gameover;
+mod green_ufo;
 pub mod item;
 mod mainmenu;
 mod missile;
@@ -76,6 +77,7 @@ fn main() {
             EnemyPlugin,
             BossPlugin,
             ItemPlugin,
+            green_ufo::GreenUFOPlugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, show_window_after_render.run_if(run_once()))

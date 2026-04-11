@@ -13,7 +13,7 @@ use crate::MusicMain;
 use crate::asteroid::Asteroid;
 use crate::difficulty::Difficulty;
 use crate::enemies::BOSS;
-use crate::enemy::{Enemy, EnemyState, PatrolMovement, PatternTimer};
+use crate::enemy::{Enemy, EnemyState, PatrolMovement, PatternIndex, PatternTimer};
 use crate::explosion::load_frames_from_folder;
 use crate::pause::not_paused;
 use crate::player::Player;
@@ -39,6 +39,8 @@ impl Plugin for BossPlugin {
                     boss_enable_patrol,
                     boss_charge_movement,
                     boss_pattern_executor,
+                    boss_transition_start,
+                    boss_transition_animate,
                 )
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),
@@ -68,6 +70,12 @@ const BOSS_MARGIN: f32 = 80.0;
 const BOSS_PATROL_SPEED_X: f32 = 270.0;
 const BOSS_SINE_AMPLITUDE_Y: f32 = 0.85;
 const BOSS_SINE_FREQ_Y: f32 = 4.5;
+
+// Transition entre phases
+/// Durée de l'animation de transition entre phases (secondes).
+const BOSS_TRANSITION_DURATION: f32 = 2.0;
+/// Amplitude max du tremblement pendant la transition.
+const BOSS_TRANSITION_SHAKE_MAX: f32 = 12.0;
 
 // Charge
 /// Vitesse de la charge vers le joueur (px/s).
@@ -105,9 +113,15 @@ pub struct BossCharge {
     pub direction: Vec2,
 }
 
-/// Index du pattern actuel dans la liste de patterns de la phase.
+
+
+/// Animation de transition entre deux phases (shake + flash, pas d'explosions).
 #[derive(Component)]
-pub struct BossPatternIndex(pub usize);
+struct BossTransition {
+    timer: Timer,
+    anchor: Vec3,
+    sound_played: bool,
+}
 
 // ─── Ressources ─────────────────────────────────────────────────────
 
@@ -192,7 +206,7 @@ fn spawn_boss(
                 .unwrap_or(1.0),
             TimerMode::Once,
         )),
-        BossPatternIndex(0),
+        PatternIndex(0),
         PatrolMovement {
             dir_x: 1.0,
             sine_time: 0.0,
@@ -344,7 +358,10 @@ fn boss_idle_animation(
 ) {
     for (enemy, mut anim, mut texture) in boss_q.iter_mut() {
         match &enemy.state {
-            EnemyState::Entering | EnemyState::Idle | EnemyState::Active(_) => {}
+            EnemyState::Entering
+            | EnemyState::Idle
+            | EnemyState::Active(_)
+            | EnemyState::Transitioning(_) => {}
             EnemyState::Flexing => {
                 // Pendant le flexing visuel, l'idle ne tourne que pendant l'attente initiale
                 if enemy.anim_timer.elapsed_secs() >= BOSS_FLEXING_WAIT {
@@ -405,6 +422,151 @@ fn boss_dying_stop_music(
     }
 }
 
+// ─── Transition entre phases ────────────────────────────────────────
+
+fn boss_transition_start(
+    mut commands: Commands,
+    mut boss_q: Query<
+        (
+            Entity,
+            &mut Enemy,
+            &Transform,
+            &mut PatrolMovement,
+            Option<&BossCharge>,
+        ),
+        With<BossMarker>,
+    >,
+) {
+    for (entity, mut enemy, transform, mut patrol, charge) in boss_q.iter_mut() {
+        let _next_phase = match &enemy.state {
+            EnemyState::Transitioning(idx) => *idx,
+            _ => continue,
+        };
+
+        // Vérifier si le composant BossTransition est déjà présent (éviter de le recréer)
+        // On utilise le health == 1 comme signal du premier frame
+        if enemy.health != 1 {
+            continue;
+        }
+        enemy.health = 0; // marquer comme initialisé
+
+        // Arrêter le mouvement
+        patrol.enabled = false;
+        if charge.is_some() {
+            commands.entity(entity).remove::<BossCharge>();
+        }
+
+        commands.entity(entity).insert(BossTransition {
+            timer: Timer::from_seconds(BOSS_TRANSITION_DURATION, TimerMode::Once),
+            anchor: transform.translation,
+            sound_played: false,
+        });
+
+        // Remettre la rotation à zéro
+        commands.entity(entity).insert(Transform {
+            translation: transform.translation,
+            scale: transform.scale,
+            rotation: Quat::IDENTITY,
+        });
+    }
+}
+
+fn boss_transition_animate(
+    mut commands: Commands,
+    time: Res<Time>,
+    asset_server: Res<AssetServer>,
+    mut boss_q: Query<
+        (
+            Entity,
+            &mut Enemy,
+            &mut Sprite,
+            &mut Transform,
+            &mut BossTransition,
+            &mut PatternTimer,
+            &mut PatternIndex,
+            &mut PatrolMovement,
+        ),
+        With<BossMarker>,
+    >,
+) {
+    for (
+        entity,
+        mut enemy,
+        mut sprite,
+        mut transform,
+        mut transition,
+        mut pattern_timer,
+        mut pat_idx,
+        mut patrol,
+    ) in boss_q.iter_mut()
+    {
+        let next_phase = match &enemy.state {
+            EnemyState::Transitioning(idx) => *idx,
+            _ => continue,
+        };
+
+        transition.timer.tick(time.delta());
+        let progress = transition.timer.fraction();
+        let elapsed = transition.timer.elapsed_secs();
+
+        // Jouer le son de flexing une seule fois
+        if !transition.sound_played {
+            transition.sound_played = true;
+            commands.spawn(AudioBundle {
+                source: asset_server.load("audio/boss_start_2.ogg"),
+                settings: PlaybackSettings::DESPAWN,
+            });
+        }
+
+        // Clignotement : fréquence augmente (2 Hz → 10 Hz)
+        let blink_freq = 2.0 + progress * 8.0;
+        let blink = (elapsed * blink_freq * std::f32::consts::TAU).sin() > 0.0;
+        if blink {
+            let v = 1.0 + (1.0 - progress) * 1.5;
+            sprite.color = Color::rgba(v, v, v, 1.0);
+        } else {
+            sprite.color = Color::WHITE;
+        }
+
+        // Tremblement
+        let shake = progress * progress * BOSS_TRANSITION_SHAKE_MAX;
+        let shake_x = (fastrand::f32() - 0.5) * 2.0 * shake;
+        let shake_y = (fastrand::f32() - 0.5) * 2.0 * shake;
+        transform.translation.x = transition.anchor.x + shake_x;
+        transform.translation.y = transition.anchor.y + shake_y;
+
+        // Fin de la transition → passer à la phase suivante
+        if transition.timer.finished() {
+            sprite.color = Color::WHITE;
+            transform.translation = transition.anchor;
+
+            let def = &enemy.phases[next_phase];
+            enemy.state = EnemyState::Active(next_phase);
+            enemy.health = def.health;
+            enemy.max_health = def.health;
+
+            // Reset pattern
+            pat_idx.0 = 0;
+            let first_duration = def.patterns.first().map(|p| p.duration).unwrap_or(1.0);
+            pattern_timer.0 = Timer::from_seconds(first_duration, TimerMode::Once);
+
+            // Réactiver le patrol
+            patrol.enabled = true;
+            patrol.initialized = false;
+
+            // Son d'entrée de phase
+            if let Some(sound) = def.enter_sound {
+                commands.spawn(AudioBundle {
+                    source: asset_server.load(sound),
+                    settings: PlaybackSettings::DESPAWN,
+                });
+            }
+
+            commands.entity(entity).remove::<BossTransition>();
+        }
+    }
+}
+
 // ─── Activation du patrol ───────────────────────────────────────────
 
 fn boss_enable_patrol(
@@ -443,7 +605,7 @@ fn boss_pattern_executor(
             Entity,
             &Enemy,
             &mut PatternTimer,
-            &mut BossPatternIndex,
+            &mut PatternIndex,
             &Transform,
             Option<&BossCharge>,
             &mut PatrolMovement,
@@ -541,7 +703,7 @@ fn boss_charge_movement(
             &BossCharge,
             &mut PatrolMovement,
             &mut PatternTimer,
-            &BossPatternIndex,
+            &PatternIndex,
         ),
         With<BossMarker>,
     >,
@@ -694,7 +856,7 @@ fn debug_skip_to_boss(
                 .unwrap_or(1.0),
             TimerMode::Once,
         )),
-        BossPatternIndex(0),
+        PatternIndex(0),
         PatrolMovement {
             dir_x: 1.0,
             sine_time: 0.0,

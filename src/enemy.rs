@@ -73,6 +73,9 @@ pub enum EnemyState {
     Idle,
     /// Phase de combat. Seul état où les patterns se déclenchent.
     Active(usize),
+    /// Transition entre deux phases (shake + flash, pas d'explosions).
+    /// L'index est la phase **suivante** vers laquelle on transite.
+    Transitioning(usize),
     /// Animation de mort en cours, invincible.
     Dying,
     /// Mort, sera despawné.
@@ -102,6 +105,10 @@ pub struct PhaseDef {
     /// Patterns de combat, chacun avec son propre timing.
     /// Le pattern executor cycle à travers cette liste.
     pub patterns: &'static [PatternDef],
+    /// Si `true`, une animation de transition (shake + flash) est jouée
+    /// avant de passer à la phase suivante quand les PV tombent à 0.
+    /// L'animation est gérée par le module spécifique de l'ennemi.
+    pub has_transition: bool,
 }
 
 // ─── Composants ─────────────────────────────────────────────────────
@@ -145,6 +152,11 @@ pub struct EnemyProjectile {
 /// Cadence des patterns de tir.
 #[derive(Component)]
 pub struct PatternTimer(pub Timer);
+
+/// Index du pattern actuel dans la liste de patterns de la phase.
+/// Composant générique utilisé par tous les ennemis.
+#[derive(Component)]
+pub struct PatternIndex(pub usize);
 
 /// Mouvement patrol : vitesse X constante + sinusoïde Y.
 /// Chaque champ est configurable pour varier le comportement par ennemi.
@@ -204,22 +216,30 @@ fn enemy_phase_logic(
             continue;
         }
 
-        // PV à 0 → phase suivante ou mort
+        // PV à 0 → phase suivante (ou transition) ou mort
+        let current_def = &enemy.phases[current_phase];
         let next_phase = current_phase + 1;
         if next_phase < enemy.phases.len() {
-            // Transition vers la phase suivante
-            let def = &enemy.phases[next_phase];
-            enemy.state = EnemyState::Active(next_phase);
-            enemy.health = def.health;
-            enemy.max_health = def.health;
-            let first_duration = def.patterns.first().map(|p| p.duration).unwrap_or(1.0);
-            pattern_timer.0 = Timer::from_seconds(first_duration, TimerMode::Once);
+            if current_def.has_transition {
+                // Transition animée avant la phase suivante
+                enemy.state = EnemyState::Transitioning(next_phase);
+                enemy.health = 1; // invulnérable pendant la transition, évite de re-trigger
+                // Le module spécifique de l'ennemi gère l'animation et le passage en Active
+            } else {
+                // Transition directe vers la phase suivante
+                let def = &enemy.phases[next_phase];
+                enemy.state = EnemyState::Active(next_phase);
+                enemy.health = def.health;
+                enemy.max_health = def.health;
+                let first_duration = def.patterns.first().map(|p| p.duration).unwrap_or(1.0);
+                pattern_timer.0 = Timer::from_seconds(first_duration, TimerMode::Once);
 
-            if let Some(sound) = def.enter_sound {
-                commands.spawn(AudioBundle {
-                    source: asset_server.load(sound),
-                    settings: PlaybackSettings::DESPAWN,
-                });
+                if let Some(sound) = def.enter_sound {
+                    commands.spawn(AudioBundle {
+                        source: asset_server.load(sound),
+                        settings: PlaybackSettings::DESPAWN,
+                    });
+                }
             }
         } else {
             // Dernière phase → mort

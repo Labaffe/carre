@@ -51,7 +51,8 @@ pub struct EnemyDef {
 //    - Mouvement patrol sinusoïdal entre les charges
 //    - Animation de flexing accéléré pendant la mort
 
-pub static BOSS_PHASES: [PhaseDef; 2] = [
+pub static BOSS_PHASES: [PhaseDef; 3] = [
+    // Phase 1 : patrol 5s + charge, transition vers phase 2
     PhaseDef {
         health: 100,
         enter_sound: Some("audio/t_go.wav"),
@@ -65,20 +66,39 @@ pub static BOSS_PHASES: [PhaseDef; 2] = [
                 duration: 0.1,
             },
         ],
+        has_transition: true,
     },
+    // Phase 2 : patrol 4s + charge, transition vers phase 3
     PhaseDef {
         health: 100,
         enter_sound: Some("audio/t_go.wav"),
         patterns: &[
             PatternDef {
                 name: "patrol",
-                duration: 2.0,
+                duration: 4.0,
             },
             PatternDef {
                 name: "charge",
                 duration: 0.1,
             },
         ],
+        has_transition: true,
+    },
+    // Phase 3 : patrol 2.5s + charge, pas de transition → mort
+    PhaseDef {
+        health: 100,
+        enter_sound: Some("audio/t_go.wav"),
+        patterns: &[
+            PatternDef {
+                name: "patrol",
+                duration: 3.0,
+            },
+            PatternDef {
+                name: "charge",
+                duration: 0.1,
+            },
+        ],
+        has_transition: false,
     },
 ];
 
@@ -94,8 +114,47 @@ pub static BOSS: EnemyDef = EnemyDef {
 };
 
 // ═══════════════════════════════════════════════════════════════════════
+//  GREEN UFO
+// ═══════════════════════════════════════════════════════════════════════
+//  Module : src/green_ufo.rs
+//  Machine à état : Active(0) → Dying → Dead  (pas d'intro ni de flexing)
+//  Patterns : rush (fonce sur le joueur 0.4s) → idle (pause 0.2s) → repeat
+//  Particularités :
+//    - Mort instantanée style astéroïde (explosion + despawn)
+//    - Son "green_ufo.ogg" à chaque rush
+//    - Spawn périodique depuis le haut de l'écran
+
+pub static GREEN_UFO_PHASES: [PhaseDef; 1] = [PhaseDef {
+    health: 5,
+    enter_sound: None,
+    patterns: &[
+        PatternDef {
+            name: "rush",
+            duration: 1.5,
+        },
+        // c'est pervert mais la durée du "idle" correspond au temps de rush du pattern précédent
+        PatternDef {
+            name: "idle",
+            duration: 1.0,
+        },
+    ],
+    has_transition: false,
+}];
+
+pub static GREEN_UFO: EnemyDef = EnemyDef {
+    name: "GreenUFO",
+    radius: 30.0,
+    sprite_size: 64.0,
+    phases: &GREEN_UFO_PHASES,
+    death_duration: 0.01,
+    death_shake_max: 0.0,
+    hit_sound: "audio/asteroid_hit.ogg",
+    death_explosion_sound: "audio/asteroid_die.ogg",
+};
+
+// ═══════════════════════════════════════════════════════════════════════
 //  LISTE COMPLÈTE
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Tous les ennemis du jeu, pour référence et itération.
-pub static ALL_ENEMIES: &[&EnemyDef] = &[&BOSS];
+pub static ALL_ENEMIES: &[&EnemyDef] = &[&BOSS, &GREEN_UFO];

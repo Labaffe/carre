@@ -4,10 +4,11 @@
 
 use crate::MusicMain;
 use crate::asteroid::Asteroid;
-use crate::boss::{BossCharge, BossMarker, BossPatternIndex};
+use crate::boss::{BossCharge, BossMarker};
+use crate::green_ufo::GreenUFOMarker;
 use crate::collision::Hittable;
 use crate::difficulty::Difficulty;
-use crate::enemy::{Enemy, EnemyProjectile, EnemyState, PatternTimer};
+use crate::enemy::{Enemy, EnemyProjectile, EnemyState, PatternIndex, PatternTimer};
 use crate::missile::Missile;
 use crate::player::{Player, PlayerLives};
 use crate::score::Score;
@@ -116,7 +117,8 @@ fn update_debug_ui(
             &Enemy,
             &Transform,
             Option<&BossMarker>,
-            Option<&BossPatternIndex>,
+            Option<&GreenUFOMarker>,
+            Option<&PatternIndex>,
             Option<&PatternTimer>,
             Option<&BossCharge>,
         ),
@@ -141,8 +143,14 @@ fn update_debug_ui(
         .unwrap_or_else(|_| "N/A".to_string());
 
     let mut enemy_lines = String::new();
-    for (enemy, transform, boss, pat_idx, pat_timer, charge) in enemy_q.iter() {
-        let name = if boss.is_some() { "Boss" } else { "Enemy" };
+    for (enemy, transform, boss, green_ufo, pat_idx, pat_timer, charge) in enemy_q.iter() {
+        let name = if boss.is_some() {
+            "Boss"
+        } else if green_ufo.is_some() {
+            "GreenUFO"
+        } else {
+            "Enemy"
+        };
         let pos = format!("({:.0}, {:.0})", transform.translation.x, transform.translation.y);
 
         let state_str = match &enemy.state {
@@ -167,6 +175,7 @@ fn update_debug_ui(
                 };
                 format!("Active(phase {}) | {}", idx, pattern_info)
             }
+            EnemyState::Transitioning(idx) => format!("Transitioning → phase {}", idx),
             EnemyState::Dying => {
                 let remaining = enemy.anim_timer.duration().as_secs_f32() - enemy.anim_timer.elapsed_secs();
                 format!("Dying ({:.1}s)", remaining)
