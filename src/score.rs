@@ -5,10 +5,10 @@ pub struct ScorePlugin;
 
 impl Plugin for ScorePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Score>()
+        app.init_resource::<Score>().init_resource::<Level>()
             .add_systems(OnEnter(GameState::Playing), setup_score_ui)
             .add_systems(OnExit(GameState::Playing), cleanup_score_ui)
-            .add_systems(Update, score_update.run_if(in_state(GameState::Playing)));
+            .add_systems(Update, (score_update.run_if(in_state(GameState::Playing)),level_update.run_if(in_state(GameState::Playing))));
     }
 }
 
@@ -17,7 +17,8 @@ struct ScoreUI;
 
 #[derive(Component)]
 struct ScoreText;
-
+#[derive(Component)]
+struct LevelText;
 #[derive(Resource)]
 pub struct Score {
     value: i32,
@@ -52,13 +53,31 @@ impl Default for Score {
         }
     }
 }
+#[derive(Resource)]
+pub struct Level {
+    value:usize
+}
 
+const LEVELS:[i32;4] = [
+    50,
+    100,
+    150,
+    200
+    ];
+
+impl Default for Level {
+    fn default() -> Self {
+        Self{value:0}
+    }
+}
 fn setup_score_ui(
     mut commands: Commands,
     mut score: ResMut<Score>,
+    mut level: ResMut<Level>,
     asset_server: Res<AssetServer>,
 ) {
     *score = Score::default();
+    *level = Level::default();
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     commands
         .spawn((
@@ -89,6 +108,17 @@ fn setup_score_ui(
                 ),
                 ScoreText,
             ));
+            parent.spawn((
+                TextBundle::from_section(
+                    "level",
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 90.0,
+                        color: Color::rgba(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+                LevelText,
+            ));
         });
 }
 
@@ -113,5 +143,34 @@ fn score_update(
         let coef = score.get_size_coeff();
         let scale = 0.3 * coef + 1.0 * (1.0 - coef);
         transform.scale = Vec3::splat(scale);
+    }
+}
+fn level_update(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    time: Res<Time>,
+    mut text_q: Query<(&mut Text, &mut Transform), With<LevelText>>,
+    mut level: ResMut<Level>,
+    score: Res<Score>
+) {
+    let levelup = score.value > LEVELS[level.value] && LEVELS.len()>level.value+1;
+    if levelup {
+        level.value += 1;
+        commands.spawn(AudioBundle {
+            source: asset_server.load("audio/level_up.ogg"),
+            settings: PlaybackSettings::DESPAWN,
+        });
+    }
+    // texte : opacité 0 → 1, zoom 0.3 → 1.0
+    for (mut text, mut transform) in text_q.iter_mut() {
+        for section in text.sections.iter_mut() {
+            section.value = (level.value+1).to_string();
+        }
+        if levelup {
+            transform.scale = Vec3::splat(1.0);
+        }
+        else {
+            transform.scale = Vec3::splat(0.3);
+        }
     }
 }
