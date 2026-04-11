@@ -54,7 +54,6 @@ impl Plugin for BossPlugin {
 
 const BOSS_SPAWN_TIME: f32 = 35.8;
 const BOSS_START_ANIMATION_DURATION: f32 = 7.0;
-const BOSS_MUSIC_DELAY: f32 = 1.0;
 const BOSS_FLEXING_WAIT: f32 = 0.5;
 const BOSS_START_2_ANIMATION_DURATION: f32 = 1.7;
 const BOSS_TARGET_Y: f32 = 250.0;
@@ -256,11 +255,9 @@ fn boss_intro(
 fn boss_flexing(
     time: Res<Time>,
     flexing_frames: Res<BossFlexingFrames>,
-    _idle_frames: Res<BossIdleFrames>,
-    mut boss_q: Query<(Entity, &mut Enemy, &mut Handle<Image>), With<BossMarker>>,
-    mut difficulty: ResMut<Difficulty>,
+    mut boss_q: Query<(&mut Enemy, &mut Handle<Image>), With<BossMarker>>,
 ) {
-    for (_entity, mut enemy, mut texture) in boss_q.iter_mut() {
+    for (mut enemy, mut texture) in boss_q.iter_mut() {
         if enemy.state != EnemyState::Flexing {
             continue;
         }
@@ -268,11 +265,8 @@ fn boss_flexing(
         enemy.anim_timer.tick(time.delta());
 
         if enemy.anim_timer.finished() {
-            // Flexing terminé, en attente de la musique + patrol.
-            // L'idle animation prend le relais pour la texture.
-            if difficulty.boss_active_time.is_none() {
-                difficulty.boss_active_time = Some(difficulty.elapsed);
-            }
+            // Flexing terminé → passage en Idle
+            enemy.state = EnemyState::Idle;
             continue;
         }
 
@@ -320,24 +314,25 @@ fn boss_music_delayed(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut difficulty: ResMut<Difficulty>,
+    boss_q: Query<&Enemy, With<BossMarker>>,
 ) {
     if difficulty.boss_music_played {
         return;
     }
-    let Some(active_time) = difficulty.boss_active_time else {
+    // Lancer la musique dès que le boss est en Idle
+    let is_idle = boss_q.iter().any(|e| e.state == EnemyState::Idle);
+    if !is_idle {
         return;
-    };
-    if difficulty.elapsed - active_time >= BOSS_MUSIC_DELAY {
-        difficulty.boss_music_played = true;
-        difficulty.boss_music_start_time = Some(difficulty.elapsed);
-        commands.spawn((
-            AudioBundle {
-                source: asset_server.load("audio/boss.ogg"),
-                settings: PlaybackSettings::LOOP,
-            },
-            MusicBoss,
-        ));
     }
+    difficulty.boss_music_played = true;
+    difficulty.boss_music_start_time = Some(difficulty.elapsed);
+    commands.spawn((
+        AudioBundle {
+            source: asset_server.load("audio/boss.ogg"),
+            settings: PlaybackSettings::LOOP,
+        },
+        MusicBoss,
+    ));
 }
 
 // ─── Animation idle ─────────────────────────────────────────────────
@@ -349,12 +344,10 @@ fn boss_idle_animation(
 ) {
     for (enemy, mut anim, mut texture) in boss_q.iter_mut() {
         match &enemy.state {
-            EnemyState::Entering | EnemyState::Active(_) => {}
+            EnemyState::Entering | EnemyState::Idle | EnemyState::Active(_) => {}
             EnemyState::Flexing => {
                 // Pendant le flexing visuel, l'idle ne tourne que pendant l'attente initiale
-                // Une fois le timer fini (attente musique+patrol), l'idle reprend
-                let elapsed = enemy.anim_timer.elapsed_secs();
-                if elapsed >= BOSS_FLEXING_WAIT && !enemy.anim_timer.finished() {
+                if enemy.anim_timer.elapsed_secs() >= BOSS_FLEXING_WAIT {
                     continue;
                 }
             }
@@ -418,25 +411,23 @@ fn boss_enable_patrol(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     difficulty: Res<Difficulty>,
-    mut query: Query<(Entity, &mut Enemy, &mut PatrolMovement), With<BossMarker>>,
+    mut query: Query<(&mut Enemy, &mut PatrolMovement), With<BossMarker>>,
 ) {
-    let active = match difficulty.boss_music_start_time {
+    let ready = match difficulty.boss_music_start_time {
         Some(start) => difficulty.elapsed >= start + 3.0,
         None => false,
     };
-    for (_entity, mut enemy, mut patrol) in query.iter_mut() {
-        if active && enemy.state == EnemyState::Flexing && enemy.anim_timer.finished() {
-            // Le flexing visuel est fini ET le délai post-musique est écoulé → Active
+    for (mut enemy, mut patrol) in query.iter_mut() {
+        // Idle + délai post-musique écoulé → Active(0)
+        if ready && enemy.state == EnemyState::Idle {
             enemy.state = EnemyState::Active(0);
+            patrol.enabled = true;
             if let Some(sound) = BOSS.phases[0].enter_sound {
                 commands.spawn(AudioBundle {
                     source: asset_server.load(sound),
                     settings: PlaybackSettings::DESPAWN,
                 });
             }
-        }
-        if matches!(enemy.state, EnemyState::Active(_)) {
-            patrol.enabled = active;
         }
     }
 }

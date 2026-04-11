@@ -47,13 +47,14 @@ src/
 Le framework `enemy.rs` fournit une machine à état générique pour tous les ennemis :
 
 ```
-Entering ──→ Flexing ──→ Active(0) ──→ Active(1) ──→ … ──→ Dying ──→ Dead
+Entering ──→ Flexing ──→ Idle ──→ Active(0) ──→ Active(1) ──→ … ──→ Dying ──→ Dead
 ```
 
 | État | Description | Vulnérable | Dangereux |
 |------|-------------|------------|-----------|
 | `Entering` | Animation d'arrivée (optionnelle) | Non | Non |
 | `Flexing` | Animation post-arrivée (optionnelle) | Non | Non |
+| `Idle` | Attente avant le combat (optionnelle), animation idle, immobile | Non | Non |
 | `Active(n)` | Phase de combat n, patterns actifs | Oui | Oui |
 | `Dying` | Animation de mort (shake, flash, explosions) | Non | Non |
 | `Dead` | Entité despawnée | — | — |

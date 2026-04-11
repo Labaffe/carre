@@ -45,27 +45,31 @@ impl Plugin for EnemyPlugin {
 /// État générique d'un ennemi.
 ///
 /// ```text
-///  Entering ──→ Flexing ──→ Active(0) ──→ Active(1) ──→ … ──→ Dying ──→ Dead
-///     │            │                                              ▲
-///     │            └─── (optionnel, skip si pas de flexing) ──────┘
-///     └──────────── (optionnel, spawn directement en Active) ─────┘
+///  Entering ──→ Flexing ──→ Idle ──→ Active(0) ──→ Active(1) ──→ … ──→ Dying ──→ Dead
 /// ```
 ///
-/// - `Entering` : animation d'arrivée (optionnelle).
-/// - `Flexing` : animation post-arrivée, ex: pose, cri (optionnelle).
+/// Chaque état est optionnel sauf `Active` et `Dead`.
+///
+/// - `Entering` : animation d'arrivée (ex: spirale du boss).
+/// - `Flexing` : animation post-arrivée (ex: pose du boss).
+/// - `Idle` : attente avant le combat. L'ennemi joue son animation idle,
+///    ne bouge pas, ne tire pas, est invulnérable. Utile pour laisser la
+///    musique démarrer avant d'engager le combat.
 /// - `Active(usize)` : phase de combat, l'index correspond à `enemy.phases[idx]`.
 ///    Les patterns ne se déclenchent que dans cet état.
 /// - `Dying` : animation de mort (tremblement, explosions, clignotement).
 /// - `Dead` : entité despawnée.
 ///
 /// Un ennemi simple peut spawner directement en `Active(0)`.
-/// Un boss utilise `Entering` → `Flexing` → `Active(0)`.
+/// Un boss utilise `Entering` → `Flexing` → `Idle` → `Active(0)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnemyState {
     /// Animation d'arrivée (optionnelle).
     Entering,
     /// Animation post-arrivée (optionnelle, ex: flexing du boss).
     Flexing,
+    /// Attente avant le combat (optionnelle). Idle, invulnérable, immobile.
+    Idle,
     /// Phase de combat. Seul état où les patterns se déclenchent.
     Active(usize),
     /// Animation de mort en cours, invincible.

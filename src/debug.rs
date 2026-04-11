@@ -146,6 +146,7 @@ fn update_debug_ui(
         let state_str = match &enemy.state {
             EnemyState::Entering => "Entering".to_string(),
             EnemyState::Flexing => "Flexing".to_string(),
+            EnemyState::Idle => "Idle".to_string(),
             EnemyState::Active(idx) => {
                 let phase = &enemy.phases[*idx];
                 let pattern_info = if let Some(pi) = pat_idx {
