@@ -21,14 +21,29 @@ use crate::pause::not_paused;
 use crate::state::GameState;
 use bevy::prelude::*;
 
+/// Événement permettant à n'importe quel système d'injecter des actions
+/// dans le pipeline du niveau. Les actions sont exécutées immédiatement
+/// par le système `process_level_action_events`.
+///
+/// Exemple depuis un système boss :
+/// ```ignore
+/// level_events.send(LevelActionEvent(vec![
+///     Action::SpawnEnemy("green_ufo", 8),
+///     Action::PlaySound("audio/alert.ogg"),
+/// ]));
+/// ```
+#[derive(Event)]
+pub struct LevelActionEvent(pub Vec<Action>);
+
 pub struct LevelPlugin;
 
 impl Plugin for LevelPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(GameState::Playing), setup_level)
+        app.add_event::<LevelActionEvent>()
+            .add_systems(OnEnter(GameState::Playing), setup_level)
             .add_systems(
                 Update,
-                run_level
+                (run_level, process_level_action_events)
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),
             )
@@ -315,22 +330,12 @@ pub fn build_level_1() -> Vec<LevelStep> {
             .with(Action::SpawnEnemy("boss", 1))
             .with(Action::StopMainMusic)
             .with(Action::Log("Boss 1 spawné !")),
-        // 10s après le premier boss : vagues continues de 4 GreenUFOs toutes les 5s
-        LevelStep::after_step("boss_spawn", 10.0, "boss1_ufos")
-            .with(Action::StartSpawning("green_ufo", 4, 5.0))
-            .with(Action::Log("Vagues de 4 GreenUFOs / 5s pour Boss 1")),
         // ─── Deuxième boss ─────────────────────────────────────
         // 30s après le premier boss, un deuxième apparaît.
         // La musique boss ne s'arrête qu'à la mort du dernier.
         LevelStep::after_step("boss_spawn", 30.0, "boss_spawn_2")
             .with(Action::SpawnEnemy("boss", 1))
             .with(Action::Log("Boss 2 spawné !")),
-        // 10s après le deuxième boss : vagues continues de 4 GreenUFOs toutes les 5s
-        // (le spawner est déjà actif depuis boss1, on met juste à jour l'intervalle
-        //  au cas où il aurait été stoppé entre-temps)
-        LevelStep::after_step("boss_spawn_2", 10.0, "boss2_ufos")
-            .with(Action::StartSpawning("green_ufo", 4, 5.0))
-            .with(Action::Log("Vagues de 4 GreenUFOs / 5s pour Boss 2")),
         // ─── Les événements suivants sont gérés par boss.rs ─────
         // Chaque boss gère sa propre séquence interne :
         //   Entering → Flexing → Idle → Active
@@ -475,6 +480,33 @@ fn execute_action(
         }
         Action::Log(msg) => {
             info!("[Level] {}", msg);
+        }
+    }
+}
+
+/// Consomme les `LevelActionEvent` envoyés par d'autres systèmes (boss, ennemis…)
+/// et exécute leurs actions via le même pipeline que la timeline.
+fn process_level_action_events(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut events: EventReader<LevelActionEvent>,
+    mut difficulty: ResMut<Difficulty>,
+    mut boom_events: EventWriter<BoomEvent>,
+    mut countdown_events: EventWriter<crate::countdown::CountdownEvent>,
+    music_q: Query<Entity, With<crate::MusicMain>>,
+) {
+    for event in events.read() {
+        for action in &event.0 {
+            info!("[Level] (event) {}", action.short_name());
+            execute_action(
+                action,
+                &mut commands,
+                &asset_server,
+                &mut boom_events,
+                &mut countdown_events,
+                &mut difficulty,
+                &music_q,
+            );
         }
     }
 }

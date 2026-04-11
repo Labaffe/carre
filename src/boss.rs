@@ -501,6 +501,7 @@ fn boss_transition_animate(
     mut commands: Commands,
     time: Res<Time>,
     asset_server: Res<AssetServer>,
+    mut level_events: EventWriter<crate::level::LevelActionEvent>,
     mut boss_q: Query<
         (
             Entity,
@@ -589,6 +590,11 @@ fn boss_transition_animate(
             }
 
             commands.entity(entity).remove::<BossTransition>();
+
+            // Injecter des actions dans le niveau à la fin de la transition
+            level_events.send(crate::level::LevelActionEvent(vec![
+                crate::level::Action::SpawnEnemy("green_ufo", 8),
+            ]));
         }
     }
 }
