@@ -31,7 +31,7 @@ use debug::DebugPlugin;
 use difficulty::DifficultyPlugin;
 use enemy::{Enemy, EnemyPlugin, EnemyProjectile};
 use explosion::{Explosion, ExplosionPlugin};
-use item::ItemPlugin;
+use item::{Droppable, ItemPlugin};
 use gameover::GameOverPlugin;
 use mainmenu::MainMenuPlugin;
 use missile::{Missile, MissilePlugin};
@@ -132,6 +132,7 @@ fn cleanup_playing(
     enemy_projectiles: Query<Entity, With<EnemyProjectile>>,
     music: Query<Entity, With<MusicMain>>,
     boss_music: Query<Entity, With<MusicBoss>>,
+    droppables: Query<Entity, With<Droppable>>,
 ) {
     for entity in players.iter() {
         commands.entity(entity).despawn_recursive();
@@ -161,6 +162,9 @@ fn cleanup_playing(
         commands.entity(entity).despawn_recursive();
     }
     for entity in boss_music.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+    for entity in droppables.iter() {
         commands.entity(entity).despawn_recursive();
     }
 }

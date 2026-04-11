@@ -1,11 +1,17 @@
-//! Système d'items : drop, mouvement, ramassage.
+//! Système d'items : drop, mouvement, ramassage, bombes.
 //!
 //! Quand une entité avec `DropTable` meurt, un item peut apparaître selon
 //! les probabilités configurées. L'item descend lentement et disparaît
 //! hors écran. Si le joueur le touche, l'effet se déclenche.
+//!
+//! Le joueur peut accumuler des bombes et les déclencher avec Espace.
+//! La bombe inflige des dégâts à tous les astéroïdes et ennemis à l'écran.
 
+use crate::asteroid::Asteroid;
 use crate::collision::PLAYER_RADIUS;
+use crate::enemy::{Enemy, EnemyState};
 use crate::explosion::load_frames_from_folder;
+use crate::pause::not_paused;
 use crate::player::Player;
 use crate::state::GameState;
 use bevy::prelude::*;
@@ -15,7 +21,11 @@ pub struct ItemPlugin;
 impl Plugin for ItemPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<DropEvent>()
+            .add_event::<BombEvent>()
+            .init_resource::<PlayerBombs>()
             .add_systems(Startup, preload_item_frames)
+            .add_systems(OnEnter(GameState::Playing), (setup_bomb_ui, reset_bombs))
+            .add_systems(OnExit(GameState::Playing), cleanup_bomb_ui)
             .add_systems(
                 Update,
                 (
@@ -24,23 +34,43 @@ impl Plugin for ItemPlugin {
                     cleanup_offscreen_droppables,
                     player_pickup,
                     animate_items,
+                    bomb_input,
+                    bomb_apply_damage,
+                    bomb_screen_flash,
+                    update_bomb_ui,
+                    blink_bomb_hint,
                 )
-                    .run_if(in_state(GameState::Playing)),
+                    .run_if(in_state(GameState::Playing))
+                    .run_if(not_paused),
             );
     }
 }
 
 // ─── Constantes ─────────────────────────────────────────────────────
 
-const ITEM_FALL_SPEED: f32 = 80.0;
+const ITEM_FALL_SPEED: f32 = 300.0;
 const ITEM_PICKUP_RADIUS: f32 = 30.0;
 const ITEM_SPRITE_SIZE: f32 = 48.0;
+
+/// Dégâts infligés par la bombe aux astéroïdes.
+const BOMB_DAMAGE_ASTEROID: i32 = 999;
+/// Dégâts infligés par la bombe aux ennemis.
+const BOMB_DAMAGE_ENEMY: i32 = 50;
+/// Durée du flash blanc à l'écran (secondes).
+const BOMB_FLASH_DURATION: f32 = 0.4;
+/// Taille des icônes de bombe dans l'UI.
+const BOMB_ICON_SIZE: f32 = 40.0;
+/// Nombre max de bombes affichées dans l'UI.
+const BOMB_MAX_DISPLAY: i32 = 10;
+/// Durée visible du texte clignotant (secondes).
+const BOMB_HINT_VISIBLE: f32 = 0.7;
+/// Durée invisible du texte clignotant (secondes).
+const BOMB_HINT_HIDDEN: f32 = 0.3;
 
 // ─── Types d'items ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy)]
 pub enum ItemType {
-    /// Déclenche le son "level_up.ogg".
     Bomb,
 }
 
@@ -52,7 +82,7 @@ impl ItemType {
     }
 }
 
-// ─── Composants ─────────────────────────────────────────────────────
+// ─── Composants & Ressources ────────────────────────────────────────
 
 /// Un item ramassable qui descend à l'écran.
 #[derive(Component)]
@@ -81,7 +111,19 @@ pub struct DropTable {
     pub drops: &'static [(ItemType, f32)],
 }
 
-// ─── Événement ──────────────────────────────────────────────────────
+/// Compteur de bombes du joueur.
+#[derive(Resource)]
+pub struct PlayerBombs {
+    pub count: i32,
+}
+
+impl Default for PlayerBombs {
+    fn default() -> Self {
+        Self { count: 0 }
+    }
+}
+
+// ─── Événements ─────────────────────────────────────────────────────
 
 /// Émis quand une entité avec `DropTable` meurt.
 #[derive(Event)]
@@ -89,6 +131,35 @@ pub struct DropEvent {
     pub position: Vec3,
     pub table: &'static [(ItemType, f32)],
 }
+
+/// Émis quand le joueur déclenche une bombe.
+#[derive(Event)]
+pub struct BombEvent;
+
+// ─── Composants UI ──────────────────────────────────────────────────
+
+/// Conteneur racine de l'UI des bombes.
+#[derive(Component)]
+struct BombUI;
+
+/// Conteneur des icônes de bombes.
+#[derive(Component)]
+struct BombIconsContainer;
+
+/// Icône individuelle de bombe dans l'UI.
+#[derive(Component)]
+struct BombIcon(i32);
+
+/// Texte "ESPACE" qui clignote.
+#[derive(Component)]
+struct BombHintText {
+    timer: Timer,
+    visible: bool,
+}
+
+/// Flash blanc plein écran quand une bombe explose.
+#[derive(Component)]
+struct BombScreenFlash(Timer);
 
 // ─── Systèmes ───────────────────────────────────────────────────────
 
@@ -98,6 +169,241 @@ fn preload_item_frames(mut commands: Commands, asset_server: Res<AssetServer>) {
     let bomb = load_frames_from_folder(&asset_server, "images/bomb").unwrap_or_default();
     commands.insert_resource(ItemFrames { bomb });
 }
+
+fn reset_bombs(mut bombs: ResMut<PlayerBombs>) {
+    *bombs = PlayerBombs::default();
+}
+
+// ─── UI des bombes ──────────────────────────────────────────────────
+
+fn setup_bomb_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
+
+    commands
+        .spawn((
+            NodeBundle {
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(92.0),
+                    left: Val::Px(32.0),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(8.0),
+                    ..default()
+                },
+                ..default()
+            },
+            BombUI,
+        ))
+        .with_children(|parent| {
+            // Conteneur des icônes de bombes
+            parent
+                .spawn((
+                    NodeBundle {
+                        style: Style {
+                            column_gap: Val::Px(6.0),
+                            ..default()
+                        },
+                        ..default()
+                    },
+                    BombIconsContainer,
+                ))
+                .with_children(|icons_parent| {
+                    let bomb_texture = asset_server.load("images/bomb/frame000.png");
+                    for i in 0..BOMB_MAX_DISPLAY {
+                        icons_parent.spawn((
+                            ImageBundle {
+                                image: UiImage::new(bomb_texture.clone()),
+                                style: Style {
+                                    width: Val::Px(BOMB_ICON_SIZE),
+                                    height: Val::Px(BOMB_ICON_SIZE),
+                                    ..default()
+                                },
+                                visibility: Visibility::Hidden,
+                                ..default()
+                            },
+                            BombIcon(i),
+                        ));
+                    }
+                });
+
+            // Texte clignotant "ESPACE"
+            parent.spawn((
+                TextBundle::from_section(
+                    "[ESPACE]",
+                    TextStyle {
+                        font,
+                        font_size: 14.0,
+                        color: Color::WHITE,
+                    },
+                )
+                .with_style(Style { ..default() }),
+                BombHintText {
+                    timer: Timer::from_seconds(BOMB_HINT_VISIBLE, TimerMode::Once),
+                    visible: true,
+                },
+            ));
+        });
+}
+
+fn cleanup_bomb_ui(mut commands: Commands, query: Query<Entity, With<BombUI>>) {
+    for entity in query.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+}
+
+fn update_bomb_ui(
+    bombs: Res<PlayerBombs>,
+    mut icons: Query<(&BombIcon, &mut Visibility), Without<BombHintText>>,
+    mut hint: Query<&mut Visibility, With<BombHintText>>,
+) {
+    // Mettre à jour la visibilité des icônes
+    for (icon, mut vis) in icons.iter_mut() {
+        if icon.0 < bombs.count {
+            *vis = Visibility::Visible;
+        } else {
+            *vis = Visibility::Hidden;
+        }
+    }
+
+    // Cacher le texte si aucune bombe
+    if bombs.count == 0 {
+        for mut vis in hint.iter_mut() {
+            *vis = Visibility::Hidden;
+        }
+    }
+}
+
+fn blink_bomb_hint(
+    time: Res<Time>,
+    bombs: Res<PlayerBombs>,
+    mut query: Query<(&mut Visibility, &mut BombHintText)>,
+) {
+    if bombs.count == 0 {
+        return;
+    }
+
+    for (mut vis, mut hint) in query.iter_mut() {
+        hint.timer.tick(time.delta());
+        if hint.timer.just_finished() {
+            hint.visible = !hint.visible;
+            let next_duration = if hint.visible {
+                BOMB_HINT_VISIBLE
+            } else {
+                BOMB_HINT_HIDDEN
+            };
+            hint.timer = Timer::from_seconds(next_duration, TimerMode::Once);
+        }
+
+        *vis = if hint.visible {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+    }
+}
+
+// ─── Input & déclenchement de la bombe ──────────────────────────────
+
+fn bomb_input(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut bombs: ResMut<PlayerBombs>,
+    mut bomb_events: EventWriter<BombEvent>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    if keyboard.just_pressed(KeyCode::Space) && bombs.count > 0 {
+        bombs.count -= 1;
+        bomb_events.send(BombEvent);
+
+        // Son de bombe
+        commands.spawn(AudioBundle {
+            source: asset_server.load("audio/bomb.ogg"),
+            settings: PlaybackSettings {
+                volume: bevy::audio::Volume::new(3.0),
+                ..PlaybackSettings::DESPAWN
+            },
+        });
+
+        // Flash blanc plein écran
+        commands.spawn((
+            SpriteBundle {
+                sprite: Sprite {
+                    color: Color::WHITE,
+                    custom_size: Some(Vec2::new(4000.0, 4000.0)),
+                    ..default()
+                },
+                transform: Transform::from_xyz(0.0, 0.0, 900.0),
+                ..default()
+            },
+            BombScreenFlash(Timer::from_seconds(BOMB_FLASH_DURATION, TimerMode::Once)),
+        ));
+    }
+}
+
+fn bomb_apply_damage(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut bomb_events: EventReader<BombEvent>,
+    mut asteroids: Query<(Entity, &Transform, &mut Asteroid, Option<&DropTable>)>,
+    mut enemies: Query<&mut Enemy>,
+    mut drop_events: EventWriter<DropEvent>,
+    difficulty: Res<crate::difficulty::Difficulty>,
+) {
+    if bomb_events.read().next().is_none() {
+        return;
+    }
+    // Consommer tous les événements restants
+    bomb_events.read().for_each(drop);
+
+    // Dégâts à tous les astéroïdes — les tuer directement avec explosion
+    for (entity, transform, mut asteroid, drop_table) in asteroids.iter_mut() {
+        asteroid.health -= BOMB_DAMAGE_ASTEROID;
+        if asteroid.health <= 0 {
+            crate::explosion::spawn_explosion(
+                &mut commands,
+                &asset_server,
+                transform.translation,
+                asteroid.size,
+                asteroid.texture_index,
+                asteroid.base_velocity * difficulty.factor,
+                transform.rotation,
+            );
+            if let Some(table) = drop_table {
+                drop_events.send(DropEvent {
+                    position: transform.translation,
+                    table: table.drops,
+                });
+            }
+            commands.entity(entity).despawn();
+        }
+    }
+
+    // Dégâts à tous les ennemis actifs (le framework enemy gère la mort automatiquement)
+    for mut enemy in enemies.iter_mut() {
+        if matches!(enemy.state, EnemyState::Active(_)) {
+            enemy.health -= BOMB_DAMAGE_ENEMY;
+        }
+    }
+}
+
+fn bomb_screen_flash(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut Sprite, &mut BombScreenFlash)>,
+) {
+    for (entity, mut sprite, mut flash) in query.iter_mut() {
+        flash.0.tick(time.delta());
+        let t = flash.0.fraction();
+        // Fade out : blanc opaque → transparent
+        sprite.color = Color::rgba(1.0, 1.0, 1.0, 1.0 - t);
+
+        if flash.0.finished() {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+// ─── Items : spawn, animation, mouvement, ramassage ─────────────────
 
 fn process_drop_events(
     mut commands: Commands,
@@ -186,6 +492,7 @@ fn player_pickup(
     asset_server: Res<AssetServer>,
     player_q: Query<&Transform, With<Player>>,
     item_q: Query<(Entity, &Transform, &Droppable)>,
+    mut bombs: ResMut<PlayerBombs>,
 ) {
     let Ok(player_transform) = player_q.get_single() else {
         return;
@@ -201,7 +508,7 @@ fn player_pickup(
         // Appliquer l'effet
         match droppable.item_type {
             ItemType::Bomb => {
-                // Pour l'instant, juste le son
+                bombs.count += 1;
             }
         }
 
