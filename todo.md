@@ -10,6 +10,8 @@
     - hitscan avec long temps de recharge
     - aoe de proximité (tape sur les enemies à proximité du vaisseau)
     - missile lent mais avec une grosse boite de collision
+ 
+- Créer des niveaux visitables dans tous les sens comme dans Megaman.
 
 ### Améliorations
 
