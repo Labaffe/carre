@@ -210,9 +210,6 @@ Le runner parcourt les étapes dans l'ordre. Quand le déclencheur d'une étape 
 27.7s  pre_boss        Stop(asteroid), Stop(green_ufo), BgDecel(9s,30)
 28.0s  planet_appear   Planet
 35.8s  boss_spawn      Spawn(1×boss), StopMusic
-      +10s boss1_ufos  Start(4×green_ufo,5s)  [-> boss_spawn]
-      +30s boss_spawn_2 Spawn(1×boss)  [-> boss_spawn]
-      +10s boss2_ufos  Start(4×green_ufo,5s)  [-> boss_spawn_2]
 ```
 
 Chaque boss gère sa propre séquence interne (Entering → Flexing → Idle → Active) car elle dépend de l'état du boss, pas du temps absolu. La musique boss (`boss.ogg`) est lancée une seule fois quand le premier boss atteint Idle, et ne s'arrête qu'à la mort du **dernier** boss vivant.

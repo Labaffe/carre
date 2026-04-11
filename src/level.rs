@@ -394,18 +394,10 @@ pub fn build_level_1() -> Vec<LevelStep> {
             .with(Action::SpawnEnemy("boss", 1, SpawnPosition::At(0.0, 50.0)))
             .with(Action::StopMainMusic)
             .with(Action::Log("Boss 1 spawné !")),
-        // ─── Deuxième boss ─────────────────────────────────────
-        // 30s après le premier boss, un deuxième apparaît.
-        // La musique boss ne s'arrête qu'à la mort du dernier.
-        LevelStep::after_step("boss_spawn", 30.0, "boss_spawn_2")
-            .with(Action::SpawnEnemy("boss", 1, SpawnPosition::At(0.0, 50.0)))
-            .with(Action::Log("Boss 2 spawné !")),
-        // ─── Les événements suivants sont gérés par boss.rs ─────
-        // Chaque boss gère sa propre séquence interne :
+        // ─── Le boss gère sa propre séquence interne ──────────
         //   Entering → Flexing → Idle → Active
-        // La musique boss (boss.ogg) est lancée une seule fois
-        // quand le premier boss atteint Idle (boss_music_delayed).
-        // Elle ne s'arrête qu'à la mort du dernier boss.
+        // La musique boss (boss.ogg) est lancée quand le boss
+        // atteint Idle, et s'arrête à sa mort.
     ]
 }
 
