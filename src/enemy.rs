@@ -17,8 +17,8 @@ use crate::explosion::spawn_explosion;
 use crate::missile::{Missile, missile_hits_circle};
 use crate::pause::not_paused;
 use crate::state::GameState;
+use crate::score::Score;
 use bevy::prelude::*;
-
 pub struct EnemyPlugin;
 
 impl Plugin for EnemyPlugin {
@@ -307,6 +307,7 @@ fn enemy_dying(
 fn missile_enemy_collision(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut score: ResMut<Score>,
     missile_q: Query<(Entity, &Transform, &Missile)>,
     mut enemy_q: Query<(Entity, &Transform, &mut Enemy)>,
 ) {
@@ -316,7 +317,6 @@ fn missile_enemy_collision(
             EnemyState::Active(_) => {}
             _ => continue,
         }
-
         for (missile_entity, missile_transform, missile) in missile_q.iter() {
             let hit = missile_hits_circle(
                 missile_transform.translation.truncate(),
@@ -325,9 +325,9 @@ fn missile_enemy_collision(
                 enemy_transform.translation.truncate(),
                 enemy.radius,
             );
-
             if hit {
                 enemy.health -= 1;
+                score.add(1);
                 commands.entity(missile_entity).despawn();
 
                 if let Some(mut ent) = commands.get_entity(enemy_entity) {
