@@ -10,6 +10,7 @@ use crate::difficulty::Difficulty;
 use crate::explosion::{spawn_explosion, spawn_projectile_death};
 use crate::player::Player;
 use crate::weapon::{HitboxShape, Weapon};
+use crate::score::Score;
 use bevy::prelude::*;
 
 pub struct MissilePlugin;
@@ -174,6 +175,7 @@ fn missile_asteroid_collision(
     missile_q: Query<(Entity, &Transform, &Missile)>,
     mut asteroid_q: Query<(Entity, &Transform, &mut Asteroid)>,
     asset_server: Res<AssetServer>,
+    mut score: ResMut<Score>,
     difficulty: Res<Difficulty>,
 ) {
     let mut despawned_missiles = std::collections::HashSet::new();
@@ -206,6 +208,7 @@ fn missile_asteroid_collision(
                 commands.entity(missile_entity).despawn();
                 despawned_missiles.insert(missile_entity);
                 asteroid.health -= 1;
+                score.add(1);
 
                 if asteroid.health <= 0 {
                     if !despawned_asteroids.contains(&asteroid_entity) {

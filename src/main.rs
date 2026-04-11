@@ -18,6 +18,7 @@ pub mod pause;
 mod player;
 mod state;
 mod weapon;
+mod score;
 
 use asteroid::{Asteroid, AsteroidPlugin};
 use background::{Background, BackgroundPlugin, Planet};
@@ -36,6 +37,7 @@ use pause::PausePlugin;
 use player::{Player, PlayerPlugin};
 use state::GameState;
 use weapon::WeaponPlugin;
+use score::ScorePlugin;
 
 fn main() {
     App::new()
@@ -66,6 +68,7 @@ fn main() {
             ExplosionPlugin,
             WeaponPlugin,
             PausePlugin,
+            ScorePlugin
         ))
         .add_plugins((
             EnemyPlugin,
