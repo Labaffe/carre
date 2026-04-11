@@ -7,6 +7,7 @@
 
 use crate::GameSettings;
 use crate::game::GameProgress;
+use crate::level::level_name;
 use crate::state::GameState;
 use bevy::app::AppExit;
 use bevy::prelude::*;
@@ -644,7 +645,7 @@ fn spawn_levels_ui(
                     };
                     parent.spawn((
                         TextBundle::from_section(
-                            format!("Niveau {}", i + 1),
+                            format!("{}. {}", i + 1, level_name(i + 1)),
                             TextStyle {
                                 font: font.clone(),
                                 font_size: 32.0,

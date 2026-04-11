@@ -284,6 +284,7 @@ fn update_debug_ui(
 fn update_debug_level_ui(
     debug: Res<DebugMode>,
     runner: Option<Res<LevelRunner>>,
+    progress: Res<crate::game::GameProgress>,
     mut ui_q: Query<&mut Text, With<DebugLevelUI>>,
 ) {
     if !debug.0 {
@@ -298,7 +299,8 @@ fn update_debug_level_ui(
     let current_idx = runner.current_index();
     let elapsed = runner.elapsed;
 
-    let mut lines = String::from("--- Timeline Niveau 1 ---\n\n");
+    let name = crate::level::level_name(progress.current_level);
+    let mut lines = format!("--- {} (Niveau {}) ---\n\n", name, progress.current_level);
 
     for (i, step) in steps.iter().enumerate() {
         // ─── Indicateur de statut ───────────────────────────────

@@ -19,6 +19,7 @@ use crate::asteroid::Asteroid;
 use crate::boss::{BossMarker, MusicBoss};
 use crate::difficulty::Difficulty;
 use crate::enemy::{Enemy, EnemyState};
+use crate::level::level_name;
 use crate::pause::PauseState;
 use crate::state::GameState;
 use crate::MusicMain;
@@ -104,6 +105,7 @@ fn start_outro(
     asset_server: &Res<AssetServer>,
     music_q: &Query<Entity, With<MusicMain>>,
     boss_music_q: &Query<Entity, With<MusicBoss>>,
+    progress: &Res<GameProgress>,
 ) {
     // Freeze le jeu via le flag outro (pas d'appel à time.pause(),
     // le temps réel continue pour animer l'outro)
@@ -130,7 +132,7 @@ fn start_outro(
         music_spawned: false,
     });
 
-    spawn_outro_ui(commands, asset_server);
+    spawn_outro_ui(commands, asset_server, progress);
 }
 
 /// Détecte quand tous les boss sont morts (entités despawnées) et lance
@@ -146,6 +148,7 @@ fn detect_level_complete(
     asset_server: Res<AssetServer>,
     music_q: Query<Entity, With<MusicMain>>,
     boss_music_q: Query<Entity, With<MusicBoss>>,
+    progress: Res<GameProgress>,
 ) {
     // Déjà en outro → rien à faire
     if outro.is_some() {
@@ -171,6 +174,7 @@ fn detect_level_complete(
                 &asset_server,
                 &music_q,
                 &boss_music_q,
+                &progress,
             );
         }
     } else {
@@ -257,6 +261,7 @@ fn debug_skip_to_outro(
     asteroid_q: Query<Entity, With<Asteroid>>,
     music_q: Query<Entity, With<MusicMain>>,
     boss_music_q: Query<Entity, With<MusicBoss>>,
+    progress: Res<GameProgress>,
 ) {
     if !keyboard.just_pressed(KeyCode::F4) {
         return;
@@ -295,13 +300,15 @@ fn debug_skip_to_outro(
         &asset_server,
         &music_q,
         &boss_music_q,
+        &progress,
     );
 }
 
 // ─── UI de l'outro ──────────────────────────────────────────────────
 
-fn spawn_outro_ui(commands: &mut Commands, asset_server: &Res<AssetServer>) {
+fn spawn_outro_ui(commands: &mut Commands, asset_server: &Res<AssetServer>, progress: &Res<GameProgress>) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
+    let name = level_name(progress.current_level);
 
     commands
         .spawn((
@@ -322,6 +329,18 @@ fn spawn_outro_ui(commands: &mut Commands, asset_server: &Res<AssetServer>) {
             OutroUI,
         ))
         .with_children(|parent| {
+            // Nom du niveau
+            parent.spawn((
+                TextBundle::from_section(
+                    name.to_uppercase(),
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 36.0,
+                        color: Color::rgba(1.0, 1.0, 1.0, 1.0),
+                    },
+                ),
+                OutroUI,
+            ));
             // Titre
             parent.spawn((
                 TextBundle::from_section(
