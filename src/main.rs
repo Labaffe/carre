@@ -13,6 +13,7 @@ pub mod enemy;
 mod explosion;
 mod gameover;
 mod green_ufo;
+mod level;
 pub mod item;
 mod mainmenu;
 mod missile;
