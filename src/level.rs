@@ -75,14 +75,15 @@ pub enum Action {
     SendBoom,
 
     // ─── Spawning ───────────────────────────────────────────────
-    /// Active le spawn des GreenUFO (intervalle en secondes).
-    StartGreenUFOSpawning(f32),
-    /// Désactive le spawn des GreenUFO.
-    StopGreenUFOSpawning,
+    /// Spawn un ennemi une seule fois (ex: "boss"). La requête est
+    /// consommée par le système cible après le spawn.
+    SpawnEnemy(&'static str),
+    /// Active le spawn continu d'un type d'ennemi (ex: "green_ufo", 2.0).
+    StartSpawning(&'static str, f32),
+    /// Désactive le spawn continu d'un type d'ennemi.
+    StopSpawning(&'static str),
     /// Arrête le spawn des astéroïdes.
     StopAsteroidSpawning,
-    /// Fait apparaître le boss.
-    SpawnBoss,
 
     // ─── Environnement ──────────────────────────────────────────
     /// Démarre la décélération du fond (durée, vitesse finale).
@@ -231,10 +232,10 @@ impl Action {
             Action::StopMainMusic => "StopMusic".to_string(),
             Action::StartCountdown => "Countdown".to_string(),
             Action::SendBoom => "Boom".to_string(),
-            Action::StartGreenUFOSpawning(i) => format!("GreenUFO({}s)", i),
-            Action::StopGreenUFOSpawning => "StopUFO".to_string(),
+            Action::SpawnEnemy(name) => format!("Spawn({})", name),
+            Action::StartSpawning(name, i) => format!("Start({},{}s)", name, i),
+            Action::StopSpawning(name) => format!("Stop({})", name),
             Action::StopAsteroidSpawning => "StopAst".to_string(),
-            Action::SpawnBoss => "Boss".to_string(),
             Action::StartBgDeceleration { duration, final_speed } => {
                 format!("BgDecel({}s,{})", duration, final_speed)
             }
@@ -276,7 +277,7 @@ pub fn build_level_1() -> Vec<LevelStep> {
         // ─── Phase 2 : montée en difficulté ─────────────────────
         LevelStep::at(10.0, "phase_2_start")
             .with(Action::SetDifficulty(3.5))
-            .with(Action::StartGreenUFOSpawning(2.0)),
+            .with(Action::StartSpawning("green_ufo", 2.0)),
 
         LevelStep::at(14.3, "boom_1")
             .with(Action::SetDifficulty(4.5))
@@ -296,7 +297,7 @@ pub fn build_level_1() -> Vec<LevelStep> {
         // ─── Transition vers le boss ────────────────────────────
         LevelStep::at(27.7, "pre_boss")
             .with(Action::StopAsteroidSpawning)
-            .with(Action::StopGreenUFOSpawning)
+            .with(Action::StopSpawning("green_ufo"))
             .with(Action::StartBgDeceleration {
                 duration: 9.0,
                 final_speed: 30.0,
@@ -306,15 +307,23 @@ pub fn build_level_1() -> Vec<LevelStep> {
             .with(Action::ShowPlanet),
 
         LevelStep::at(35.8, "boss_spawn")
-            .with(Action::SpawnBoss)
+            .with(Action::SpawnEnemy("boss"))
             .with(Action::StopMainMusic)
-            .with(Action::Log("Boss spawné !")),
+            .with(Action::Log("Boss 1 spawné !")),
+
+        // ─── Deuxième boss ─────────────────────────────────────
+        // 30s après le premier boss, un deuxième apparaît.
+        // La musique boss ne s'arrête qu'à la mort du dernier.
+        LevelStep::after_step("boss_spawn", 30.0, "boss_spawn_2")
+            .with(Action::SpawnEnemy("boss"))
+            .with(Action::Log("Boss 2 spawné !")),
 
         // ─── Les événements suivants sont gérés par boss.rs ─────
-        // Le boss gère lui-même sa séquence interne :
-        //   Entering → Flexing → Idle → musique → Active
-        // car ces transitions dépendent de l'état du boss,
-        // pas du temps absolu.
+        // Chaque boss gère sa propre séquence interne :
+        //   Entering → Flexing → Idle → Active
+        // La musique boss (boss.ogg) est lancée une seule fois
+        // quand le premier boss atteint Idle (boss_music_delayed).
+        // Elle ne s'arrête qu'à la mort du dernier boss.
     ]
 }
 
@@ -430,18 +439,17 @@ fn execute_action(
         Action::SendBoom => {
             boom_events.send(BoomEvent);
         }
-        Action::StartGreenUFOSpawning(interval) => {
-            difficulty.green_ufo_spawning = true;
-            difficulty.green_ufo_interval = *interval;
+        Action::SpawnEnemy(name) => {
+            difficulty.spawn_requests.push(name);
         }
-        Action::StopGreenUFOSpawning => {
-            difficulty.green_ufo_spawning = false;
+        Action::StartSpawning(name, interval) => {
+            difficulty.active_spawners.insert(name, *interval);
+        }
+        Action::StopSpawning(name) => {
+            difficulty.active_spawners.remove(name);
         }
         Action::StopAsteroidSpawning => {
             difficulty.spawning_stopped = true;
-        }
-        Action::SpawnBoss => {
-            difficulty.boss_spawn_requested = true;
         }
         Action::StartBgDeceleration { duration, final_speed } => {
             difficulty.bg_decel_start_elapsed = Some(difficulty.elapsed);

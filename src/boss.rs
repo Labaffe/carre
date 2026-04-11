@@ -151,9 +151,11 @@ fn spawn_boss(
     enemy_q: Query<&Enemy, With<BossMarker>>,
     windows: Query<&Window>,
 ) {
-    if !difficulty.boss_spawn_requested || !enemy_q.is_empty() || difficulty.boss_spawned {
+    let Some(pos) = difficulty.spawn_requests.iter().position(|&n| n == "boss") else {
         return;
-    }
+    };
+    difficulty.spawn_requests.remove(pos);
+    // Marque le premier spawn (arrête les GreenUFO, etc.) sans bloquer les suivants.
     difficulty.boss_spawned = true;
 
     let _window = windows.single();
@@ -406,18 +408,30 @@ fn boss_dying_flexing(
 
 // ─── Couper la musique à la mort ────────────────────────────────────
 
+/// Coupe la musique du boss uniquement quand le dernier boss meurt.
+/// Si un boss est en Dying mais qu'un autre est encore vivant, la musique continue.
 fn boss_dying_stop_music(
     mut commands: Commands,
     boss_q: Query<&Enemy, With<BossMarker>>,
     music_q: Query<Entity, With<MusicBoss>>,
 ) {
-    for enemy in boss_q.iter() {
-        if enemy.state != EnemyState::Dying {
-            continue;
-        }
-        for entity in music_q.iter() {
-            commands.entity(entity).despawn_recursive();
-        }
+    // Au moins un boss doit être en train de mourir
+    let any_dying = boss_q.iter().any(|e| e.state == EnemyState::Dying);
+    if !any_dying {
+        return;
+    }
+
+    // Vérifier qu'aucun boss n'est encore vivant (ni en intro, ni en combat)
+    let any_alive = boss_q.iter().any(|e| {
+        !matches!(e.state, EnemyState::Dying | EnemyState::Dead)
+    });
+    if any_alive {
+        return;
+    }
+
+    // Tous les boss sont morts ou mourants → couper la musique
+    for entity in music_q.iter() {
+        commands.entity(entity).despawn_recursive();
     }
 }
 
@@ -790,14 +804,13 @@ fn debug_skip_to_boss(
     }
 
     difficulty.spawning_stopped = true;
-    difficulty.green_ufo_spawning = false;
+    difficulty.active_spawners.clear();
     difficulty.factor = 7.5;
     difficulty.boss_music_played = false;
     difficulty.boss_music_start_time = None;
     difficulty.boss_active_time = None;
     difficulty.landing_played = true;
     difficulty.boss_spawned = true;
-    difficulty.boss_spawn_requested = true;
 
     for entity in boss_q.iter() {
         commands.entity(entity).despawn_recursive();

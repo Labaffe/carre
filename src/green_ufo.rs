@@ -103,13 +103,15 @@ fn spawn_green_ufos(
     frames: Res<GreenUFOFrames>,
     windows: Query<&Window>,
 ) {
-    // Spawning contrôlé par le système de niveau
-    if !difficulty.green_ufo_spawning || difficulty.boss_spawned {
+    // Spawning contrôlé par le système de niveau via active_spawners
+    let Some(&target_interval) = difficulty.active_spawners.get("green_ufo") else {
+        return;
+    };
+    if difficulty.boss_spawned {
         return;
     }
 
     // Mettre à jour l'intervalle si le niveau l'a changé
-    let target_interval = difficulty.green_ufo_interval;
     if (spawner.timer.duration().as_secs_f32() - target_interval).abs() > 0.01 {
         spawner.timer.set_duration(std::time::Duration::from_secs_f32(target_interval));
     }

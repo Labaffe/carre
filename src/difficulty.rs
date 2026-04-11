@@ -7,6 +7,8 @@
 //! Le système de niveau écrit les valeurs (factor, spawning_stopped, etc.)
 //! et les systèmes de jeu les lisent pour adapter leur comportement.
 
+use std::collections::HashMap;
+
 use crate::countdown::CountdownEvent;
 use crate::pause::not_paused;
 use crate::state::GameState;
@@ -58,12 +60,11 @@ pub struct Difficulty {
     pub phase3_boom_played: bool,
 
     // ─── Communication Level → systèmes de jeu ─────────────────
-    /// Le système de niveau demande le spawn du boss.
-    pub boss_spawn_requested: bool,
-    /// Le spawn des GreenUFO est actif.
-    pub green_ufo_spawning: bool,
-    /// Intervalle entre les spawns de GreenUFO (secondes).
-    pub green_ufo_interval: f32,
+    /// File de requêtes de spawn one-shot (ex: "boss"). Consommées une par une
+    /// par le système cible. Un Vec permet d'empiler plusieurs spawns du même type.
+    pub spawn_requests: Vec<&'static str>,
+    /// Spawners continus actifs : nom → intervalle en secondes (ex: "green_ufo" → 2.0).
+    pub active_spawners: HashMap<&'static str, f32>,
     /// Instant (elapsed) où la décélération du background a commencé.
     pub bg_decel_start_elapsed: Option<f32>,
     /// Durée de la décélération du background (secondes).
@@ -89,9 +90,8 @@ impl Default for Difficulty {
             boss_spawned: false,
             phase3_charging_played: false,
             phase3_boom_played: false,
-            boss_spawn_requested: false,
-            green_ufo_spawning: false,
-            green_ufo_interval: 2.0,
+            spawn_requests: Vec::new(),
+            active_spawners: HashMap::new(),
             bg_decel_start_elapsed: None,
             bg_decel_duration: 9.0,
             bg_decel_final_speed: 30.0,

@@ -109,7 +109,7 @@ fn toggle_debug(
 ) {
     if keyboard.just_pressed(KeyCode::F2) {
         difficulty.spawning_stopped = true;
-        difficulty.green_ufo_spawning = false;
+        difficulty.active_spawners.clear();
         difficulty.factor = 7.5;
         let t = (4.3 / 6.0_f32).clamp(0.0, 1.0);
         let bg_speed_at_stop = 150.0 * (1.0 + 8.0 * 3.0);

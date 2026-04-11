@@ -133,8 +133,8 @@ level.rs (LevelRunner)          difficulty.rs (Difficulty)         systèmes de 
 ────────────────────           ──────────────────────────         ─────────────────
 SetDifficulty(3.5)     ──→     difficulty.factor = 3.5      ──→  asteroid spawn rate
 StopAsteroidSpawning   ──→     difficulty.spawning_stopped  ──→  asteroid.rs arrête
-StartGreenUFOSpawning  ──→     difficulty.green_ufo_*       ──→  green_ufo.rs active
-SpawnBoss              ──→     difficulty.boss_spawn_req.   ──→  boss.rs spawne
+StartSpawning("x",2)   ──→     difficulty.active_spawners   ──→  green_ufo.rs active
+SpawnEnemy("boss")     ──→     difficulty.spawn_requests    ──→  boss.rs spawne
 StartBgDeceleration    ──→     difficulty.bg_decel_*        ──→  difficulty.rs calcule
 ShowPlanet             ──→     difficulty.planet_appear_*   ──→  background.rs anime
 StartMusic / PlaySound ──→     commands.spawn(AudioBundle)  ──→  audio direct
@@ -173,10 +173,10 @@ LevelStep::after_step("boss_spawn", 5.0, "boss_music")
 | `StopMainMusic` | Despawn toutes les entités `MusicMain` |
 | `StartCountdown` | Envoie `CountdownEvent` (READY-3-2-1-GO) |
 | `SendBoom` | Envoie `BoomEvent` (flash visuel) |
-| `StartGreenUFOSpawning(f32)` | Active le spawner GreenUFO avec l'intervalle donné |
-| `StopGreenUFOSpawning` | Désactive le spawner GreenUFO |
+| `SpawnEnemy(&str)` | Spawn one-shot via `spawn_requests` (ex: `"boss"`) |
+| `StartSpawning(&str, f32)` | Spawner continu via `active_spawners` (ex: `"green_ufo"`, 2.0) |
+| `StopSpawning(&str)` | Désactive un spawner continu |
 | `StopAsteroidSpawning` | `difficulty.spawning_stopped = true` |
-| `SpawnBoss` | `difficulty.boss_spawn_requested = true` |
 | `StartBgDeceleration { duration, final_speed }` | Décélération progressive du background |
 | `ShowPlanet` | Déclenche l'animation d'apparition de la planète |
 | `Log(&str)` | `info!()` en console (debug uniquement) |
@@ -191,6 +191,10 @@ pub struct LevelRunner {
     last_trigger_time: f32,           // pour AfterPrevious
     trigger_times: HashMap<&str, f32> // pour After("label", delay)
 }
+
+// Dans Difficulty (hub de communication) :
+pub spawn_requests: HashSet<&str>,       // spawns one-shot (consommés)
+pub active_spawners: HashMap<&str, f32>, // spawners continus (nom → intervalle)
 ```
 
 Le runner parcourt les étapes dans l'ordre. Quand le déclencheur d'une étape est atteint, toutes ses actions s'exécutent et le temps est enregistré dans `trigger_times` pour les `After`.
@@ -200,16 +204,17 @@ Le runner parcourt les étapes dans l'ordre. Quand le déclencheur d'une étape 
 ```
  0.0s  game_start      Music(gradius.ogg), Diff(0.5)
  7.0s  countdown       Sound(charging.ogg), Countdown
-10.0s  phase_2_start   Diff(3.5), GreenUFO(2s)
+10.0s  phase_2_start   Diff(3.5), Start(green_ufo,2s)
 14.3s  boom_1          Diff(4.5), Sound(t_go.wav), Boom
 18.3s  boom_2          Diff(6.5), Sound(t_go.wav), Boom
 22.6s  boom_3          Diff(7.5), Sound(t_go.wav), Boom
-27.7s  pre_boss        StopAst, StopUFO, BgDecel(9s,30)
+27.7s  pre_boss        StopAst, Stop(green_ufo), BgDecel(9s,30)
 28.0s  planet_appear   Planet
-35.8s  boss_spawn      Boss, StopMusic
+35.8s  boss_spawn      Spawn(boss), StopMusic
+      boss_spawn_2    Spawn(boss)  [+30s -> boss_spawn]
 ```
 
-Le boss gère ensuite sa propre séquence interne (Entering → Flexing → Idle → musique → Active) car elle dépend de l'état du boss, pas du temps absolu.
+Chaque boss gère sa propre séquence interne (Entering → Flexing → Idle → Active) car elle dépend de l'état du boss, pas du temps absolu. La musique boss (`boss.ogg`) est lancée une seule fois quand le premier boss atteint Idle, et ne s'arrête qu'à la mort du **dernier** boss vivant.
 
 ### Ajouter une étape au niveau
 
@@ -223,6 +228,19 @@ LevelStep::at(15.0, "new_event")
 LevelStep::after_step("boss_spawn", 10.0, "boss_rage")
     .with(Action::SetDifficulty(10.0))
     .with(Action::Log("Boss en rage !")),
+```
+
+### Ajouter un nouvel ennemi spawnable
+
+1. Définir ses `PhaseDef` et `EnemyDef` dans `enemies.rs`
+2. Créer son module avec un système de spawn qui lit `difficulty.spawn_requests` (one-shot) ou `difficulty.active_spawners` (continu)
+3. Ajouter le spawn dans la timeline : `Action::SpawnEnemy("nom")` ou `Action::StartSpawning("nom", interval)`
+
+Exemple pour un spawner continu :
+```rust
+// Dans le système de spawn du nouvel ennemi :
+let Some(&interval) = difficulty.active_spawners.get("mon_ennemi") else { return; };
+// ... utiliser interval pour le timer de spawn
 ```
 
 ### Ajouter une nouvelle Action
