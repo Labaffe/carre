@@ -12,6 +12,7 @@ pub mod enemies;
 pub mod enemy;
 mod explosion;
 mod gameover;
+pub mod item;
 mod mainmenu;
 mod missile;
 pub mod pause;
@@ -30,6 +31,7 @@ use debug::DebugPlugin;
 use difficulty::DifficultyPlugin;
 use enemy::{Enemy, EnemyPlugin, EnemyProjectile};
 use explosion::{Explosion, ExplosionPlugin};
+use item::ItemPlugin;
 use gameover::GameOverPlugin;
 use mainmenu::MainMenuPlugin;
 use missile::{Missile, MissilePlugin};
@@ -73,6 +75,7 @@ fn main() {
         .add_plugins((
             EnemyPlugin,
             BossPlugin,
+            ItemPlugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, show_window_after_render.run_if(run_once()))

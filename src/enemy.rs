@@ -14,6 +14,7 @@
 //! 4. Les systèmes génériques (dégâts, mort, flash, projectiles) fonctionnent automatiquement
 
 use crate::explosion::spawn_explosion;
+use crate::item::{DropEvent, DropTable};
 use crate::missile::{Missile, missile_hits_circle};
 use crate::pause::not_paused;
 use crate::state::GameState;
@@ -190,9 +191,10 @@ fn enemy_hit_flash(
 fn enemy_phase_logic(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut query: Query<(Entity, &mut Enemy, &mut PatternTimer, &Transform)>,
+    mut query: Query<(Entity, &mut Enemy, &mut PatternTimer, &Transform, Option<&DropTable>)>,
+    mut drop_events: EventWriter<DropEvent>,
 ) {
-    for (entity, mut enemy, mut pattern_timer, transform) in query.iter_mut() {
+    for (entity, mut enemy, mut pattern_timer, transform, drop_table) in query.iter_mut() {
         let current_phase = match &enemy.state {
             EnemyState::Active(idx) => *idx,
             _ => continue,
@@ -227,6 +229,13 @@ fn enemy_phase_logic(
             commands
                 .entity(entity)
                 .insert(EnemyDeathAnchor(transform.translation));
+
+            if let Some(table) = drop_table {
+                drop_events.send(DropEvent {
+                    position: transform.translation,
+                    table: table.drops,
+                });
+            }
         }
     }
 }

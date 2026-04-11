@@ -8,6 +8,7 @@ use crate::asteroid::{Asteroid, HitFlash};
 use crate::crosshair::Crosshair;
 use crate::difficulty::Difficulty;
 use crate::explosion::{spawn_explosion, spawn_projectile_death};
+use crate::item::{DropEvent, DropTable};
 use crate::player::Player;
 use crate::weapon::{HitboxShape, Weapon};
 use crate::score::Score;
@@ -173,10 +174,11 @@ fn shoot(
 fn missile_asteroid_collision(
     mut commands: Commands,
     missile_q: Query<(Entity, &Transform, &Missile)>,
-    mut asteroid_q: Query<(Entity, &Transform, &mut Asteroid)>,
+    mut asteroid_q: Query<(Entity, &Transform, &mut Asteroid, Option<&DropTable>)>,
     asset_server: Res<AssetServer>,
     mut score: ResMut<Score>,
     difficulty: Res<Difficulty>,
+    mut drop_events: EventWriter<DropEvent>,
 ) {
     let mut despawned_missiles = std::collections::HashSet::new();
     let mut despawned_asteroids = std::collections::HashSet::new();
@@ -185,7 +187,7 @@ fn missile_asteroid_collision(
         if despawned_missiles.contains(&missile_entity) {
             continue;
         }
-        for (asteroid_entity, asteroid_transform, mut asteroid) in asteroid_q.iter_mut() {
+        for (asteroid_entity, asteroid_transform, mut asteroid, drop_table) in asteroid_q.iter_mut() {
             if despawned_asteroids.contains(&asteroid_entity) {
                 continue;
             }
@@ -225,11 +227,17 @@ fn missile_asteroid_collision(
                             source: asset_server.load("audio/asteroid_die.ogg"),
                             settings: PlaybackSettings::DESPAWN,
                         });
+                        if let Some(table) = drop_table {
+                            drop_events.send(DropEvent {
+                                position: asteroid_transform.translation,
+                                table: table.drops,
+                            });
+                        }
                         commands.entity(asteroid_entity).despawn();
                         despawned_asteroids.insert(asteroid_entity);
                     }
-                } else if let Some(mut ent) = commands.get_entity(asteroid_entity) {
-                    ent.insert(HitFlash(Timer::from_seconds(0.06, TimerMode::Once)));
+                } else if !despawned_asteroids.contains(&asteroid_entity) {
+                    commands.entity(asteroid_entity).insert(HitFlash(Timer::from_seconds(0.06, TimerMode::Once)));
                     commands.spawn(AudioBundle {
                         source: asset_server.load("audio/asteroid_hit.ogg"),
                         settings: PlaybackSettings::DESPAWN,

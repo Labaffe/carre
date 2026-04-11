@@ -7,9 +7,13 @@
 //! aux astéroïdes déjà à l'écran d'accélérer quand la difficulté augmente.
 
 use crate::difficulty::Difficulty;
+use crate::item::{DropTable, ItemType};
 use crate::state::GameState;
 use bevy::prelude::*;
 use std::time::Duration;
+
+/// 15% de chance de drop une bombe par astéroïde détruit.
+static ASTEROID_DROP_TABLE: [(ItemType, f32); 1] = [(ItemType::Bomb, 0.05)];
 
 pub struct AsteroidPlugin;
 
@@ -111,9 +115,9 @@ fn spawn_asteroids(
     let texture = texture.clone();
 
     // Spawn au-dessus de l'écran (juste hors du champ visible)
-    let transform = Transform::from_xyz(x, half_h + 100.0, 0.0).with_rotation(Quat::from_rotation_z(
-        fastrand::f32() * std::f32::consts::TAU,
-    ));
+    let transform = Transform::from_xyz(x, half_h + 100.0, 0.0).with_rotation(
+        Quat::from_rotation_z(fastrand::f32() * std::f32::consts::TAU),
+    );
 
     // Taille : petits 80-110px, gros 120-180px
     let side = if is_small {
@@ -155,6 +159,9 @@ fn spawn_asteroids(
             health,
             size,
             texture_index,
+        },
+        DropTable {
+            drops: &ASTEROID_DROP_TABLE,
         },
     ));
 }

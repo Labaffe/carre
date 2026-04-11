@@ -34,6 +34,9 @@ impl Score {
     fn get_size_coeff(self: &Self) -> f32 {
         (self.current_time - self.last_add_time).clamp(0.0, 1.0)
     }
+    pub fn value(&self) -> i32 {
+        self.value
+    }
     fn text(self: &Self) -> String {
         self.value.to_string()
     }

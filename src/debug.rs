@@ -201,7 +201,7 @@ fn update_debug_ui(
              F3 : Skip au boss",
             fps, minutes, seconds, factor,
             lives.lives,
-            score.value,
+            score.value(),
             player_pos,
             asteroid_count,
             missile_count,
