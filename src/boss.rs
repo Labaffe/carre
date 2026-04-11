@@ -1,7 +1,7 @@
 //! Boss — ennemi spécifique utilisant le framework `enemy.rs`.
 //!
 //! Le boss est un `Enemy` avec :
-//! - Intro en spirale (`Entering(0)`) + animation de flexing (`Entering(1)`)
+//! - Intro en spirale (`Entering`) + animation de flexing (`Flexing`)
 //! - 3 phases de combat avec mouvement patrol sinusoïdal
 //! - Animation idle en boucle (cycle de frames)
 //! - Musique dédiée lancée après l'intro
@@ -12,7 +12,8 @@
 use crate::MusicMain;
 use crate::asteroid::Asteroid;
 use crate::difficulty::Difficulty;
-use crate::enemy::{Enemy, EnemyState, PatrolMovement, PatternTimer, PhaseDef};
+use crate::enemies::BOSS;
+use crate::enemy::{Enemy, EnemyState, PatrolMovement, PatternTimer};
 use crate::explosion::load_frames_from_folder;
 use crate::pause::not_paused;
 use crate::player::Player;
@@ -34,7 +35,9 @@ impl Plugin for BossPlugin {
                     boss_music_delayed,
                     boss_idle_animation,
                     boss_dying_flexing,
+                    boss_dying_stop_music,
                     boss_enable_patrol,
+                    boss_charge_movement,
                     boss_pattern_executor,
                 )
                     .run_if(in_state(GameState::Playing))
@@ -54,17 +57,12 @@ const BOSS_START_ANIMATION_DURATION: f32 = 7.0;
 const BOSS_MUSIC_DELAY: f32 = 1.0;
 const BOSS_FLEXING_WAIT: f32 = 0.5;
 const BOSS_START_2_ANIMATION_DURATION: f32 = 1.7;
-const BOSS_MAX_HEALTH: i32 = 150;
-const BOSS_RADIUS: f32 = 80.0;
 const BOSS_TARGET_Y: f32 = 250.0;
 const BOSS_INTRO_START_SCALE: f32 = 0.01;
 const BOSS_INTRO_END_SCALE: f32 = 1.0;
-const BOSS_SPRITE_SIZE: f32 = 256.0;
 const BOSS_SPIRAL_TURNS: f32 = 2.5;
 const BOSS_SPIRAL_RADIUS: f32 = 150.0;
 const BOSS_IDLE_FPS: f32 = 10.0;
-const BOSS_DEATH_DURATION: f32 = 4.0;
-const BOSS_DEATH_SHAKE_MAX: f32 = 20.0;
 
 // Patrol
 const BOSS_MARGIN: f32 = 80.0;
@@ -72,25 +70,13 @@ const BOSS_PATROL_SPEED_X: f32 = 270.0;
 const BOSS_SINE_AMPLITUDE_Y: f32 = 0.85;
 const BOSS_SINE_FREQ_Y: f32 = 4.5;
 
-// ─── Phases du boss ─────────────────────────────────────────────────
-
-static BOSS_PHASES: [PhaseDef; 3] = [
-    PhaseDef {
-        health_threshold_pct: 1.0,
-        pattern_interval: 2.0,
-        enter_sound: Some("audio/t_go.wav"),
-    },
-    PhaseDef {
-        health_threshold_pct: 0.66,
-        pattern_interval: 1.5,
-        enter_sound: Some("audio/t_go.wav"),
-    },
-    PhaseDef {
-        health_threshold_pct: 0.33,
-        pattern_interval: 1.0,
-        enter_sound: Some("audio/t_go.wav"),
-    },
-];
+// Charge
+/// Vitesse de la charge vers le joueur (px/s).
+const BOSS_CHARGE_SPEED: f32 = 2500.0;
+/// Tolérance en Y pour déclencher la charge (px).
+const BOSS_CHARGE_ALIGN_THRESHOLD: f32 = 50.0;
+/// Vitesse de rotation pendant la charge (rad/s).
+const BOSS_CHARGE_SPIN_SPEED: f32 = 15.0;
 
 // ─── Composants spécifiques au boss ─────────────────────────────────
 
@@ -112,6 +98,17 @@ pub struct MusicBoss;
 /// Marqueur : le son de flexing a été joué.
 #[derive(Component)]
 struct BossFlexingSoundPlayed;
+
+/// Le boss est en train de charger vers le joueur.
+/// La direction est fixée au moment du lancement.
+#[derive(Component)]
+pub struct BossCharge {
+    pub direction: Vec2,
+}
+
+/// Index du pattern actuel dans la liste de patterns de la phase.
+#[derive(Component)]
+pub struct BossPatternIndex(pub usize);
 
 // ─── Ressources ─────────────────────────────────────────────────────
 
@@ -159,7 +156,7 @@ fn spawn_boss(
         SpriteBundle {
             texture: asset_server.load("images/boss/idle/frame000.png"),
             sprite: Sprite {
-                custom_size: Some(Vec2::splat(BOSS_SPRITE_SIZE)),
+                custom_size: Some(Vec2::splat(BOSS.sprite_size)),
                 color: Color::WHITE,
                 ..default()
             },
@@ -171,17 +168,17 @@ fn spawn_boss(
             ..default()
         },
         Enemy {
-            health: BOSS_MAX_HEALTH,
-            max_health: BOSS_MAX_HEALTH,
-            state: EnemyState::Entering(0),
-            radius: BOSS_RADIUS,
-            sprite_size: BOSS_SPRITE_SIZE,
+            health: BOSS.phases[0].health,
+            max_health: BOSS.phases[0].health,
+            state: EnemyState::Entering,
+            radius: BOSS.radius,
+            sprite_size: BOSS.sprite_size,
             anim_timer: Timer::from_seconds(BOSS_START_ANIMATION_DURATION, TimerMode::Once),
-            phases: &BOSS_PHASES,
-            death_duration: BOSS_DEATH_DURATION,
-            death_shake_max: BOSS_DEATH_SHAKE_MAX,
-            hit_sound: "audio/asteroid_hit.ogg",
-            death_explosion_sound: "audio/boss_explosion.ogg",
+            phases: BOSS.phases,
+            death_duration: BOSS.death_duration,
+            death_shake_max: BOSS.death_shake_max,
+            hit_sound: BOSS.hit_sound,
+            death_explosion_sound: BOSS.death_explosion_sound,
         },
         BossMarker,
         BossIdleAnim {
@@ -189,9 +186,14 @@ fn spawn_boss(
             current_frame: 0,
         },
         PatternTimer(Timer::from_seconds(
-            BOSS_PHASES[0].pattern_interval,
-            TimerMode::Repeating,
+            BOSS.phases[0]
+                .patterns
+                .first()
+                .map(|p| p.duration)
+                .unwrap_or(1.0),
+            TimerMode::Once,
         )),
+        BossPatternIndex(0),
         PatrolMovement {
             dir_x: 1.0,
             sine_time: 0.0,
@@ -212,7 +214,7 @@ fn boss_intro(
     mut boss_q: Query<(&mut Enemy, &mut Transform), (With<BossMarker>, Without<Player>)>,
 ) {
     for (mut enemy, mut transform) in boss_q.iter_mut() {
-        if enemy.state != EnemyState::Entering(0) {
+        if enemy.state != EnemyState::Entering {
             continue;
         }
 
@@ -237,7 +239,7 @@ fn boss_intro(
         transform.scale = Vec3::splat(scale);
 
         if enemy.anim_timer.finished() {
-            enemy.state = EnemyState::Entering(1);
+            enemy.state = EnemyState::Flexing;
             enemy.anim_timer = Timer::from_seconds(
                 BOSS_FLEXING_WAIT + BOSS_START_2_ANIMATION_DURATION,
                 TimerMode::Once,
@@ -253,19 +255,27 @@ fn boss_intro(
 
 fn boss_flexing(
     time: Res<Time>,
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
     flexing_frames: Res<BossFlexingFrames>,
-    idle_frames: Res<BossIdleFrames>,
+    _idle_frames: Res<BossIdleFrames>,
     mut boss_q: Query<(Entity, &mut Enemy, &mut Handle<Image>), With<BossMarker>>,
     mut difficulty: ResMut<Difficulty>,
 ) {
     for (_entity, mut enemy, mut texture) in boss_q.iter_mut() {
-        if enemy.state != EnemyState::Entering(1) {
+        if enemy.state != EnemyState::Flexing {
             continue;
         }
 
         enemy.anim_timer.tick(time.delta());
+
+        if enemy.anim_timer.finished() {
+            // Flexing terminé, en attente de la musique + patrol.
+            // L'idle animation prend le relais pour la texture.
+            if difficulty.boss_active_time.is_none() {
+                difficulty.boss_active_time = Some(difficulty.elapsed);
+            }
+            continue;
+        }
+
         let elapsed = enemy.anim_timer.elapsed_secs();
 
         if elapsed < BOSS_FLEXING_WAIT {
@@ -277,19 +287,6 @@ fn boss_flexing(
         let frame_count = flexing_frames.0.len();
         let frame_index = ((flexing_progress * frame_count as f32) as usize).min(frame_count - 1);
         *texture = flexing_frames.0[frame_index].clone();
-
-        if enemy.anim_timer.finished() {
-            enemy.state = EnemyState::Active(0);
-            *texture = idle_frames.0[0].clone();
-            difficulty.boss_active_time = Some(difficulty.elapsed);
-
-            if let Some(sound) = BOSS_PHASES[0].enter_sound {
-                commands.spawn(AudioBundle {
-                    source: asset_server.load(sound),
-                    settings: PlaybackSettings::DESPAWN,
-                });
-            }
-        }
     }
 }
 
@@ -297,13 +294,10 @@ fn boss_flexing(
 fn boss_flexing_sound(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut boss_q: Query<
-        (Entity, &Enemy, Option<&BossFlexingSoundPlayed>),
-        With<BossMarker>,
-    >,
+    mut boss_q: Query<(Entity, &Enemy, Option<&BossFlexingSoundPlayed>), With<BossMarker>>,
 ) {
     for (entity, enemy, sound_played) in boss_q.iter_mut() {
-        if enemy.state != EnemyState::Entering(1) {
+        if enemy.state != EnemyState::Flexing {
             continue;
         }
         if enemy.anim_timer.elapsed_secs() < BOSS_FLEXING_WAIT {
@@ -355,10 +349,12 @@ fn boss_idle_animation(
 ) {
     for (enemy, mut anim, mut texture) in boss_q.iter_mut() {
         match &enemy.state {
-            EnemyState::Entering(0) | EnemyState::Active(_) => {}
-            EnemyState::Entering(1) => {
-                // Pendant le flexing, l'idle ne tourne que pendant l'attente
-                if enemy.anim_timer.elapsed_secs() >= BOSS_FLEXING_WAIT {
+            EnemyState::Entering | EnemyState::Active(_) => {}
+            EnemyState::Flexing => {
+                // Pendant le flexing visuel, l'idle ne tourne que pendant l'attente initiale
+                // Une fois le timer fini (attente musique+patrol), l'idle reprend
+                let elapsed = enemy.anim_timer.elapsed_secs();
+                if elapsed >= BOSS_FLEXING_WAIT && !enemy.anim_timer.finished() {
                     continue;
                 }
             }
@@ -398,18 +394,50 @@ fn boss_dying_flexing(
     }
 }
 
+
+// ─── Couper la musique à la mort ────────────────────────────────────
+
+fn boss_dying_stop_music(
+    mut commands: Commands,
+    boss_q: Query<&Enemy, With<BossMarker>>,
+    music_q: Query<Entity, With<MusicBoss>>,
+) {
+    for enemy in boss_q.iter() {
+        if enemy.state != EnemyState::Dying {
+            continue;
+        }
+        for entity in music_q.iter() {
+            commands.entity(entity).despawn_recursive();
+        }
+    }
+}
+
 // ─── Activation du patrol ───────────────────────────────────────────
 
 fn boss_enable_patrol(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
     difficulty: Res<Difficulty>,
-    mut query: Query<&mut PatrolMovement, With<BossMarker>>,
+    mut query: Query<(Entity, &mut Enemy, &mut PatrolMovement), With<BossMarker>>,
 ) {
     let active = match difficulty.boss_music_start_time {
         Some(start) => difficulty.elapsed >= start + 3.0,
         None => false,
     };
-    for mut patrol in query.iter_mut() {
-        patrol.enabled = active;
+    for (_entity, mut enemy, mut patrol) in query.iter_mut() {
+        if active && enemy.state == EnemyState::Flexing && enemy.anim_timer.finished() {
+            // Le flexing visuel est fini ET le délai post-musique est écoulé → Active
+            enemy.state = EnemyState::Active(0);
+            if let Some(sound) = BOSS.phases[0].enter_sound {
+                commands.spawn(AudioBundle {
+                    source: asset_server.load(sound),
+                    settings: PlaybackSettings::DESPAWN,
+                });
+            }
+        }
+        if matches!(enemy.state, EnemyState::Active(_)) {
+            patrol.enabled = active;
+        }
     }
 }
 
@@ -417,30 +445,169 @@ fn boss_enable_patrol(
 
 fn boss_pattern_executor(
     time: Res<Time>,
-    mut boss_q: Query<(&Enemy, &mut PatternTimer, &Transform), With<BossMarker>>,
-    _commands: Commands,
-    _asset_server: Res<AssetServer>,
-    _player_q: Query<&Transform, (With<Player>, Without<BossMarker>)>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut boss_q: Query<
+        (
+            Entity,
+            &Enemy,
+            &mut PatternTimer,
+            &mut BossPatternIndex,
+            &Transform,
+            Option<&BossCharge>,
+            &mut PatrolMovement,
+        ),
+        With<BossMarker>,
+    >,
+    player_q: Query<&Transform, (With<Player>, Without<BossMarker>)>,
 ) {
-    for (enemy, mut pattern_timer, _boss_transform) in boss_q.iter_mut() {
-        let _phase = match &enemy.state {
+    for (entity, enemy, mut pattern_timer, mut pat_idx, boss_transform, charge, mut patrol) in
+        boss_q.iter_mut()
+    {
+        let phase_idx = match &enemy.state {
             EnemyState::Active(idx) => *idx,
             _ => continue,
         };
+
+        // Pas de pattern tant que le patrol n'est pas activé
+        if !patrol.enabled && charge.is_none() {
+            continue;
+        }
+
+        // Pas de nouveau pattern pendant une charge
+        if charge.is_some() {
+            continue;
+        }
 
         pattern_timer.0.tick(time.delta());
         if !pattern_timer.0.just_finished() {
             continue;
         }
 
-        // ── SQUELETTE : ajouter les patterns de tir ici ──
-        // let player_pos = _player_q.single().translation;
-        // match _phase {
-        //     0 => fire_pattern_spread(...),
-        //     1 => fire_pattern_spiral(...),
-        //     2 => fire_pattern_barrage(...),
-        //     _ => {}
-        // }
+        let phase = &enemy.phases[phase_idx];
+        if phase.patterns.is_empty() {
+            continue;
+        }
+
+        // Cycle à travers les patterns de la phase
+        let current_idx = pat_idx.0 % phase.patterns.len();
+        let pattern = &phase.patterns[current_idx];
+        pat_idx.0 += 1;
+
+        // Programmer le timer pour le prochain pattern
+        let next_idx = pat_idx.0 % phase.patterns.len();
+        let next_duration = phase.patterns[next_idx].duration;
+        pattern_timer.0 = Timer::from_seconds(next_duration, TimerMode::Once);
+
+        match pattern.name {
+            "charge" => {
+                let Ok(player_transform) = player_q.get_single() else {
+                    continue;
+                };
+                let boss_y = boss_transform.translation.y;
+                let player_y = player_transform.translation.y;
+
+                // Ne charge que si aligné en Y avec le joueur (tolérance)
+                if (boss_y - player_y).abs() > BOSS_CHARGE_ALIGN_THRESHOLD {
+                    // Pas aligné → on ne consomme pas le pattern, on réessaie vite
+                    pat_idx.0 -= 1;
+                    pattern_timer.0 = Timer::from_seconds(0.1, TimerMode::Once);
+                    continue;
+                }
+
+                // Charge uniquement sur l'axe X (vers le joueur)
+                let dir_x = if player_transform.translation.x < boss_transform.translation.x {
+                    -1.0
+                } else {
+                    1.0
+                };
+                // Désactiver le patrol immédiatement pour éviter la sinusoïde ce frame
+                patrol.enabled = false;
+                commands.entity(entity).insert(BossCharge {
+                    direction: Vec2::new(dir_x, 0.0),
+                });
+                commands.spawn(AudioBundle {
+                    source: asset_server.load("audio/t_go.wav"),
+                    settings: PlaybackSettings::DESPAWN,
+                });
+            }
+            _ => {}
+        }
+    }
+}
+
+// ─── Charge : fonce en ligne droite vers le joueur ──────────────────
+
+fn boss_charge_movement(
+    mut commands: Commands,
+    time: Res<Time>,
+    windows: Query<&Window>,
+    mut boss_q: Query<
+        (
+            Entity,
+            &Enemy,
+            &mut Transform,
+            &BossCharge,
+            &mut PatrolMovement,
+            &mut PatternTimer,
+            &BossPatternIndex,
+        ),
+        With<BossMarker>,
+    >,
+) {
+    let window = windows.single();
+    let half_w = window.width() / 2.0;
+    let half_h = window.height() / 2.0;
+
+    for (entity, enemy, mut transform, charge, mut patrol, mut pattern_timer, pat_idx) in
+        boss_q.iter_mut()
+    {
+        let phase_idx = match &enemy.state {
+            EnemyState::Active(idx) => *idx,
+            _ => continue,
+        };
+
+        // Désactiver le patrol pendant la charge
+        patrol.enabled = false;
+
+        // Avancer en ligne droite
+        let dt = time.delta_seconds();
+        transform.translation.x += charge.direction.x * BOSS_CHARGE_SPEED * dt;
+        transform.translation.y += charge.direction.y * BOSS_CHARGE_SPEED * dt;
+
+        // Tourner sur lui-même pendant la charge
+        transform.rotate_z(BOSS_CHARGE_SPIN_SPEED * dt);
+
+        // Si le boss atteint un bord → fin de la charge, passage au pattern suivant
+        let margin = BOSS_MARGIN;
+        let at_edge = transform.translation.x.abs() >= half_w - margin
+            || transform.translation.y.abs() >= half_h - margin;
+
+        if at_edge {
+            // Clamper à l'intérieur
+            transform.translation.x = transform
+                .translation
+                .x
+                .clamp(-(half_w - margin), half_w - margin);
+            transform.translation.y = transform
+                .translation
+                .y
+                .clamp(-(half_h - margin), half_h - margin);
+
+            // Remettre la rotation à zéro
+            transform.rotation = Quat::IDENTITY;
+
+            // Retirer la charge et réactiver le patrol
+            commands.entity(entity).remove::<BossCharge>();
+            patrol.enabled = true;
+            patrol.initialized = false;
+
+            // Reprogrammer le timer avec la durée du prochain pattern
+            let phase = &enemy.phases[phase_idx];
+            let next_idx = pat_idx.0 % phase.patterns.len();
+            pattern_timer.0 =
+                Timer::from_seconds(phase.patterns[next_idx].duration, TimerMode::Once);
+        }
     }
 }
 
@@ -496,7 +663,7 @@ fn debug_skip_to_boss(
         SpriteBundle {
             texture: asset_server.load("images/boss/idle/frame000.png"),
             sprite: Sprite {
-                custom_size: Some(Vec2::splat(BOSS_SPRITE_SIZE)),
+                custom_size: Some(Vec2::splat(BOSS.sprite_size)),
                 color: Color::WHITE,
                 ..default()
             },
@@ -508,20 +675,20 @@ fn debug_skip_to_boss(
             ..default()
         },
         Enemy {
-            health: BOSS_MAX_HEALTH,
-            max_health: BOSS_MAX_HEALTH,
-            state: EnemyState::Entering(1),
-            radius: BOSS_RADIUS,
-            sprite_size: BOSS_SPRITE_SIZE,
+            health: BOSS.phases[0].health,
+            max_health: BOSS.phases[0].health,
+            state: EnemyState::Flexing,
+            radius: BOSS.radius,
+            sprite_size: BOSS.sprite_size,
             anim_timer: Timer::from_seconds(
                 BOSS_FLEXING_WAIT + BOSS_START_2_ANIMATION_DURATION,
                 TimerMode::Once,
             ),
-            phases: &BOSS_PHASES,
-            death_duration: BOSS_DEATH_DURATION,
-            death_shake_max: BOSS_DEATH_SHAKE_MAX,
-            hit_sound: "audio/asteroid_hit.ogg",
-            death_explosion_sound: "audio/boss_explosion.ogg",
+            phases: BOSS.phases,
+            death_duration: BOSS.death_duration,
+            death_shake_max: BOSS.death_shake_max,
+            hit_sound: BOSS.hit_sound,
+            death_explosion_sound: BOSS.death_explosion_sound,
         },
         BossMarker,
         BossIdleAnim {
@@ -529,9 +696,14 @@ fn debug_skip_to_boss(
             current_frame: 0,
         },
         PatternTimer(Timer::from_seconds(
-            BOSS_PHASES[0].pattern_interval,
-            TimerMode::Repeating,
+            BOSS.phases[0]
+                .patterns
+                .first()
+                .map(|p| p.duration)
+                .unwrap_or(1.0),
+            TimerMode::Once,
         )),
+        BossPatternIndex(0),
         PatrolMovement {
             dir_x: 1.0,
             sine_time: 0.0,

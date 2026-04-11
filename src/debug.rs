@@ -4,11 +4,12 @@
 
 use crate::MusicMain;
 use crate::asteroid::Asteroid;
+use crate::boss::{BossCharge, BossMarker, BossPatternIndex};
 use crate::collision::Hittable;
 use crate::difficulty::Difficulty;
-use crate::enemy::{Enemy, EnemyProjectile};
+use crate::enemy::{Enemy, EnemyProjectile, EnemyState, PatternTimer};
 use crate::missile::Missile;
-use crate::player::Player;
+use crate::player::{Player, PlayerLives};
 use crate::weapon::HitboxShape;
 use bevy::prelude::*;
 
@@ -57,6 +58,7 @@ fn setup_debug_ui(mut commands: Commands) {
                 ..default()
             },
             visibility: Visibility::Hidden,
+            z_index: ZIndex::Global(100),
             ..default()
         },
         DebugUI,
@@ -104,7 +106,21 @@ fn update_debug_ui(
     debug: Res<DebugMode>,
     time: Res<Time>,
     difficulty: Res<Difficulty>,
+    lives: Res<PlayerLives>,
     mut ui_q: Query<&mut Text, With<DebugUI>>,
+    player_q: Query<&Transform, With<Player>>,
+    enemy_q: Query<
+        (
+            &Enemy,
+            &Transform,
+            Option<&BossMarker>,
+            Option<&BossPatternIndex>,
+            Option<&PatternTimer>,
+            Option<&BossCharge>,
+        ),
+    >,
+    asteroid_q: Query<&Asteroid>,
+    missile_q: Query<&Missile>,
 ) {
     if !debug.0 {
         return;
@@ -117,17 +133,74 @@ fn update_debug_ui(
     let minutes = (elapsed / 60.0) as u32;
     let seconds = (elapsed % 60.0) as u32;
 
+    let player_pos = player_q
+        .get_single()
+        .map(|t| format!("({:.0}, {:.0})", t.translation.x, t.translation.y))
+        .unwrap_or_else(|_| "N/A".to_string());
+
+    let mut enemy_lines = String::new();
+    for (enemy, transform, boss, pat_idx, pat_timer, charge) in enemy_q.iter() {
+        let name = if boss.is_some() { "Boss" } else { "Enemy" };
+        let pos = format!("({:.0}, {:.0})", transform.translation.x, transform.translation.y);
+
+        let state_str = match &enemy.state {
+            EnemyState::Entering => "Entering".to_string(),
+            EnemyState::Flexing => "Flexing".to_string(),
+            EnemyState::Active(idx) => {
+                let phase = &enemy.phases[*idx];
+                let pattern_info = if let Some(pi) = pat_idx {
+                    let p_idx = pi.0 % phase.patterns.len();
+                    let p = &phase.patterns[p_idx];
+                    if charge.is_some() {
+                        format!(">> {} (charging)", p.name)
+                    } else {
+                        let remaining = pat_timer
+                            .map(|t| t.0.duration().as_secs_f32() - t.0.elapsed_secs())
+                            .unwrap_or(0.0);
+                        format!("{} ({:.1}s)", p.name, remaining)
+                    }
+                } else {
+                    "?".to_string()
+                };
+                format!("Active(phase {}) | {}", idx, pattern_info)
+            }
+            EnemyState::Dying => {
+                let remaining = enemy.anim_timer.duration().as_secs_f32() - enemy.anim_timer.elapsed_secs();
+                format!("Dying ({:.1}s)", remaining)
+            }
+            EnemyState::Dead => "Dead".to_string(),
+        };
+
+        enemy_lines.push_str(&format!(
+            "\n  {} {} | HP {}/{} | {}", name, pos, enemy.health, enemy.max_health, state_str
+        ));
+    }
+
+    let asteroid_count = asteroid_q.iter().count();
+    let missile_count = missile_q.iter().count();
+
     if let Ok(mut text) = ui_q.get_single_mut() {
         text.sections[0].value = format!(
             "[DEBUG] GOD MODE\n\
              FPS        : {:.0}\n\
              Timer      : {:02}:{:02}\n\
              Difficulte : x{:.2}\n\
+             Vies       : {}\n\
+             Player     : {}\n\
+             Asteroides : {}\n\
+             Missiles   : {}\n\
+             \n\
+             --- Ennemis ---{}\n\
              \n\
              F1 : Debug Mode ON/OFF\n\
              F2 : Skip asteroides\n\
              F3 : Skip au boss",
-            fps, minutes, seconds, factor
+            fps, minutes, seconds, factor,
+            lives.lives,
+            player_pos,
+            asteroid_count,
+            missile_count,
+            if enemy_lines.is_empty() { "\n  (aucun)".to_string() } else { enemy_lines },
         );
     }
 }

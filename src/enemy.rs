@@ -1,7 +1,7 @@
 //! Framework générique pour les ennemis à état machine.
 //!
 //! Fournit les composants et systèmes réutilisables pour tout ennemi :
-//! - État machine : `Entering(u8)` → `Active(usize)` → `Dying` → `Dead`
+//! - État machine : `Entering` → `Flexing` → `Active(usize)` → `Dying` → `Dead`
 //! - Phases data-driven via `PhaseDef` (seuil de vie, intervalle, son)
 //! - Flash blanc au hit, animation de mort (tremblement, explosions, clignotement)
 //! - Projectiles ennemis, mouvement patrol sinusoïdal
@@ -44,30 +44,59 @@ impl Plugin for EnemyPlugin {
 
 /// État générique d'un ennemi.
 ///
-/// - `Entering(u8)` : animation d'intro, le u8 permet plusieurs sous-étapes
-///   (ex: 0 = spirale, 1 = flexing pour le boss).
+/// ```text
+///  Entering ──→ Flexing ──→ Active(0) ──→ Active(1) ──→ … ──→ Dying ──→ Dead
+///     │            │                                              ▲
+///     │            └─── (optionnel, skip si pas de flexing) ──────┘
+///     └──────────── (optionnel, spawn directement en Active) ─────┘
+/// ```
+///
+/// - `Entering` : animation d'arrivée (optionnelle).
+/// - `Flexing` : animation post-arrivée, ex: pose, cri (optionnelle).
 /// - `Active(usize)` : phase de combat, l'index correspond à `enemy.phases[idx]`.
-/// - `Dying` : animation de mort (tremblement, explosions).
-/// - `Dead` : entité prête à être despawnée.
+///    Les patterns ne se déclenchent que dans cet état.
+/// - `Dying` : animation de mort (tremblement, explosions, clignotement).
+/// - `Dead` : entité despawnée.
+///
+/// Un ennemi simple peut spawner directement en `Active(0)`.
+/// Un boss utilise `Entering` → `Flexing` → `Active(0)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnemyState {
-    Entering(u8),
+    /// Animation d'arrivée (optionnelle).
+    Entering,
+    /// Animation post-arrivée (optionnelle, ex: flexing du boss).
+    Flexing,
+    /// Phase de combat. Seul état où les patterns se déclenchent.
     Active(usize),
+    /// Animation de mort en cours, invincible.
     Dying,
+    /// Mort, sera despawné.
     Dead,
 }
 
 // ─── Définition de phase ────────────────────────────────────────────
 
+/// Définition statique d'un pattern de combat.
+pub struct PatternDef {
+    /// Nom du pattern (ex: "charge", "patrol").
+    pub name: &'static str,
+    /// Durée avant l'activation de ce pattern (secondes).
+    pub duration: f32,
+}
+
 /// Définition statique d'une phase de combat.
-/// Tous les champs sont Copy, compatible avec `&'static [PhaseDef]`.
+///
+/// Chaque phase a son propre pool de points de vie.
+/// Quand les PV tombent à 0, l'ennemi passe à la phase suivante.
+/// À la dernière phase, 0 PV = mort.
 pub struct PhaseDef {
-    /// Seuil de vie (fraction 0.0–1.0) pour entrer dans cette phase.
-    pub health_threshold_pct: f32,
-    /// Intervalle entre les activations de pattern (secondes).
-    pub pattern_interval: f32,
+    /// Points de vie de cette phase.
+    pub health: i32,
     /// Son joué à l'entrée de la phase.
     pub enter_sound: Option<&'static str>,
+    /// Patterns de combat, chacun avec son propre timing.
+    /// Le pattern executor cycle à travers cette liste.
+    pub patterns: &'static [PatternDef],
 }
 
 // ─── Composants ─────────────────────────────────────────────────────
@@ -165,32 +194,20 @@ fn enemy_phase_logic(
             _ => continue,
         };
 
-        // Mort → passage en Dying
-        if enemy.health <= 0 {
-            let duration = enemy.death_duration;
-            enemy.state = EnemyState::Dying;
-            enemy.anim_timer = Timer::from_seconds(duration, TimerMode::Once);
-            commands
-                .entity(entity)
-                .insert(EnemyDeathAnchor(transform.translation));
+        if enemy.health > 0 {
             continue;
         }
 
-        let health_pct = enemy.health as f32 / enemy.max_health as f32;
-
-        // Trouver la phase la plus avancée dont le seuil est atteint
-        let mut target_phase = current_phase;
-        for idx in (0..enemy.phases.len()).rev() {
-            if idx > current_phase && health_pct <= enemy.phases[idx].health_threshold_pct {
-                target_phase = idx;
-                break;
-            }
-        }
-
-        if target_phase != current_phase {
-            let def = &enemy.phases[target_phase];
-            enemy.state = EnemyState::Active(target_phase);
-            pattern_timer.0 = Timer::from_seconds(def.pattern_interval, TimerMode::Repeating);
+        // PV à 0 → phase suivante ou mort
+        let next_phase = current_phase + 1;
+        if next_phase < enemy.phases.len() {
+            // Transition vers la phase suivante
+            let def = &enemy.phases[next_phase];
+            enemy.state = EnemyState::Active(next_phase);
+            enemy.health = def.health;
+            enemy.max_health = def.health;
+            let first_duration = def.patterns.first().map(|p| p.duration).unwrap_or(1.0);
+            pattern_timer.0 = Timer::from_seconds(first_duration, TimerMode::Once);
 
             if let Some(sound) = def.enter_sound {
                 commands.spawn(AudioBundle {
@@ -198,6 +215,14 @@ fn enemy_phase_logic(
                     settings: PlaybackSettings::DESPAWN,
                 });
             }
+        } else {
+            // Dernière phase → mort
+            let duration = enemy.death_duration;
+            enemy.state = EnemyState::Dying;
+            enemy.anim_timer = Timer::from_seconds(duration, TimerMode::Once);
+            commands
+                .entity(entity)
+                .insert(EnemyDeathAnchor(transform.translation));
         }
     }
 }

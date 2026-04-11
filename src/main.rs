@@ -8,6 +8,7 @@ mod countdown;
 mod crosshair;
 mod debug;
 mod difficulty;
+pub mod enemies;
 pub mod enemy;
 mod explosion;
 mod gameover;
