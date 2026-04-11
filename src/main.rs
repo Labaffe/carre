@@ -35,6 +35,7 @@ use enemy::{Enemy, EnemyPlugin, EnemyProjectile};
 use explosion::{Explosion, ExplosionPlugin};
 use item::{Droppable, ItemPlugin};
 use gameover::GameOverPlugin;
+use level::LevelPlugin;
 use mainmenu::MainMenuPlugin;
 use missile::{Missile, MissilePlugin};
 use pause::PausePlugin;
@@ -79,10 +80,10 @@ fn main() {
             BossPlugin,
             ItemPlugin,
             green_ufo::GreenUFOPlugin,
+            LevelPlugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, show_window_after_render.run_if(run_once()))
-        .add_systems(OnEnter(GameState::Playing), start_game_music)
         .add_systems(OnExit(GameState::Playing), cleanup_playing)
         .run();
 }
@@ -115,11 +116,6 @@ fn setup(mut commands: Commands, settings: Res<GameSettings>) {
 /// Affiche la fenêtre après la première frame (évite le flash blanc Windows).
 fn show_window_after_render(mut windows: Query<&mut Window>) {
     windows.single_mut().visible = true;
-}
-
-/// Système lancé à chaque entrée en Playing : démarre la musique de jeu.
-fn start_game_music(mut commands: Commands, asset_server: Res<AssetServer>) {
-    spawn_main_music(&mut commands, &asset_server);
 }
 
 /// Nettoyage de toutes les entités de jeu quand on quitte l'état Playing.
@@ -172,16 +168,3 @@ fn cleanup_playing(
     }
 }
 
-/// Spawn la musique de jeu en boucle.
-pub fn spawn_main_music(commands: &mut Commands, asset_server: &Res<AssetServer>) {
-    commands.spawn((
-        AudioBundle {
-            source: asset_server.load("audio/gradius.ogg"),
-            settings: PlaybackSettings {
-                mode: bevy::audio::PlaybackMode::Once,
-                ..default()
-            },
-        },
-        MusicMain,
-    ));
-}

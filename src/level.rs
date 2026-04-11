@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 
-use crate::difficulty::BoomEvent;
+use crate::difficulty::{BoomEvent, Difficulty};
 use crate::pause::not_paused;
 use crate::state::GameState;
 use bevy::prelude::*;
@@ -31,7 +31,8 @@ impl Plugin for LevelPlugin {
                 run_level
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),
-            );
+            )
+            .add_systems(OnExit(GameState::Playing), cleanup_level);
     }
 }
 
@@ -193,6 +194,65 @@ impl LevelRunner {
             self.steps[self.current - 1].label
         }
     }
+
+    /// Retourne toutes les étapes du niveau.
+    pub fn steps(&self) -> &[LevelStep] {
+        &self.steps
+    }
+
+    /// Retourne l'index de la prochaine étape à exécuter.
+    pub fn current_index(&self) -> usize {
+        self.current
+    }
+
+    /// Retourne le temps de déclenchement d'une étape par son label (si déjà déclenchée).
+    pub fn trigger_time(&self, label: &str) -> Option<f32> {
+        self.trigger_times.get(label).copied()
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Affichage court des actions (pour le debug)
+// ═══════════════════════════════════════════════════════════════════════
+
+impl Action {
+    /// Retourne un nom court de l'action pour l'overlay debug.
+    pub fn short_name(&self) -> String {
+        match self {
+            Action::SetDifficulty(f) => format!("Diff({})", f),
+            Action::PlaySound(p) => {
+                let name = p.rsplit('/').next().unwrap_or(p);
+                format!("Sound({})", name)
+            }
+            Action::StartMusic(p) => {
+                let name = p.rsplit('/').next().unwrap_or(p);
+                format!("Music({})", name)
+            }
+            Action::StopMainMusic => "StopMusic".to_string(),
+            Action::StartCountdown => "Countdown".to_string(),
+            Action::SendBoom => "Boom".to_string(),
+            Action::StartGreenUFOSpawning(i) => format!("GreenUFO({}s)", i),
+            Action::StopGreenUFOSpawning => "StopUFO".to_string(),
+            Action::StopAsteroidSpawning => "StopAst".to_string(),
+            Action::SpawnBoss => "Boss".to_string(),
+            Action::StartBgDeceleration { duration, final_speed } => {
+                format!("BgDecel({}s,{})", duration, final_speed)
+            }
+            Action::ShowPlanet => "Planet".to_string(),
+            Action::Log(msg) => format!("Log({})", msg),
+        }
+    }
+}
+
+impl Trigger {
+    /// Retourne une description courte du trigger pour l'overlay debug.
+    pub fn short_desc(&self) -> String {
+        match self {
+            Trigger::AtTime(t) => format!("@ {:.1}s", t),
+            Trigger::AfterPrevious(d) => format!("+{:.1}s (prev)", d),
+            Trigger::After(label, d) => format!("+{:.1}s -> {}", d, label),
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -211,11 +271,11 @@ pub fn build_level_1() -> Vec<LevelStep> {
         LevelStep::at(7.0, "countdown")
             .with(Action::PlaySound("audio/charging.ogg"))
             .with(Action::StartCountdown),
+        // Note : le countdown envoie un BoomEvent au "GO!" (10s)
 
         // ─── Phase 2 : montée en difficulté ─────────────────────
         LevelStep::at(10.0, "phase_2_start")
             .with(Action::SetDifficulty(3.5))
-            .with(Action::SendBoom)
             .with(Action::StartGreenUFOSpawning(2.0)),
 
         LevelStep::at(14.3, "boom_1")
@@ -250,12 +310,6 @@ pub fn build_level_1() -> Vec<LevelStep> {
             .with(Action::StopMainMusic)
             .with(Action::Log("Boss spawné !")),
 
-        // ─── Événements chaînés au boss ─────────────────────────
-        // Exemple de Trigger::After : musique du boss 5s après son spawn
-        LevelStep::after_step("boss_spawn", 5.0, "boss_music")
-            .with(Action::StartMusic("audio/boss.ogg"))
-            .with(Action::Log("Musique du boss lancée")),
-
         // ─── Les événements suivants sont gérés par boss.rs ─────
         // Le boss gère lui-même sa séquence interne :
         //   Entering → Flexing → Idle → musique → Active
@@ -277,10 +331,13 @@ fn run_level(
     mut commands: Commands,
     time: Res<Time>,
     asset_server: Res<AssetServer>,
-    mut runner: ResMut<LevelRunner>,
+    runner: Option<ResMut<LevelRunner>>,
+    mut difficulty: ResMut<Difficulty>,
     mut boom_events: EventWriter<BoomEvent>,
     mut countdown_events: EventWriter<crate::countdown::CountdownEvent>,
+    music_q: Query<Entity, With<crate::MusicMain>>,
 ) {
+    let Some(mut runner) = runner else { return };
     runner.elapsed += time.delta_seconds();
 
     // Exécuter toutes les étapes dont le déclencheur est atteint
@@ -318,6 +375,8 @@ fn run_level(
                 &asset_server,
                 &mut boom_events,
                 &mut countdown_events,
+                &mut difficulty,
+                &music_q,
             );
         }
 
@@ -335,11 +394,12 @@ fn execute_action(
     asset_server: &Res<AssetServer>,
     boom_events: &mut EventWriter<BoomEvent>,
     countdown_events: &mut EventWriter<crate::countdown::CountdownEvent>,
+    difficulty: &mut ResMut<Difficulty>,
+    music_q: &Query<Entity, With<crate::MusicMain>>,
 ) {
     match action {
-        Action::SetDifficulty(_factor) => {
-            // TODO: écrire dans Difficulty.factor
-            // Pour l'instant, difficulty.rs gère encore cela
+        Action::SetDifficulty(factor) => {
+            difficulty.factor = *factor;
         }
         Action::PlaySound(path) => {
             commands.spawn(AudioBundle {
@@ -360,7 +420,9 @@ fn execute_action(
             ));
         }
         Action::StopMainMusic => {
-            // TODO: despawn MusicMain entities
+            for entity in music_q.iter() {
+                commands.entity(entity).despawn_recursive();
+            }
         }
         Action::StartCountdown => {
             countdown_events.send(crate::countdown::CountdownEvent);
@@ -368,26 +430,33 @@ fn execute_action(
         Action::SendBoom => {
             boom_events.send(BoomEvent);
         }
-        Action::StartGreenUFOSpawning(_interval) => {
-            // TODO: activer le spawner GreenUFO avec l'intervalle donné
+        Action::StartGreenUFOSpawning(interval) => {
+            difficulty.green_ufo_spawning = true;
+            difficulty.green_ufo_interval = *interval;
         }
         Action::StopGreenUFOSpawning => {
-            // TODO: désactiver le spawner GreenUFO
+            difficulty.green_ufo_spawning = false;
         }
         Action::StopAsteroidSpawning => {
-            // TODO: mettre spawning_stopped = true dans Difficulty
+            difficulty.spawning_stopped = true;
         }
         Action::SpawnBoss => {
-            // TODO: déclencher le spawn du boss
+            difficulty.boss_spawn_requested = true;
         }
-        Action::StartBgDeceleration { duration: _, final_speed: _ } => {
-            // TODO: configurer la décélération du background
+        Action::StartBgDeceleration { duration, final_speed } => {
+            difficulty.bg_decel_start_elapsed = Some(difficulty.elapsed);
+            difficulty.bg_decel_duration = *duration;
+            difficulty.bg_decel_final_speed = *final_speed;
         }
         Action::ShowPlanet => {
-            // TODO: déclencher l'apparition de la planète
+            difficulty.planet_appear_elapsed = Some(difficulty.elapsed);
         }
         Action::Log(msg) => {
             info!("[Level] {}", msg);
         }
     }
+}
+
+fn cleanup_level(mut commands: Commands) {
+    commands.remove_resource::<LevelRunner>();
 }

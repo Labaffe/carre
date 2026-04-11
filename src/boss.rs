@@ -54,7 +54,6 @@ impl Plugin for BossPlugin {
 
 // ─── Constantes boss ────────────────────────────────────────────────
 
-const BOSS_SPAWN_TIME: f32 = 35.8;
 const BOSS_START_ANIMATION_DURATION: f32 = 7.0;
 const BOSS_FLEXING_WAIT: f32 = 0.5;
 const BOSS_START_2_ANIMATION_DURATION: f32 = 1.7;
@@ -152,7 +151,7 @@ fn spawn_boss(
     enemy_q: Query<&Enemy, With<BossMarker>>,
     windows: Query<&Window>,
 ) {
-    if difficulty.elapsed < BOSS_SPAWN_TIME || !enemy_q.is_empty() || difficulty.boss_spawned {
+    if !difficulty.boss_spawn_requested || !enemy_q.is_empty() || difficulty.boss_spawned {
         return;
     }
     difficulty.boss_spawned = true;
@@ -790,18 +789,15 @@ fn debug_skip_to_boss(
         commands.entity(entity).despawn_recursive();
     }
 
-    difficulty.elapsed = BOSS_SPAWN_TIME + 0.1;
     difficulty.spawning_stopped = true;
-    difficulty.charging_played = true;
-    difficulty.boom_played = true;
-    difficulty.boom_14_played = true;
-    difficulty.boom_18_played = true;
-    difficulty.boom_22_played = true;
+    difficulty.green_ufo_spawning = false;
+    difficulty.factor = 7.5;
     difficulty.boss_music_played = false;
     difficulty.boss_music_start_time = None;
     difficulty.boss_active_time = None;
     difficulty.landing_played = true;
     difficulty.boss_spawned = true;
+    difficulty.boss_spawn_requested = true;
 
     for entity in boss_q.iter() {
         commands.entity(entity).despawn_recursive();

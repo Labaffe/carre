@@ -41,9 +41,7 @@ impl Plugin for GreenUFOPlugin {
 
 // ─── Constantes ─────────────────────────────────────────────────────
 
-/// Temps avant le premier spawn de GreenUFO (secondes).
-const GREEN_UFO_FIRST_SPAWN: f32 = 10.0;
-/// Intervalle entre chaque spawn (secondes).
+/// Intervalle par défaut entre chaque spawn (secondes).
 const GREEN_UFO_SPAWN_INTERVAL: f32 = 2.0;
 /// Vitesse du rush vers le joueur (px/s).
 const GREEN_UFO_RUSH_SPEED: f32 = 800.0;
@@ -105,9 +103,15 @@ fn spawn_green_ufos(
     frames: Res<GreenUFOFrames>,
     windows: Query<&Window>,
 ) {
-    // Pas de spawn avant le délai initial ou si le boss est apparu
-    if difficulty.elapsed < GREEN_UFO_FIRST_SPAWN || difficulty.boss_spawned {
+    // Spawning contrôlé par le système de niveau
+    if !difficulty.green_ufo_spawning || difficulty.boss_spawned {
         return;
+    }
+
+    // Mettre à jour l'intervalle si le niveau l'a changé
+    let target_interval = difficulty.green_ufo_interval;
+    if (spawner.timer.duration().as_secs_f32() - target_interval).abs() > 0.01 {
+        spawner.timer.set_duration(std::time::Duration::from_secs_f32(target_interval));
     }
 
     spawner.timer.tick(time.delta());
