@@ -78,8 +78,10 @@ pub enum Action {
     /// Spawn N ennemis d'un type donné (ex: "boss", 2 → 2 boss).
     /// La requête est consommée par le système de spawn du type cible.
     SpawnEnemy(&'static str, usize),
-    /// Active le spawn continu d'un type d'ennemi (ex: "green_ufo", 2.0).
-    StartSpawning(&'static str, f32),
+    /// Active le spawn continu d'un type d'ennemi.
+    /// (nom, quantité par vague, intervalle en secondes)
+    /// Ex: `StartSpawning("green_ufo", 4, 5.0)` → 4 GreenUFOs toutes les 5s.
+    StartSpawning(&'static str, usize, f32),
     /// Désactive le spawn continu d'un type d'ennemi.
     StopSpawning(&'static str),
     /// Arrête le spawn des astéroïdes.
@@ -239,10 +241,15 @@ impl Action {
                     format!("Spawn({}×{})", count, name)
                 }
             }
-            Action::StartSpawning(name, i) => format!("Start({},{}s)", name, i),
+            Action::StartSpawning(name, count, interval) => {
+                format!("Start({}×{},{}s)", count, name, interval)
+            }
             Action::StopSpawning(name) => format!("Stop({})", name),
             Action::StopAsteroidSpawning => "StopAst".to_string(),
-            Action::StartBgDeceleration { duration, final_speed } => {
+            Action::StartBgDeceleration {
+                duration,
+                final_speed,
+            } => {
                 format!("BgDecel({}s,{})", duration, final_speed)
             }
             Action::ShowPlanet => "Planet".to_string(),
@@ -273,7 +280,6 @@ pub fn build_level_1() -> Vec<LevelStep> {
             .with(Action::StartMusic("audio/gradius.ogg"))
             .with(Action::SetDifficulty(0.5))
             .with(Action::Log("Niveau 1 démarré")),
-
         // ─── Countdown (7-10s) ──────────────────────────────────
         LevelStep::at(7.0, "countdown")
             .with(Action::PlaySound("audio/charging.ogg"))
@@ -283,23 +289,19 @@ pub fn build_level_1() -> Vec<LevelStep> {
         // ─── Phase 2 : montée en difficulté ─────────────────────
         LevelStep::at(10.0, "phase_2_start")
             .with(Action::SetDifficulty(3.5))
-            .with(Action::StartSpawning("green_ufo", 2.0)),
-
+            .with(Action::StartSpawning("green_ufo", 2, 4.0)),
         LevelStep::at(14.3, "boom_1")
             .with(Action::SetDifficulty(4.5))
             .with(Action::PlaySound("audio/t_go.wav"))
             .with(Action::SendBoom),
-
         LevelStep::at(18.3, "boom_2")
             .with(Action::SetDifficulty(6.5))
             .with(Action::PlaySound("audio/t_go.wav"))
             .with(Action::SendBoom),
-
         LevelStep::at(22.6, "boom_3")
             .with(Action::SetDifficulty(7.5))
             .with(Action::PlaySound("audio/t_go.wav"))
             .with(Action::SendBoom),
-
         // ─── Transition vers le boss ────────────────────────────
         LevelStep::at(27.7, "pre_boss")
             .with(Action::StopAsteroidSpawning)
@@ -308,32 +310,27 @@ pub fn build_level_1() -> Vec<LevelStep> {
                 duration: 9.0,
                 final_speed: 30.0,
             }),
-
-        LevelStep::at(28.0, "planet_appear")
-            .with(Action::ShowPlanet),
-
+        LevelStep::at(28.0, "planet_appear").with(Action::ShowPlanet),
         LevelStep::at(35.8, "boss_spawn")
             .with(Action::SpawnEnemy("boss", 1))
             .with(Action::StopMainMusic)
             .with(Action::Log("Boss 1 spawné !")),
-
-        // 10s après le premier boss : vague de 4 GreenUFOs
+        // 10s après le premier boss : vagues continues de 4 GreenUFOs toutes les 5s
         LevelStep::after_step("boss_spawn", 10.0, "boss1_ufos")
-            .with(Action::SpawnEnemy("green_ufo", 4))
-            .with(Action::Log("Vague de 4 GreenUFOs pour Boss 1")),
-
+            .with(Action::StartSpawning("green_ufo", 4, 5.0))
+            .with(Action::Log("Vagues de 4 GreenUFOs / 5s pour Boss 1")),
         // ─── Deuxième boss ─────────────────────────────────────
         // 30s après le premier boss, un deuxième apparaît.
         // La musique boss ne s'arrête qu'à la mort du dernier.
         LevelStep::after_step("boss_spawn", 30.0, "boss_spawn_2")
             .with(Action::SpawnEnemy("boss", 1))
             .with(Action::Log("Boss 2 spawné !")),
-
-        // 10s après le deuxième boss : vague de 4 GreenUFOs
+        // 10s après le deuxième boss : vagues continues de 4 GreenUFOs toutes les 5s
+        // (le spawner est déjà actif depuis boss1, on met juste à jour l'intervalle
+        //  au cas où il aurait été stoppé entre-temps)
         LevelStep::after_step("boss_spawn_2", 10.0, "boss2_ufos")
-            .with(Action::SpawnEnemy("green_ufo", 4))
-            .with(Action::Log("Vague de 4 GreenUFOs pour Boss 2")),
-
+            .with(Action::StartSpawning("green_ufo", 4, 5.0))
+            .with(Action::Log("Vagues de 4 GreenUFOs / 5s pour Boss 2")),
         // ─── Les événements suivants sont gérés par boss.rs ─────
         // Chaque boss gère sa propre séquence interne :
         //   Entering → Flexing → Idle → Active
@@ -374,9 +371,7 @@ fn run_level(
         let step = runner.steps[runner.current].clone();
         let should_trigger = match &step.trigger {
             Trigger::AtTime(t) => runner.elapsed >= *t,
-            Trigger::AfterPrevious(delay) => {
-                runner.elapsed >= runner.last_trigger_time + delay
-            }
+            Trigger::AfterPrevious(delay) => runner.elapsed >= runner.last_trigger_time + delay,
             Trigger::After(label, delay) => {
                 if let Some(&ref_time) = runner.trigger_times.get(label) {
                     runner.elapsed >= ref_time + delay
@@ -458,8 +453,8 @@ fn execute_action(
         Action::SpawnEnemy(name, count) => {
             difficulty.spawn_requests.push((name, *count));
         }
-        Action::StartSpawning(name, interval) => {
-            difficulty.active_spawners.insert(name, *interval);
+        Action::StartSpawning(name, count, interval) => {
+            difficulty.active_spawners.insert(name, (*count, *interval));
         }
         Action::StopSpawning(name) => {
             difficulty.active_spawners.remove(name);
@@ -467,7 +462,10 @@ fn execute_action(
         Action::StopAsteroidSpawning => {
             difficulty.spawning_stopped = true;
         }
-        Action::StartBgDeceleration { duration, final_speed } => {
+        Action::StartBgDeceleration {
+            duration,
+            final_speed,
+        } => {
             difficulty.bg_decel_start_elapsed = Some(difficulty.elapsed);
             difficulty.bg_decel_duration = *duration;
             difficulty.bg_decel_final_speed = *final_speed;

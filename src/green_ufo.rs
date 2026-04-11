@@ -42,7 +42,7 @@ impl Plugin for GreenUFOPlugin {
 
 // ─── Constantes ─────────────────────────────────────────────────────
 
-/// Intervalle par défaut entre chaque spawn (secondes).
+/// Intervalle par défaut entre chaque vague (secondes).
 const GREEN_UFO_SPAWN_INTERVAL: f32 = 2.0;
 /// Vitesse du rush vers le joueur (px/s).
 const GREEN_UFO_RUSH_SPEED: f32 = 800.0;
@@ -105,12 +105,9 @@ fn spawn_green_ufos(
     windows: Query<&Window>,
 ) {
     // Spawning contrôlé par le système de niveau via active_spawners
-    let Some(&target_interval) = difficulty.active_spawners.get("green_ufo") else {
+    let Some(&(wave_size, target_interval)) = difficulty.active_spawners.get("green_ufo") else {
         return;
     };
-    if difficulty.boss_spawned {
-        return;
-    }
 
     // Mettre à jour l'intervalle si le niveau l'a changé
     if (spawner.timer.duration().as_secs_f32() - target_interval).abs() > 0.01 {
@@ -123,50 +120,9 @@ fn spawn_green_ufos(
     }
 
     let window = windows.single();
-    let half_w = window.width() / 2.0 - 60.0;
-    let spawn_y = window.height() / 2.0 + 40.0;
-    let spawn_x = (fastrand::f32() - 0.5) * 2.0 * half_w;
-
-    let phase = &GREEN_UFO.phases[0];
-    let first_frame = frames.0.first().cloned().unwrap_or_default();
-
-    commands.spawn((
-        SpriteBundle {
-            texture: first_frame,
-            sprite: Sprite {
-                custom_size: Some(Vec2::splat(GREEN_UFO.sprite_size)),
-                ..default()
-            },
-            transform: Transform::from_xyz(spawn_x, spawn_y, 0.5),
-            ..default()
-        },
-        Enemy {
-            health: phase.health,
-            max_health: phase.health,
-            state: EnemyState::Active(0),
-            radius: GREEN_UFO.radius,
-            sprite_size: GREEN_UFO.sprite_size,
-            anim_timer: Timer::from_seconds(0.01, TimerMode::Once),
-            phases: GREEN_UFO.phases,
-            death_duration: GREEN_UFO.death_duration,
-            death_shake_max: GREEN_UFO.death_shake_max,
-            hit_sound: GREEN_UFO.hit_sound,
-            death_explosion_sound: GREEN_UFO.death_explosion_sound,
-        },
-        GreenUFOMarker,
-        GreenUFOAnim {
-            timer: Timer::from_seconds(1.0 / GREEN_UFO_ANIM_FPS, TimerMode::Repeating),
-            current_frame: 0,
-        },
-        PatternIndex(0),
-        PatternTimer(Timer::from_seconds(
-            phase.patterns.first().map(|p| p.duration).unwrap_or(0.4),
-            TimerMode::Once,
-        )),
-        DropTable {
-            drops: &GREEN_UFO_DROP_TABLE,
-        },
-    ));
+    for _ in 0..wave_size {
+        spawn_one_green_ufo(&mut commands, &frames, window);
+    }
 }
 
 // ─── Spawn one-shot (via spawn_requests) ────────────────────────────

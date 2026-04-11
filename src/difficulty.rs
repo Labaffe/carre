@@ -64,8 +64,9 @@ pub struct Difficulty {
     /// Ex: `("boss", 2)` spawne 2 boss, `("green_ufo", 4)` spawne 4 GreenUFO.
     /// Consommées par le système de spawn de chaque ennemi.
     pub spawn_requests: Vec<(&'static str, usize)>,
-    /// Spawners continus actifs : nom → intervalle en secondes (ex: "green_ufo" → 2.0).
-    pub active_spawners: HashMap<&'static str, f32>,
+    /// Spawners continus actifs : nom → (quantité par vague, intervalle en secondes).
+    /// Ex: `"green_ufo" → (4, 5.0)` spawne 4 GreenUFOs toutes les 5s.
+    pub active_spawners: HashMap<&'static str, (usize, f32)>,
     /// Instant (elapsed) où la décélération du background a commencé.
     pub bg_decel_start_elapsed: Option<f32>,
     /// Durée de la décélération du background (secondes).

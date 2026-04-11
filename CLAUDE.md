@@ -133,7 +133,7 @@ level.rs (LevelRunner)          difficulty.rs (Difficulty)         systèmes de 
 ────────────────────           ──────────────────────────         ─────────────────
 SetDifficulty(3.5)     ──→     difficulty.factor = 3.5      ──→  asteroid spawn rate
 StopAsteroidSpawning   ──→     difficulty.spawning_stopped  ──→  asteroid.rs arrête
-StartSpawning("x",2)   ──→     difficulty.active_spawners   ──→  green_ufo.rs active
+StartSpawning("x",4,2) ──→     difficulty.active_spawners   ──→  green_ufo.rs: 4×/2s
 SpawnEnemy("boss",2)   ──→     difficulty.spawn_requests    ──→  boss.rs spawne 2×
 StartBgDeceleration    ──→     difficulty.bg_decel_*        ──→  difficulty.rs calcule
 ShowPlanet             ──→     difficulty.planet_appear_*   ──→  background.rs anime
@@ -174,7 +174,7 @@ LevelStep::after_step("boss_spawn", 10.0, "boss1_ufos")
 | `StartCountdown` | Envoie `CountdownEvent` (READY-3-2-1-GO) |
 | `SendBoom` | Envoie `BoomEvent` (flash visuel) |
 | `SpawnEnemy(&str, usize)` | Spawn N ennemis d'un type via `spawn_requests` (ex: `"boss", 2`) |
-| `StartSpawning(&str, f32)` | Spawner continu via `active_spawners` (ex: `"green_ufo"`, 2.0) |
+| `StartSpawning(&str, usize, f32)` | Spawner continu : N ennemis toutes les Xs (ex: `"green_ufo", 4, 5.0`) |
 | `StopSpawning(&str)` | Désactive un spawner continu |
 | `StopAsteroidSpawning` | `difficulty.spawning_stopped = true` |
 | `StartBgDeceleration { duration, final_speed }` | Décélération progressive du background |
@@ -194,7 +194,7 @@ pub struct LevelRunner {
 
 // Dans Difficulty (hub de communication) :
 pub spawn_requests: Vec<(&str, usize)>,  // spawns one-shot (nom, quantité)
-pub active_spawners: HashMap<&str, f32>, // spawners continus (nom → intervalle)
+pub active_spawners: HashMap<&str, (usize, f32)>, // spawners continus (nom → (quantité, intervalle))
 ```
 
 Le runner parcourt les étapes dans l'ordre. Quand le déclencheur d'une étape est atteint, toutes ses actions s'exécutent et le temps est enregistré dans `trigger_times` pour les `After`.
@@ -204,16 +204,16 @@ Le runner parcourt les étapes dans l'ordre. Quand le déclencheur d'une étape 
 ```
  0.0s  game_start      Music(gradius.ogg), Diff(0.5)
  7.0s  countdown       Sound(charging.ogg), Countdown
-10.0s  phase_2_start   Diff(3.5), Start(green_ufo,2s)
+10.0s  phase_2_start   Diff(3.5), Start(4×green_ufo,2s)
 14.3s  boom_1          Diff(4.5), Sound(t_go.wav), Boom
 18.3s  boom_2          Diff(6.5), Sound(t_go.wav), Boom
 22.6s  boom_3          Diff(7.5), Sound(t_go.wav), Boom
 27.7s  pre_boss        StopAst, Stop(green_ufo), BgDecel(9s,30)
 28.0s  planet_appear   Planet
 35.8s  boss_spawn      Spawn(1×boss), StopMusic
-      +10s boss1_ufos  Spawn(4×green_ufo)  [-> boss_spawn]
+      +10s boss1_ufos  Start(4×green_ufo,5s)  [-> boss_spawn]
       +30s boss_spawn_2 Spawn(1×boss)  [-> boss_spawn]
-      +10s boss2_ufos  Spawn(4×green_ufo)  [-> boss_spawn_2]
+      +10s boss2_ufos  Start(4×green_ufo,5s)  [-> boss_spawn_2]
 ```
 
 Chaque boss gère sa propre séquence interne (Entering → Flexing → Idle → Active) car elle dépend de l'état du boss, pas du temps absolu. La musique boss (`boss.ogg`) est lancée une seule fois quand le premier boss atteint Idle, et ne s'arrête qu'à la mort du **dernier** boss vivant.
@@ -249,8 +249,8 @@ for _ in 0..count { /* spawner un ennemi */ }
 Exemple pour un spawner continu :
 ```rust
 // Dans le système de spawn du nouvel ennemi :
-let Some(&interval) = difficulty.active_spawners.get("mon_ennemi") else { return; };
-// ... utiliser interval pour le timer de spawn
+let Some(&(wave_size, interval)) = difficulty.active_spawners.get("mon_ennemi") else { return; };
+// ... utiliser wave_size et interval pour le timer de spawn
 ```
 
 ### Ajouter une nouvelle Action
