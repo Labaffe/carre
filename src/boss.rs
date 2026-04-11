@@ -68,7 +68,9 @@ const BOSS_IDLE_FPS: f32 = 10.0;
 
 // Patrol
 const BOSS_MARGIN: f32 = 80.0;
-const BOSS_PATROL_SPEED_X: f32 = 270.0;
+/// Vitesse de patrol horizontale par phase (px/s).
+/// Phase 1 : lente, Phase 2 : normale, Phase 3 : normale.
+const BOSS_PATROL_SPEEDS_X: [f32; 3] = [200.0, 270.0, 270.0];
 const BOSS_SINE_AMPLITUDE_Y: f32 = 0.85;
 const BOSS_SINE_FREQ_Y: f32 = 4.5;
 
@@ -77,10 +79,14 @@ const BOSS_SINE_FREQ_Y: f32 = 4.5;
 const BOSS_TRANSITION_DURATION: f32 = 2.0;
 /// Amplitude max du tremblement pendant la transition.
 const BOSS_TRANSITION_SHAKE_MAX: f32 = 12.0;
+/// Nombre d'UFOs spawnés à la fin de chaque transition (indexé par next_phase).
+/// Transition 0→1 : 2 UFOs, transition 1→2 : 4 UFOs.
+const BOSS_TRANSITION_UFO_COUNT: [usize; 3] = [0, 2, 4];
 
 // Charge
-/// Vitesse de la charge vers le joueur (px/s).
-const BOSS_CHARGE_SPEED: f32 = 2500.0;
+/// Vitesse de la charge par phase (px/s).
+/// Phase 1 : lente, Phase 2 : moyenne, Phase 3 : rapide.
+const BOSS_CHARGE_SPEEDS: [f32; 3] = [1500.0, 2000.0, 2500.0];
 /// Tolérance en Y pour déclencher la charge (px).
 const BOSS_CHARGE_ALIGN_THRESHOLD: f32 = 50.0;
 /// Vitesse de rotation pendant la charge (rad/s).
@@ -226,7 +232,7 @@ fn spawn_boss(
                 sine_time: 0.0,
                 initialized: false,
                 enabled: false,
-                speed_x: BOSS_PATROL_SPEED_X,
+                speed_x: BOSS_PATROL_SPEEDS_X[0],
                 sine_amplitude_y: BOSS_SINE_AMPLITUDE_Y,
                 sine_freq_y: BOSS_SINE_FREQ_Y,
                 margin: BOSS_MARGIN,
@@ -579,9 +585,13 @@ fn boss_transition_animate(
             let first_duration = def.patterns.first().map(|p| p.duration).unwrap_or(1.0);
             pattern_timer.0 = Timer::from_seconds(first_duration, TimerMode::Once);
 
-            // Réactiver le patrol
+            // Réactiver le patrol avec la vitesse de la nouvelle phase
             patrol.enabled = true;
             patrol.initialized = false;
+            patrol.speed_x = BOSS_PATROL_SPEEDS_X
+                .get(next_phase)
+                .copied()
+                .unwrap_or(BOSS_PATROL_SPEEDS_X[2]);
 
             // Son d'entrée de phase
             if let Some(sound) = def.enter_sound {
@@ -593,12 +603,21 @@ fn boss_transition_animate(
 
             commands.entity(entity).remove::<BossTransition>();
 
-            // Spawner 1 GreenUFO de chaque côté de l'écran à la fin de la transition
+            // Spawner des GreenUFOs à la fin de la transition
+            // Phase 1→2 : 2 UFOs (haut + bas), Phase 2→3 : 4 UFOs (chaque côté)
             use crate::difficulty::SpawnPosition;
-            difficulty.spawn_requests.push(("green_ufo", 1, SpawnPosition::Top));
-            difficulty.spawn_requests.push(("green_ufo", 1, SpawnPosition::Bottom));
-            difficulty.spawn_requests.push(("green_ufo", 1, SpawnPosition::Left));
-            difficulty.spawn_requests.push(("green_ufo", 1, SpawnPosition::Right));
+            let ufo_count = BOSS_TRANSITION_UFO_COUNT
+                .get(next_phase)
+                .copied()
+                .unwrap_or(4);
+            if ufo_count >= 2 {
+                difficulty.spawn_requests.push(("green_ufo", 1, SpawnPosition::Top));
+                difficulty.spawn_requests.push(("green_ufo", 1, SpawnPosition::Bottom));
+            }
+            if ufo_count >= 4 {
+                difficulty.spawn_requests.push(("green_ufo", 1, SpawnPosition::Left));
+                difficulty.spawn_requests.push(("green_ufo", 1, SpawnPosition::Right));
+            }
         }
     }
 }
@@ -759,10 +778,16 @@ fn boss_charge_movement(
         // Désactiver le patrol pendant la charge
         patrol.enabled = false;
 
+        // Vitesse de charge selon la phase
+        let charge_speed = BOSS_CHARGE_SPEEDS
+            .get(phase_idx)
+            .copied()
+            .unwrap_or(BOSS_CHARGE_SPEEDS[2]);
+
         // Avancer en ligne droite
         let dt = time.delta_seconds();
-        transform.translation.x += charge.direction.x * BOSS_CHARGE_SPEED * dt;
-        transform.translation.y += charge.direction.y * BOSS_CHARGE_SPEED * dt;
+        transform.translation.x += charge.direction.x * charge_speed * dt;
+        transform.translation.y += charge.direction.y * charge_speed * dt;
 
         // Tourner sur lui-même pendant la charge
         transform.rotate_z(BOSS_CHARGE_SPIN_SPEED * dt);
@@ -922,7 +947,7 @@ fn debug_skip_to_boss(
             sine_time: 0.0,
             initialized: false,
             enabled: false,
-            speed_x: BOSS_PATROL_SPEED_X,
+            speed_x: BOSS_PATROL_SPEEDS_X[0],
             sine_amplitude_y: BOSS_SINE_AMPLITUDE_Y,
             sine_freq_y: BOSS_SINE_FREQ_Y,
             margin: BOSS_MARGIN,
