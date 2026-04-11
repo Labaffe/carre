@@ -358,11 +358,19 @@ fn green_ufo_death(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     death_frames: Res<GreenUFODeathFrames>,
-    query: Query<(Entity, &Enemy, &Transform), (With<GreenUFOMarker>, Changed<Enemy>)>,
+    mut query: Query<(Entity, &Enemy, &Transform, &mut Visibility), (With<GreenUFOMarker>, Changed<Enemy>)>,
 ) {
-    for (_entity, enemy, transform) in query.iter() {
+    for (entity, enemy, transform, mut visibility) in query.iter_mut() {
         if enemy.state != EnemyState::Dying {
             continue;
+        }
+
+        // Cacher le sprite original (enemy_dying gère le despawn)
+        *visibility = Visibility::Hidden;
+
+        // Stopper le rush si en cours
+        if let Some(mut ent) = commands.get_entity(entity) {
+            ent.remove::<GreenUFORush>();
         }
 
         // Animation de mort custom (frames green_ufo/death/)

@@ -146,7 +146,7 @@ pub static GREEN_UFO: EnemyDef = EnemyDef {
     radius: 30.0,
     sprite_size: 64.0,
     phases: &GREEN_UFO_PHASES,
-    death_duration: 0.01,
+    death_duration: 0.05,
     death_shake_max: 0.0,
     hit_sound: "audio/asteroid_hit.ogg",
     death_explosion_sound: "audio/asteroid_die.ogg",
