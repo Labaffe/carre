@@ -50,7 +50,7 @@ impl Plugin for ItemPlugin {
 
 const ITEM_FALL_SPEED: f32 = 300.0;
 const ITEM_PICKUP_RADIUS: f32 = 30.0;
-const ITEM_SPRITE_SIZE: f32 = 48.0;
+const ITEM_SPRITE_SIZE: f32 = 72.0;
 
 /// Dégâts infligés par la bombe aux astéroïdes.
 const BOMB_DAMAGE_ASTEROID: i32 = 999;
@@ -59,7 +59,7 @@ const BOMB_DAMAGE_ENEMY: i32 = 50;
 /// Durée du flash blanc à l'écran (secondes).
 const BOMB_FLASH_DURATION: f32 = 0.4;
 /// Taille des icônes de bombe dans l'UI.
-const BOMB_ICON_SIZE: f32 = 40.0;
+const BOMB_ICON_SIZE: f32 = 56.0;
 /// Nombre max de bombes affichées dans l'UI.
 const BOMB_MAX_DISPLAY: i32 = 10;
 /// Durée visible du texte clignotant (secondes).
