@@ -13,6 +13,7 @@ use crate::enemy::{Enemy, EnemyState};
 use crate::explosion::load_frames_from_folder;
 use crate::pause::not_paused;
 use crate::player::Player;
+use crate::score::Score;
 use crate::state::GameState;
 use bevy::prelude::*;
 
@@ -66,18 +67,22 @@ const BOMB_MAX_DISPLAY: i32 = 10;
 const BOMB_HINT_VISIBLE: f32 = 0.7;
 /// Durée invisible du texte clignotant (secondes).
 const BOMB_HINT_HIDDEN: f32 = 0.3;
+/// Bonus de score accordé par l'item BonusScore.
+const BONUS_SCORE_VALUE: i32 = 50;
 
 // ─── Types d'items ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy)]
 pub enum ItemType {
     Bomb,
+    BonusScore,
 }
 
 impl ItemType {
     fn pickup_sound(&self) -> &'static str {
         match self {
             ItemType::Bomb => "audio/level_up.ogg",
+            ItemType::BonusScore => "audio/level_up.ogg",
         }
     }
 }
@@ -102,6 +107,7 @@ struct ItemAnim {
 #[derive(Resource)]
 struct ItemFrames {
     bomb: Vec<Handle<Image>>,
+    bonus_score: Vec<Handle<Image>>,
 }
 
 /// Table de drop attachée à une entité.
@@ -167,7 +173,9 @@ const ITEM_ANIM_FPS: f32 = 0.12;
 
 fn preload_item_frames(mut commands: Commands, asset_server: Res<AssetServer>) {
     let bomb = load_frames_from_folder(&asset_server, "images/bomb").unwrap_or_default();
-    commands.insert_resource(ItemFrames { bomb });
+    let bonus_score =
+        load_frames_from_folder(&asset_server, "images/bonus_score").unwrap_or_default();
+    commands.insert_resource(ItemFrames { bomb, bonus_score });
 }
 
 fn reset_bombs(mut bombs: ResMut<PlayerBombs>) {
@@ -419,6 +427,7 @@ fn process_drop_events(
 
             let frames = match item_type {
                 ItemType::Bomb => item_frames.bomb.clone(),
+                ItemType::BonusScore => item_frames.bonus_score.clone(),
             };
 
             let first_frame = frames.first().cloned().unwrap_or_default();
@@ -493,6 +502,7 @@ fn player_pickup(
     player_q: Query<&Transform, With<Player>>,
     item_q: Query<(Entity, &Transform, &Droppable)>,
     mut bombs: ResMut<PlayerBombs>,
+    mut score: ResMut<Score>,
 ) {
     let Ok(player_transform) = player_q.get_single() else {
         return;
@@ -509,6 +519,9 @@ fn player_pickup(
         match droppable.item_type {
             ItemType::Bomb => {
                 bombs.count += 1;
+            }
+            ItemType::BonusScore => {
+                score.add(BONUS_SCORE_VALUE);
             }
         }
 

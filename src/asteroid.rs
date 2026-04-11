@@ -12,8 +12,11 @@ use crate::state::GameState;
 use bevy::prelude::*;
 use std::time::Duration;
 
-/// 15% de chance de drop une bombe par astéroïde détruit.
-static ASTEROID_DROP_TABLE: [(ItemType, f32); 1] = [(ItemType::Bomb, 0.05)];
+/// Table de drop des astéroïdes : 5% bombe, 10% bonus score.
+static ASTEROID_DROP_TABLE: [(ItemType, f32); 2] = [
+    (ItemType::Bomb, 0.05),
+    (ItemType::BonusScore, 0.10),
+];
 
 pub struct AsteroidPlugin;
 
