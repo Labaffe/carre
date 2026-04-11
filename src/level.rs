@@ -227,6 +227,44 @@ impl LevelRunner {
     pub fn trigger_time(&self, label: &str) -> Option<f32> {
         self.trigger_times.get(label).copied()
     }
+
+    /// Avance le runner jusqu'au label donné (inclus), en marquant toutes
+    /// les étapes intermédiaires comme exécutées au temps `at_time`.
+    /// Retourne les actions de toutes les étapes sautées + l'étape cible.
+    ///
+    /// Si le label a déjà été exécuté, met juste à jour `elapsed` et
+    /// retourne un vecteur vide (pas de double exécution).
+    pub fn skip_to(&mut self, label: &str, at_time: f32) -> Vec<Vec<Action>> {
+        // Label déjà exécuté → juste mettre à jour le temps
+        if self.trigger_times.contains_key(label) {
+            self.elapsed = at_time.max(self.elapsed);
+            return Vec::new();
+        }
+
+        let mut all_actions = Vec::new();
+        self.elapsed = at_time;
+
+        loop {
+            if self.current >= self.steps.len() {
+                break;
+            }
+
+            let step = &self.steps[self.current];
+            let step_label = step.label;
+            let actions = step.actions.clone();
+
+            self.trigger_times.insert(step_label, at_time);
+            self.last_trigger_time = at_time;
+            all_actions.push(actions);
+            self.current += 1;
+
+            if step_label == label {
+                break;
+            }
+        }
+
+        all_actions
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -234,6 +272,21 @@ impl LevelRunner {
 // ═══════════════════════════════════════════════════════════════════════
 
 impl Action {
+    /// Indique si cette action doit être rejouée lors d'un skip debug (F2/F3).
+    /// Les actions d'état (difficulté, spawners, background) sont rejouées.
+    /// Les actions cosmétiques (sons, musique, booms, spawns) sont ignorées.
+    pub fn should_replay_on_skip(&self) -> bool {
+        matches!(
+            self,
+            Action::SetDifficulty(_)
+                | Action::StopMainMusic
+                | Action::StopSpawning(_)
+                | Action::StopAsteroidSpawning
+                | Action::StartBgDeceleration { .. }
+                | Action::ShowPlanet
+        )
+    }
+
     /// Retourne un nom court de l'action pour l'overlay debug.
     pub fn short_name(&self) -> String {
         match self {
@@ -427,7 +480,7 @@ fn run_level(
     }
 }
 
-fn execute_action(
+pub(crate) fn execute_action(
     action: &Action,
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,

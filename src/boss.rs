@@ -15,6 +15,8 @@ use crate::difficulty::Difficulty;
 use crate::enemies::BOSS;
 use crate::enemy::{Enemy, EnemyState, PatrolMovement, PatternIndex, PatternTimer};
 use crate::explosion::load_frames_from_folder;
+use crate::green_ufo::GreenUFOMarker;
+use crate::level::LevelRunner;
 use crate::pause::not_paused;
 use crate::player::Player;
 use crate::state::GameState;
@@ -805,46 +807,66 @@ fn debug_skip_to_boss(
     keyboard: Res<ButtonInput<KeyCode>>,
     asset_server: Res<AssetServer>,
     mut difficulty: ResMut<Difficulty>,
+    runner: Option<ResMut<LevelRunner>>,
     boss_q: Query<Entity, With<BossMarker>>,
     asteroid_q: Query<Entity, With<Asteroid>>,
+    green_ufo_q: Query<Entity, With<GreenUFOMarker>>,
     music_q: Query<Entity, With<MusicMain>>,
     boss_music_q: Query<Entity, With<MusicBoss>>,
+    mut boom_events: EventWriter<crate::difficulty::BoomEvent>,
+    mut countdown_events: EventWriter<crate::countdown::CountdownEvent>,
 ) {
     if !keyboard.just_pressed(KeyCode::F3) {
         return;
     }
 
+    // ─── Nettoyage des entités ──────────────────────────────────
     for entity in asteroid_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
-        }
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
-    for entity in music_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
-        }
+    for entity in green_ufo_q.iter() {
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+    }
+    for entity in boss_q.iter() {
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
     for entity in boss_music_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+    }
+
+    // ─── Avancer le LevelRunner jusqu'à "boss_spawn" ────────────
+    // Synchroniser difficulty.elapsed AVANT d'exécuter les actions
+    difficulty.elapsed = 35.8;
+
+    if let Some(mut runner) = runner {
+        let all_actions = runner.skip_to("boss_spawn", 35.8);
+        for actions in &all_actions {
+            for action in actions {
+                // Ignorer les actions cosmétiques (sons, booms, countdown, musique, spawns)
+                if !action.should_replay_on_skip() {
+                    continue;
+                }
+                crate::level::execute_action(
+                    action,
+                    &mut commands,
+                    &asset_server,
+                    &mut boom_events,
+                    &mut countdown_events,
+                    &mut difficulty,
+                    &music_q,
+                );
+            }
         }
     }
 
-    difficulty.spawning_stopped = true;
-    difficulty.active_spawners.clear();
-    difficulty.factor = 7.5;
+    // ─── État boss-spécifique (non couvert par les actions) ─────
     difficulty.boss_music_played = false;
     difficulty.boss_music_start_time = None;
     difficulty.boss_active_time = None;
     difficulty.landing_played = true;
     difficulty.boss_spawned = true;
 
-    for entity in boss_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
-        }
-    }
-
+    // ─── Spawn du boss en Flexing (skip l'intro de 7s) ──────────
     commands.spawn(AudioBundle {
         source: asset_server.load("audio/boss_start_2.ogg"),
         settings: PlaybackSettings::DESPAWN,

@@ -105,18 +105,47 @@ fn toggle_debug(
     mut ui_q: Query<&mut Visibility, (With<DebugUI>, Without<DebugLevelUI>)>,
     mut level_ui_q: Query<&mut Visibility, (With<DebugLevelUI>, Without<DebugUI>)>,
     mut difficulty: ResMut<crate::difficulty::Difficulty>,
+    runner: Option<ResMut<crate::level::LevelRunner>>,
     music_q: Query<Entity, With<MusicMain>>,
+    asteroid_q: Query<Entity, With<Asteroid>>,
+    green_ufo_q: Query<Entity, With<GreenUFOMarker>>,
+    mut boom_events: EventWriter<crate::difficulty::BoomEvent>,
+    mut countdown_events: EventWriter<crate::countdown::CountdownEvent>,
+    asset_server: Res<AssetServer>,
 ) {
     if keyboard.just_pressed(KeyCode::F2) {
-        difficulty.spawning_stopped = true;
-        difficulty.active_spawners.clear();
-        difficulty.factor = 7.5;
-        let t = (4.3 / 6.0_f32).clamp(0.0, 1.0);
-        let bg_speed_at_stop = 150.0 * (1.0 + 8.0 * 3.0);
-        difficulty.bg_speed_override = Some(bg_speed_at_stop + (50.0 - bg_speed_at_stop) * t);
-
-        for entity in music_q.iter() {
+        // Nettoyer les entités en jeu
+        for entity in asteroid_q.iter() {
             if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        }
+        for entity in green_ufo_q.iter() {
+            if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        }
+
+        // Avancer le LevelRunner jusqu'à "planet_appear" (juste avant le boss)
+        if let Some(mut runner) = runner {
+            // Synchroniser difficulty.elapsed AVANT d'exécuter les actions
+            // (StartBgDeceleration et ShowPlanet utilisent difficulty.elapsed)
+            difficulty.elapsed = 28.0;
+
+            let all_actions = runner.skip_to("planet_appear", 28.0);
+            for actions in &all_actions {
+                for action in actions {
+                    // Ignorer les actions cosmétiques (sons, booms, countdown, musique)
+                    if !action.should_replay_on_skip() {
+                        continue;
+                    }
+                    crate::level::execute_action(
+                        action,
+                        &mut commands,
+                        &asset_server,
+                        &mut boom_events,
+                        &mut countdown_events,
+                        &mut difficulty,
+                        &music_q,
+                    );
+                }
+            }
         }
     }
 
