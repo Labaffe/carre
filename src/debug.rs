@@ -8,6 +8,7 @@ use crate::asteroid::Asteroid;
 use crate::boss::{BossCharge, BossMarker};
 use crate::game::{IntroSound, LevelPhase, LevelPhaseKind};
 use crate::green_ufo::GreenUFOMarker;
+use crate::gatling::{GatlingMarker, MothershipMarker};
 use crate::collision::Hittable;
 use crate::difficulty::Difficulty;
 use crate::enemy::{Enemy, EnemyProjectile, EnemyState, PatternIndex, PatternTimer};
@@ -37,6 +38,7 @@ impl Plugin for DebugPlugin {
                     manage_asteroid_labels,
                     debug_mouse_coords,
                     debug_kill_player,
+                    debug_draw_gatling_positions,
                 ),
             );
     }
@@ -679,4 +681,40 @@ fn draw_hitboxes(
     draw_hittable(&mut gizmos, &missile_q, Color::YELLOW);
     draw_hittable(&mut gizmos, &enemy_q, Color::CYAN);
     draw_hittable(&mut gizmos, &enemy_proj_q, Color::rgba(1.0, 0.5, 0.0, 1.0));
+}
+
+/// Dessine en debug la position des tourelles (croix magenta) et du mothership (rectangle jaune).
+fn debug_draw_gatling_positions(
+    debug: Res<DebugMode>,
+    mut gizmos: Gizmos,
+    gatling_q: Query<&Transform, With<GatlingMarker>>,
+    mothership_q: Query<(&Transform, &Sprite), With<MothershipMarker>>,
+) {
+    if !debug.0 {
+        return;
+    }
+
+    // Mothership : rectangle jaune
+    for (tf, sprite) in mothership_q.iter() {
+        let size = sprite.custom_size.unwrap_or(Vec2::new(100.0, 100.0));
+        gizmos.rect_2d(tf.translation.truncate(), 0.0, size, Color::YELLOW);
+    }
+
+    // Gatlings : croix magenta
+    let cross_size = 40.0;
+    for tf in gatling_q.iter() {
+        let pos = tf.translation.truncate();
+        gizmos.line_2d(
+            pos + Vec2::new(-cross_size, -cross_size),
+            pos + Vec2::new(cross_size, cross_size),
+            Color::rgba(1.0, 0.0, 1.0, 1.0),
+        );
+        gizmos.line_2d(
+            pos + Vec2::new(-cross_size, cross_size),
+            pos + Vec2::new(cross_size, -cross_size),
+            Color::rgba(1.0, 0.0, 1.0, 1.0),
+        );
+        // Cercle autour
+        gizmos.circle_2d(pos, cross_size, Color::rgba(1.0, 0.0, 1.0, 1.0));
+    }
 }

@@ -458,9 +458,9 @@ pub fn build_level_1() -> Vec<LevelStep> {
 
 pub fn build_level_2() -> Vec<LevelStep> {
     let turrets = vec![
-        TurretConfig::single("full_auto", 8.0),
-        TurretConfig::single("full_auto", 8.0),
-        TurretConfig::single("full_auto", 8.0),
+        TurretConfig::single("full_auto", 15.0),
+        TurretConfig::single("full_auto", 15.0),
+        TurretConfig::single("full_auto", 15.0),
     ];
     vec![
         LevelStep::at(0.0, "game_start").with(Action::Log("Niveau 2 démarré")),

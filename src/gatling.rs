@@ -59,8 +59,8 @@ const GATLING_ANIM_INTERVAL: f32 = 0.2;
 /// Durée de la phase Entering (secondes).
 const GATLING_ENTERING_DURATION: f32 = 3.0;
 /// Distance parcourue pendant l'Entering (pixels).
-/// 2.5 tiles = 320px pour que le mothership soit bien visible.
-const GATLING_ENTERING_DISTANCE: f32 = 320.0;
+/// Plus la valeur est grande, plus le mothership avance dans l'écran.
+const GATLING_ENTERING_DISTANCE: f32 = 900.0;
 /// Taille du sprite Gatling (pixels).
 const GATLING_SPRITE_SIZE: f32 = 128.0;
 
@@ -80,9 +80,11 @@ const MOTHERSHIP_DRIFT_MINOR_AMP: f32 = 15.0;
 const MOTHERSHIP_DRIFT_MAIN_FREQ: f32 = 0.5;
 /// Fréquence du flottement secondaire (rad/s).
 const MOTHERSHIP_DRIFT_MINOR_FREQ: f32 = 0.3;
-/// Taille de base du placeholder Mothership (7×2 tiles de 128px).
-/// Pour Top/Bottom : largeur × hauteur. Pour Left/Right : inversé automatiquement.
-const MOTHERSHIP_BASE_SIZE: Vec2 = Vec2::new(896.0, 256.0);
+/// Ratio hauteur/largeur du sprite mothership.png (697 / 2048).
+const MOTHERSHIP_SPRITE_RATIO: f32 = 697.0 / 2048.0;
+/// Fraction de la largeur de l'écran occupée par le mothership (Top/Bottom),
+/// ou de la hauteur (Left/Right). >1.0 = dépasse de l'écran.
+const MOTHERSHIP_SCREEN_FRACTION: f32 = 1.5;
 
 // ─── Tir de la Gatling (à ajuster) ──────────────────────────────
 /// Angle de rotation max vers le joueur (degrés).
@@ -222,12 +224,18 @@ impl EntryEdge {
         Quat::from_rotation_z(angle)
     }
 
-    /// Taille du sprite Mothership, inversée pour Left/Right.
-    pub fn sprite_size(self) -> Vec2 {
+    /// Taille du sprite Mothership selon le bord et la taille de la fenêtre.
+    /// Top/Bottom : largeur = MOTHERSHIP_SCREEN_FRACTION × fenêtre, hauteur = ratio.
+    /// Left/Right : hauteur = MOTHERSHIP_SCREEN_FRACTION × fenêtre, largeur = ratio.
+    pub fn mothership_size(self, window_w: f32, window_h: f32) -> Vec2 {
         match self {
-            EntryEdge::Top | EntryEdge::Bottom => MOTHERSHIP_BASE_SIZE,
+            EntryEdge::Top | EntryEdge::Bottom => {
+                let w = window_w * MOTHERSHIP_SCREEN_FRACTION;
+                Vec2::new(w, w * MOTHERSHIP_SPRITE_RATIO)
+            }
             EntryEdge::Left | EntryEdge::Right => {
-                Vec2::new(MOTHERSHIP_BASE_SIZE.y, MOTHERSHIP_BASE_SIZE.x)
+                let h = window_h * MOTHERSHIP_SCREEN_FRACTION;
+                Vec2::new(h * MOTHERSHIP_SPRITE_RATIO, h)
             }
         }
     }
@@ -282,12 +290,12 @@ impl EntryEdge {
 
     /// Vérifie si le Mothership est entièrement sorti de l'écran (pendant le Dying).
     pub fn is_offscreen(self, pos: Vec3, half_w: f32, half_h: f32) -> bool {
-        let size = self.sprite_size();
+        let margin = 600.0;
         match self {
-            EntryEdge::Top => pos.y > half_h + size.y,
-            EntryEdge::Bottom => pos.y < -(half_h + size.y),
-            EntryEdge::Left => pos.x < -(half_w + size.x),
-            EntryEdge::Right => pos.x > half_w + size.x,
+            EntryEdge::Top => pos.y > half_h + margin,
+            EntryEdge::Bottom => pos.y < -(half_h + margin),
+            EntryEdge::Left => pos.x < -(half_w + margin),
+            EntryEdge::Right => pos.x > half_w + margin,
         }
     }
 }
@@ -347,7 +355,9 @@ struct GatlingFullAuto {
     current_angle: f32,
     /// Direction du balayage : +1.0 ou -1.0.
     sweep_dir: f32,
-    /// Temps écoulé depuis le début du pattern.
+    /// Délai avant de commencer le balayage et le tir (secondes).
+    startup_delay: f32,
+    /// Temps écoulé depuis le début du pattern (hors startup_delay).
     elapsed: f32,
     /// Durée totale du pattern (secondes).
     duration: f32,
@@ -413,26 +423,35 @@ fn preload_gatling_frames(mut commands: Commands, asset_server: Res<AssetServer>
     commands.insert_resource(GatlingFrames(frames));
 }
 
-// ─── Offsets Gatling de base (convention Top) ───────────────────────
+// ─── Offsets Gatling dynamiques (convention Top) ────────────────────
 
-/// Calcule les offsets Gatling de base (convention Top).
-/// `x` = spread horizontal, `y` = profondeur sous le Mothership.
-/// Avec l'anchor au sommet du sprite (0, 0.5), la translation = le haut du sprite.
-/// On place le haut du sprite au bord inférieur du Mothership.
-fn base_gatling_offsets() -> [Vec2; 3] {
-    let depth_y = -(MOTHERSHIP_BASE_SIZE.y / 2.0);
-    [
-        Vec2::new(-GATLING_SPACING, depth_y),
-        Vec2::new(0.0, depth_y),
-        Vec2::new(GATLING_SPACING, depth_y),
-    ]
+/// Calcule les offsets des Gatlings répartis uniformément le long du bord
+/// inférieur du Mothership (convention Top).
+/// `n` = nombre de gatlings, `ms_size` = taille du mothership (convention Top),
+/// `screen_span` = largeur (ou hauteur) de l'écran pour clamper les positions.
+fn compute_gatling_offsets(n: usize, ms_size: Vec2, screen_span: f32) -> Vec<Vec2> {
+    // Gatlings proches du bord inférieur du mothership, remontés de 30%
+    let depth_y = -(ms_size.y * 0.2);
+    if n == 0 {
+        return Vec::new();
+    }
+    if n == 1 {
+        return vec![Vec2::new(0.0, depth_y)];
+    }
+    // Spread = min(largeur mothership, largeur écran) - marge pour ne pas coller aux bords
+    let max_spread = (ms_size.x - GATLING_SPRITE_SIZE).min(screen_span - GATLING_SPRITE_SIZE * 3.0);
+    (0..n)
+        .map(|i| {
+            let t = i as f32 / (n - 1) as f32;
+            Vec2::new(-max_spread / 2.0 + t * max_spread, depth_y)
+        })
+        .collect()
 }
 
-/// Étendue totale d'une Gatling depuis le centre du Mothership
+/// Étendue totale depuis le centre du Mothership jusqu'au bout des Gatlings
 /// dans la direction d'entrée (convention Top = vers le bas).
-/// Avec l'anchor au sommet : translation au bord du Mothership + sprite_size complet.
-fn gatling_total_extent() -> f32 {
-    MOTHERSHIP_BASE_SIZE.y / 2.0 + GATLING_SPRITE_SIZE
+fn gatling_total_extent(ms_height: f32) -> f32 {
+    ms_height / 2.0 + GATLING_SPRITE_SIZE
 }
 
 // ─── Spawn Mothership (via spawn_requests "mothership") ─────────────
@@ -442,6 +461,7 @@ fn gatling_total_extent() -> f32 {
 /// chaque tourelle avec sa propre séquence de patterns.
 fn spawn_mothership_oneshot(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     mut spawn_queue: ResMut<MothershipSpawnQueue>,
     frames: Res<GatlingFrames>,
     windows: Query<&Window>,
@@ -456,30 +476,45 @@ fn spawn_mothership_oneshot(
     let half_w = window.width() / 2.0;
     let half_h = window.height() / 2.0;
 
-    let extent = gatling_total_extent();
+    // Taille du mothership : pleine largeur de l'écran (ou pleine hauteur pour Left/Right)
+    let ms_size = edge.mothership_size(window.width(), window.height());
+    let extent = gatling_total_extent(ms_size.y);
     let pos = edge.spawn_position(half_w, half_h, extent);
-    let sprite_size = edge.sprite_size();
     let rotation = edge.sprite_rotation();
 
-    // ─── Spawn du Mothership (placeholder) ───────────────────────
+    // ─── Spawn du Mothership ─────────────────────────────────────
     let mothership_entity = commands
         .spawn((
             SpriteBundle {
+                texture: asset_server.load("images/mothership/mothership.png"),
                 sprite: Sprite {
-                    color: Color::rgba(0.2, 0.2, 0.3, 0.8),
-                    custom_size: Some(sprite_size),
+                    custom_size: Some(ms_size),
                     ..default()
                 },
-                transform: Transform::from_xyz(pos.x, pos.y, 0.4),
+                transform: Transform {
+                    translation: Vec3::new(pos.x, pos.y, 0.4),
+                    rotation,
+                    ..default()
+                },
                 ..default()
             },
             MothershipMarker,
         ))
         .id();
 
-    // ─── Spawn des 3 Gatlings ────────────────────────────────────
-    let base_offsets = base_gatling_offsets();
-    let mut gatling_entities = Vec::with_capacity(3);
+    // ─── Spawn des Gatlings (1 par TurretConfig) ──────────────────
+    let n_gatlings = config.turrets.len().max(1);
+    // Pour compute_gatling_offsets, on passe la taille en convention Top (largeur × hauteur)
+    let ms_size_top = match edge {
+        EntryEdge::Top | EntryEdge::Bottom => ms_size,
+        EntryEdge::Left | EntryEdge::Right => Vec2::new(ms_size.y, ms_size.x),
+    };
+    let screen_span = match edge {
+        EntryEdge::Top | EntryEdge::Bottom => window.width(),
+        EntryEdge::Left | EntryEdge::Right => window.height(),
+    };
+    let base_offsets = compute_gatling_offsets(n_gatlings, ms_size_top, screen_span);
+    let mut gatling_entities = Vec::with_capacity(n_gatlings);
 
     for (i, base_offset) in base_offsets.iter().enumerate() {
         let offset = edge.transform_offset(*base_offset);
@@ -792,7 +827,7 @@ fn mothership_dying(
             transform.translation.y - mothership.start_pos.y,
         );
         let dist_toward_exit = delta.dot(exit_dir).max(0.0);
-        let fade_range = GATLING_ENTERING_DISTANCE + gatling_total_extent();
+        let fade_range = GATLING_ENTERING_DISTANCE + 600.0;
         let progress = (dist_toward_exit / fade_range).clamp(0.0, 1.0);
         sprite.color.set_a(0.8 * (1.0 - progress));
 
@@ -985,9 +1020,14 @@ fn gatling_pattern_executor(
             "full_auto" => {
                 commands.entity(entity).remove::<GatlingShoot>();
 
+                // Délai aléatoire 0.1–1.3s avant de commencer et direction initiale random
+                let delay = 0.1 + fastrand::f32() * 1.2;
+                let dir = if fastrand::bool() { 1.0 } else { -1.0 };
+
                 commands.entity(entity).insert(GatlingFullAuto {
                     current_angle: prev_angle,
-                    sweep_dir: 1.0,
+                    sweep_dir: dir,
+                    startup_delay: delay,
                     elapsed: 0.0,
                     duration: pattern_duration,
                     fire_timer: Timer::from_seconds(FULL_AUTO_FIRE_INTERVAL_START, TimerMode::Repeating),
@@ -1156,6 +1196,15 @@ fn gatling_full_auto_update(
 
     for (base_edge, mut auto, mut transform, mut texture) in query.iter_mut() {
         let rest_rot = base_edge.0.sprite_rotation();
+
+        // ── Délai de démarrage ──
+        if auto.startup_delay > 0.0 {
+            auto.startup_delay -= dt;
+            // Garder la rotation fixe pendant l'attente
+            transform.rotation = rest_rot * Quat::from_rotation_z(auto.current_angle);
+            continue;
+        }
+
         auto.elapsed += dt;
 
         // ── Courbe d'accélération ──
