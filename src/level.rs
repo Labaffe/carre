@@ -443,10 +443,11 @@ pub fn build_level_1() -> Vec<LevelStep> {
 
 pub fn build_level_2() -> Vec<LevelStep> {
     vec![
-        LevelStep::at(0.0, "game_start").with(Action::Log("Niveau 2 démarré")),
-        LevelStep::at(2.0, "level_complete")
-            .with(Action::MarkLevelComplete)
-            .with(Action::Log("Niveau 2 terminé")),
+        LevelStep::at(0.0, "game_start")
+            .with(Action::Log("Niveau 2 démarré")),
+        LevelStep::at(2.0, "spawn_gatling")
+            .with(Action::SpawnEnemy("gatling", 1, SpawnPosition::Top))
+            .with(Action::Log("Gatling spawné")),
     ]
 }
 

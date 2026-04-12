@@ -153,8 +153,39 @@ pub static GREEN_UFO: EnemyDef = EnemyDef {
 };
 
 // ═══════════════════════════════════════════════════════════════════════
+//  GATLING
+// ═══════════════════════════════════════════════════════════════════════
+//  Module : src/gatling.rs
+//  Machine à état : Active(0) → Dying → Dead  (pas d'intro ni de flexing)
+//  Patterns : idle (descente lente)
+//  Particularités :
+//    - Version minimale d'ennemi
+//    - Descend lentement depuis le haut de l'écran
+
+pub static GATLING_PHASES: [PhaseDef; 1] = [PhaseDef {
+    health: 10,
+    enter_sound: None,
+    patterns: &[PatternDef {
+        name: "idle",
+        duration: 99.0,
+    }],
+    has_transition: false,
+}];
+
+pub static GATLING: EnemyDef = EnemyDef {
+    name: "Gatling",
+    radius: 50.0,
+    sprite_size: 128.0,
+    phases: &GATLING_PHASES,
+    death_duration: 0.05,
+    death_shake_max: 0.0,
+    hit_sound: "audio/sfx/asteroid_hit.ogg",
+    death_explosion_sound: "audio/sfx/asteroid_die.ogg",
+};
+
+// ═══════════════════════════════════════════════════════════════════════
 //  LISTE COMPLÈTE
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Tous les ennemis du jeu, pour référence et itération.
-pub static ALL_ENEMIES: &[&EnemyDef] = &[&BOSS, &GREEN_UFO];
+pub static ALL_ENEMIES: &[&EnemyDef] = &[&BOSS, &GREEN_UFO, &GATLING];

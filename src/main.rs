@@ -18,6 +18,7 @@ pub mod enemy;
 pub mod enemies;
 mod boss;
 mod green_ufo;
+mod gatling;
 
 // ─── Entités & effets ──────────────────────────────────────────────
 mod asteroid;
@@ -97,6 +98,7 @@ fn main() {
             EnemyPlugin,
             BossPlugin,
             green_ufo::GreenUFOPlugin,
+            gatling::GatlingPlugin,
         ))
         // Entités & effets
         .add_plugins((
