@@ -64,8 +64,9 @@ const GATLING_ENTERING_DISTANCE: f32 = 900.0;
 /// Taille du sprite Gatling (pixels).
 const GATLING_SPRITE_SIZE: f32 = 128.0;
 
-/// Espacement entre les Gatlings le long de l'axe perpendiculaire (pixels).
-const GATLING_SPACING: f32 = 200.0;
+/// Position des tourelles sur l'axe de profondeur du mothership.
+/// 0.0 = centre, 0.5 = bord inférieur (côté joueur), -0.5 = bord supérieur.
+const GATLING_DEPTH_RATIO: f32 = 0.2;
 /// Vitesse de recul du Mothership pendant la mort (pixels/seconde).
 const MOTHERSHIP_DYING_SPEED: f32 = 100.0;
 
@@ -73,9 +74,9 @@ const MOTHERSHIP_DYING_SPEED: f32 = 100.0;
 // Axe principal = perpendiculaire au bord d'entrée (gauche↔droite pour Top/Bottom).
 // Axe secondaire = parallèle au bord d'entrée (haut↔bas pour Top/Bottom).
 /// Amplitude du flottement principal (pixels).
-const MOTHERSHIP_DRIFT_MAIN_AMP: f32 = 60.0;
+const MOTHERSHIP_DRIFT_MAIN_AMP: f32 = 460.0;
 /// Amplitude du flottement secondaire (pixels).
-const MOTHERSHIP_DRIFT_MINOR_AMP: f32 = 15.0;
+const MOTHERSHIP_DRIFT_MINOR_AMP: f32 = 100.0;
 /// Fréquence du flottement principal (rad/s). Plus haut = plus rapide.
 const MOTHERSHIP_DRIFT_MAIN_FREQ: f32 = 0.5;
 /// Fréquence du flottement secondaire (rad/s).
@@ -430,8 +431,7 @@ fn preload_gatling_frames(mut commands: Commands, asset_server: Res<AssetServer>
 /// `n` = nombre de gatlings, `ms_size` = taille du mothership (convention Top),
 /// `screen_span` = largeur (ou hauteur) de l'écran pour clamper les positions.
 fn compute_gatling_offsets(n: usize, ms_size: Vec2, screen_span: f32) -> Vec<Vec2> {
-    // Gatlings proches du bord inférieur du mothership, remontés de 30%
-    let depth_y = -(ms_size.y * 0.2);
+    let depth_y = -(ms_size.y * GATLING_DEPTH_RATIO);
     if n == 0 {
         return Vec::new();
     }
@@ -486,7 +486,7 @@ fn spawn_mothership_oneshot(
     let mothership_entity = commands
         .spawn((
             SpriteBundle {
-                texture: asset_server.load("images/mothership/mothership.png"),
+                texture: asset_server.load("images/mothership/mothership_2.png"),
                 sprite: Sprite {
                     custom_size: Some(ms_size),
                     ..default()
@@ -832,7 +832,10 @@ fn mothership_dying(
         sprite.color.set_a(0.8 * (1.0 - progress));
 
         // Hors de l'écran → despawn
-        if mothership.edge.is_offscreen(transform.translation, half_w, half_h) {
+        if mothership
+            .edge
+            .is_offscreen(transform.translation, half_w, half_h)
+        {
             if let Some(e) = commands.get_entity(entity) {
                 e.despawn_recursive();
             }
@@ -922,8 +925,18 @@ fn gatling_pattern_executor(
     >,
     player_q: Query<&Transform, (With<Player>, Without<GatlingMarker>)>,
 ) {
-    for (entity, enemy, transform, base_edge, mut pattern_timer, mut pat_idx, mut texture, override_opt, shoot_opt, full_auto_opt) in
-        gatling_q.iter_mut()
+    for (
+        entity,
+        enemy,
+        transform,
+        base_edge,
+        mut pattern_timer,
+        mut pat_idx,
+        mut texture,
+        override_opt,
+        shoot_opt,
+        full_auto_opt,
+    ) in gatling_q.iter_mut()
     {
         let phase_idx = match &enemy.state {
             EnemyState::Active(idx) => *idx,
@@ -983,8 +996,8 @@ fn gatling_pattern_executor(
 
                 // Direction vers le joueur
                 let aim_dir = if let Ok(player_transform) = player_q.get_single() {
-                    let diff = player_transform.translation.truncate()
-                        - transform.translation.truncate();
+                    let diff =
+                        player_transform.translation.truncate() - transform.translation.truncate();
                     if diff.length_squared() > 0.01 {
                         diff.normalize()
                     } else {
@@ -1011,7 +1024,10 @@ fn gatling_pattern_executor(
                     current_angle: prev_angle,
                     elapsed: 0.0,
                     duration: pattern_duration,
-                    anim_timer: Timer::from_seconds(GATLING_SHOOT_ANIM_INTERVAL, TimerMode::Repeating),
+                    anim_timer: Timer::from_seconds(
+                        GATLING_SHOOT_ANIM_INTERVAL,
+                        TimerMode::Repeating,
+                    ),
                     current_frame: 0,
                     fired: false,
                     anim_started: false,
@@ -1030,9 +1046,15 @@ fn gatling_pattern_executor(
                     startup_delay: delay,
                     elapsed: 0.0,
                     duration: pattern_duration,
-                    fire_timer: Timer::from_seconds(FULL_AUTO_FIRE_INTERVAL_START, TimerMode::Repeating),
+                    fire_timer: Timer::from_seconds(
+                        FULL_AUTO_FIRE_INTERVAL_START,
+                        TimerMode::Repeating,
+                    ),
                     anim_frame: None,
-                    anim_timer: Timer::from_seconds(FULL_AUTO_SHOOT_ANIM_INTERVAL, TimerMode::Repeating),
+                    anim_timer: Timer::from_seconds(
+                        FULL_AUTO_SHOOT_ANIM_INTERVAL,
+                        TimerMode::Repeating,
+                    ),
                 });
             }
             "idle" => {
@@ -1082,13 +1104,17 @@ fn gatling_shoot_update(
             let base_atan2 = cannon_dir.y.atan2(cannon_dir.x);
 
             if let Ok(player_transform) = player_q.get_single() {
-                let diff = player_transform.translation.truncate()
-                    - transform.translation.truncate();
+                let diff =
+                    player_transform.translation.truncate() - transform.translation.truncate();
                 if diff.length_squared() > 0.01 {
                     let aim_atan2 = diff.y.atan2(diff.x);
                     let mut relative = aim_atan2 - base_atan2;
-                    while relative > std::f32::consts::PI { relative -= std::f32::consts::TAU; }
-                    while relative < -std::f32::consts::PI { relative += std::f32::consts::TAU; }
+                    while relative > std::f32::consts::PI {
+                        relative -= std::f32::consts::TAU;
+                    }
+                    while relative < -std::f32::consts::PI {
+                        relative += std::f32::consts::TAU;
+                    }
                     shoot.target_angle = relative.clamp(-max_rad, max_rad);
                 }
             }
@@ -1106,7 +1132,8 @@ fn gatling_shoot_update(
             if shoot.elapsed >= anim_start_time {
                 shoot.anim_started = true;
                 shoot.current_frame = 0;
-                shoot.anim_timer = Timer::from_seconds(GATLING_SHOOT_ANIM_INTERVAL, TimerMode::Repeating);
+                shoot.anim_timer =
+                    Timer::from_seconds(GATLING_SHOOT_ANIM_INTERVAL, TimerMode::Repeating);
             }
         } else {
             // Animation de tir
@@ -1133,8 +1160,7 @@ fn gatling_shoot_update(
 
                 // Bout du canon : anchor au sommet, le sprite s'étend de SPRITE_SIZE
                 // dans la direction du canon
-                let cannon_tip = transform.translation.truncate()
-                    + shoot_dir * GATLING_SPRITE_SIZE;
+                let cannon_tip = transform.translation.truncate() + shoot_dir * GATLING_SPRITE_SIZE;
 
                 commands.spawn((
                     SpriteBundle {
@@ -1219,7 +1245,8 @@ fn gatling_full_auto_update(
         // Intervalle de tir interpolé
         let fire_interval = FULL_AUTO_FIRE_INTERVAL_START
             + (FULL_AUTO_FIRE_INTERVAL_MIN - FULL_AUTO_FIRE_INTERVAL_START) * ramp;
-        auto.fire_timer.set_duration(std::time::Duration::from_secs_f32(fire_interval.max(0.05)));
+        auto.fire_timer
+            .set_duration(std::time::Duration::from_secs_f32(fire_interval.max(0.05)));
 
         // ── Balayage ping-pong ──
         auto.current_angle += auto.sweep_dir * sweep_rad;
@@ -1257,7 +1284,8 @@ fn gatling_full_auto_update(
         if auto.fire_timer.just_finished() {
             // Lancer l'animation de tir
             auto.anim_frame = Some(0);
-            auto.anim_timer = Timer::from_seconds(FULL_AUTO_SHOOT_ANIM_INTERVAL, TimerMode::Repeating);
+            auto.anim_timer =
+                Timer::from_seconds(FULL_AUTO_SHOOT_ANIM_INTERVAL, TimerMode::Repeating);
             if let Some(f) = frames.0.first() {
                 *texture = f.clone();
             }
@@ -1269,8 +1297,7 @@ fn gatling_full_auto_update(
             let shoot_dir = Vec2::new(shoot_dir_3.x, shoot_dir_3.y);
 
             // Bout du canon
-            let cannon_tip = transform.translation.truncate()
-                + shoot_dir * GATLING_SPRITE_SIZE;
+            let cannon_tip = transform.translation.truncate() + shoot_dir * GATLING_SPRITE_SIZE;
 
             commands.spawn((
                 SpriteBundle {
