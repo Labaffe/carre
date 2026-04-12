@@ -101,6 +101,9 @@ pub struct Difficulty {
     pub landing_played: bool,
     /// Le boss a déjà été spawné (empêche le double spawn avec F3).
     pub boss_spawned: bool,
+    /// Un boss a été observé vivant dans une query (entité réellement présente).
+    /// Sert à éviter la race condition : boss_spawned=true mais Commands pas encore appliquées.
+    pub boss_seen_alive: bool,
     /// Le niveau est terminé — déclenche l'outro.
     pub level_complete: bool,
     /// Son charging joué avant la phase 3 du vaisseau.
@@ -138,6 +141,7 @@ impl Default for Difficulty {
             boss_bg_initialized: false,
             landing_played: false,
             boss_spawned: false,
+            boss_seen_alive: false,
             level_complete: false,
             phase3_charging_played: false,
             phase3_boom_played: false,

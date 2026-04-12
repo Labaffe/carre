@@ -285,13 +285,18 @@ fn level_phase_system(
 /// `MarkLevelComplete` via le pipeline du niveau.
 /// Pour les niveaux sans boss, `MarkLevelComplete` dans la timeline fait le travail.
 fn detect_boss_death(
-    difficulty: Res<Difficulty>,
+    mut difficulty: ResMut<Difficulty>,
     boss_q: Query<&Enemy, With<BossMarker>>,
     mut level_events: EventWriter<crate::level::LevelActionEvent>,
 ) {
-    // Le boss a été spawné, toutes les entités boss ont disparu (fin d'anim de mort),
+    // Marquer qu'on a vu un boss vivant (évite la race condition avec Commands différées).
+    if !difficulty.boss_seen_alive && !boss_q.is_empty() {
+        difficulty.boss_seen_alive = true;
+    }
+
+    // Le boss a été vu vivant, toutes les entités boss ont disparu (fin d'anim de mort),
     // et le niveau n'est pas encore marqué comme terminé.
-    if difficulty.boss_spawned && boss_q.is_empty() && !difficulty.level_complete {
+    if difficulty.boss_seen_alive && boss_q.is_empty() && !difficulty.level_complete {
         level_events.send(crate::level::LevelActionEvent(vec![
             crate::level::Action::MarkLevelComplete,
         ]));

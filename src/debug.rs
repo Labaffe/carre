@@ -459,7 +459,8 @@ fn update_debug_level_ui(
     ));
 
     if runner.is_finished() {
-        lines.push_str("NIVEAU TERMINE - Boss actif\n");
+        lines.push_str("Toutes les etapes executees\n");
+        lines.push_str("(en attente de MarkLevelComplete)\n");
     }
 
     if let Ok(mut text) = ui_q.get_single_mut() {
