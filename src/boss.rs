@@ -880,6 +880,7 @@ fn debug_skip_to_boss(
                     &mut countdown_events,
                     &mut difficulty,
                     &music_q,
+                    None,
                 );
             }
         }

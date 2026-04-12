@@ -156,18 +156,19 @@ pub static GREEN_UFO: EnemyDef = EnemyDef {
 //  GATLING
 // ═══════════════════════════════════════════════════════════════════════
 //  Module : src/gatling.rs
-//  Machine à état : Active(0) → Dying → Dead  (pas d'intro ni de flexing)
-//  Patterns : idle (descente lente)
+//  Machine à état : Entering → Active(0) → Dying → Dead
+//  Patterns : aim_and_shoot (2s, suivi continu + tir) → repeat
 //  Particularités :
-//    - Version minimale d'ennemi
-//    - Descend lentement depuis le haut de l'écran
+//    - Attachée à un Mothership via MothershipLink
+//    - Rotation vers le joueur (max 40°) en continu
+//    - Tire un EnemyProjectile vers le joueur à la fin du pattern
 
 pub static GATLING_PHASES: [PhaseDef; 1] = [PhaseDef {
     health: 10,
     enter_sound: None,
     patterns: &[PatternDef {
-        name: "idle",
-        duration: 99.0,
+        name: "aim_and_shoot",
+        duration: 2.0,
     }],
     has_transition: false,
 }];

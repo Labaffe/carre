@@ -180,6 +180,7 @@ fn toggle_debug(
                         &mut countdown_events,
                         &mut difficulty,
                         &music_q,
+                        None,
                     );
                 }
             }

@@ -16,6 +16,7 @@
 use std::collections::HashMap;
 
 use crate::difficulty::{BoomEvent, Difficulty, SpawnPosition};
+use crate::gatling::{MothershipConfig, MothershipSpawnQueue, TurretConfig};
 use crate::pause::not_paused;
 use crate::state::GameState;
 use bevy::prelude::*;
@@ -98,6 +99,8 @@ pub enum Action {
     StartSpawning(&'static str, usize, f32, SpawnPosition),
     /// Désactive le spawn continu d'un type d'ennemi.
     StopSpawning(&'static str),
+    /// Spawn un Mothership avec une config par tourelle.
+    SpawnMothership(MothershipConfig),
 
     // ─── Environnement ──────────────────────────────────────────
     /// Démarre la décélération du fond (durée, vitesse finale).
@@ -334,6 +337,18 @@ impl Action {
                 format!("Start({}×{},{}s{})", count, name, interval, pos_str)
             }
             Action::StopSpawning(name) => format!("Stop({})", name),
+            Action::SpawnMothership(config) => {
+                let pos_str = match config.edge {
+                    SpawnPosition::Top => "↑",
+                    SpawnPosition::Bottom => "↓",
+                    SpawnPosition::Left => "←",
+                    SpawnPosition::Right => "→",
+                    SpawnPosition::At(x, y) => {
+                        return format!("Mothership(@{:.0},{:.0})", x, y);
+                    }
+                };
+                format!("Mothership({})", pos_str)
+            }
             Action::StartBgDeceleration {
                 duration,
                 final_speed,
@@ -442,21 +457,17 @@ pub fn build_level_1() -> Vec<LevelStep> {
 // ═══════════════════════════════════════════════════════════════════════
 
 pub fn build_level_2() -> Vec<LevelStep> {
+    let turrets = vec![
+        TurretConfig::single("full_auto", 8.0),
+        TurretConfig::single("full_auto", 8.0),
+        TurretConfig::single("full_auto", 8.0),
+    ];
     vec![
-        LevelStep::at(0.0, "game_start")
-            .with(Action::Log("Niveau 2 démarré")),
-        LevelStep::at(2.0, "spawn_top")
-            .with(Action::SpawnEnemy("mothership", 1, SpawnPosition::Top))
-            .with(Action::Log("Mothership TOP")),
-        LevelStep::at(8.0, "spawn_bottom")
-            .with(Action::SpawnEnemy("mothership", 1, SpawnPosition::Bottom))
-            .with(Action::Log("Mothership BOTTOM")),
-        LevelStep::at(14.0, "spawn_left")
-            .with(Action::SpawnEnemy("mothership", 1, SpawnPosition::Left))
-            .with(Action::Log("Mothership LEFT")),
-        LevelStep::at(20.0, "spawn_right")
-            .with(Action::SpawnEnemy("mothership", 1, SpawnPosition::Right))
-            .with(Action::Log("Mothership RIGHT")),
+        LevelStep::at(0.0, "game_start").with(Action::Log("Niveau 2 démarré")),
+        LevelStep::at(2.0, "spawn_top").with(Action::SpawnMothership(MothershipConfig {
+            edge: SpawnPosition::Top,
+            turrets: turrets.clone(),
+        })),
     ]
 }
 
@@ -498,6 +509,7 @@ fn run_level(
     mut countdown_events: EventWriter<crate::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
     level_phase: Option<Res<crate::game::LevelPhase>>,
+    mut mothership_queue: ResMut<MothershipSpawnQueue>,
 ) {
     // Ne faire tourner les LevelSteps que pendant la phase Running
     let Some(ref phase) = level_phase else { return };
@@ -542,6 +554,7 @@ fn run_level(
                 &mut countdown_events,
                 &mut difficulty,
                 &music_q,
+                Some(&mut mothership_queue),
             );
         }
 
@@ -561,6 +574,7 @@ pub(crate) fn execute_action(
     countdown_events: &mut EventWriter<crate::countdown::CountdownEvent>,
     difficulty: &mut ResMut<Difficulty>,
     music_q: &Query<Entity, With<crate::MusicMain>>,
+    mothership_queue: Option<&mut ResMut<MothershipSpawnQueue>>,
 ) {
     match action {
         Action::SetDifficulty(factor) => {
@@ -608,6 +622,11 @@ pub(crate) fn execute_action(
         Action::StopSpawning(name) => {
             difficulty.active_spawners.remove(name);
         }
+        Action::SpawnMothership(config) => {
+            if let Some(queue) = mothership_queue {
+                queue.0.push(config.clone());
+            }
+        }
         Action::StartBgDeceleration {
             duration,
             final_speed,
@@ -638,6 +657,7 @@ fn process_level_action_events(
     mut boom_events: EventWriter<BoomEvent>,
     mut countdown_events: EventWriter<crate::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
+    mut mothership_queue: ResMut<MothershipSpawnQueue>,
 ) {
     for event in events.read() {
         for action in &event.0 {
@@ -650,6 +670,7 @@ fn process_level_action_events(
                 &mut countdown_events,
                 &mut difficulty,
                 &music_q,
+                Some(&mut mothership_queue),
             );
         }
     }
