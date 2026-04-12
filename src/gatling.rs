@@ -64,9 +64,6 @@ const GATLING_ENTERING_DISTANCE: f32 = 900.0;
 /// Taille du sprite Gatling (pixels).
 const GATLING_SPRITE_SIZE: f32 = 128.0;
 
-/// Position des tourelles sur l'axe de profondeur du mothership.
-/// 0.0 = centre, 0.5 = bord inférieur (côté joueur), -0.5 = bord supérieur.
-const GATLING_DEPTH_RATIO: f32 = 0.2;
 /// Vitesse de recul du Mothership pendant la mort (pixels/seconde).
 const MOTHERSHIP_DYING_SPEED: f32 = 100.0;
 
@@ -76,7 +73,7 @@ const MOTHERSHIP_DYING_SPEED: f32 = 100.0;
 /// Amplitude du flottement principal (pixels).
 const MOTHERSHIP_DRIFT_MAIN_AMP: f32 = 460.0;
 /// Amplitude du flottement secondaire (pixels).
-const MOTHERSHIP_DRIFT_MINOR_AMP: f32 = 100.0;
+const MOTHERSHIP_DRIFT_MINOR_AMP: f32 = 220.0;
 /// Fréquence du flottement principal (rad/s). Plus haut = plus rapide.
 const MOTHERSHIP_DRIFT_MAIN_FREQ: f32 = 0.5;
 /// Fréquence du flottement secondaire (rad/s).
@@ -86,6 +83,23 @@ const MOTHERSHIP_SPRITE_RATIO: f32 = 697.0 / 2048.0;
 /// Fraction de la largeur de l'écran occupée par le mothership (Top/Bottom),
 /// ou de la hauteur (Left/Right). >1.0 = dépasse de l'écran.
 const MOTHERSHIP_SCREEN_FRACTION: f32 = 1.5;
+
+// ─── Silhouette du Mothership (bord inférieur, convention Top) ──
+// Coordonnées normalisées (-0.5..0.5) définissant le bord bas du sprite.
+// Les tourelles sont posées SUR cette ligne. Aucun élément ne doit être
+// placé en dessous (côté joueur).
+// Points ordonnés de gauche à droite.
+pub const MOTHERSHIP_BOTTOM_PROFILE: &[(f32, f32)] = &[
+    (-0.50, 0.0),  // extrême gauche (bord du sprite)
+    (-0.47, -0.1), // flanc gauche
+    (-0.3, -0.1),  // épaule gauche
+    (-0.15, -0.2), // descente gauche
+    (0.0, -0.3),   // pointe centrale (point le plus bas)
+    (0.15, -0.2),  // descente droite
+    (0.3, -0.1),   // épaule droite
+    (0.47, -0.1),  // flanc droite
+    (0.50, 0.0),   // extrême droite (bord du sprite)
+];
 
 // ─── Tir de la Gatling (à ajuster) ──────────────────────────────
 /// Angle de rotation max vers le joueur (degrés).
@@ -127,10 +141,17 @@ pub struct TurretPatternDef {
     pub duration: f32,
 }
 
-/// Configuration d'une tourelle (liste de patterns qui cyclent).
+/// Configuration d'une tourelle (liste de patterns qui cyclent + position sur le sprite).
+///
+/// La position est en coordonnées normalisées sur le sprite mothership (convention Top) :
+/// - `(0.0, 0.0)` = centre du sprite
+/// - `(-0.5, -0.5)` = coin bas-gauche (côté joueur, gauche)
+/// - `(0.5, 0.5)` = coin haut-droit
+/// - `x` = gauche/droite, `y` = profondeur (négatif = vers le joueur)
 #[derive(Clone, Debug)]
 pub struct TurretConfig {
     pub patterns: Vec<TurretPatternDef>,
+    pub pos: Vec2,
 }
 
 /// Configuration complète d'un Mothership.
@@ -144,20 +165,22 @@ pub struct MothershipConfig {
 
 /// Helpers pour construire un `TurretConfig` rapidement.
 impl TurretConfig {
-    /// Un seul pattern qui cycle.
-    pub fn single(name: &'static str, duration: f32) -> Self {
+    /// Un seul pattern qui cycle, à une position donnée sur le sprite.
+    pub fn single(name: &'static str, duration: f32, pos: Vec2) -> Self {
         Self {
             patterns: vec![TurretPatternDef { name, duration }],
+            pos,
         }
     }
 
-    /// Plusieurs patterns qui cyclent dans l'ordre.
-    pub fn sequence(patterns: Vec<(&'static str, f32)>) -> Self {
+    /// Plusieurs patterns qui cyclent dans l'ordre, à une position donnée.
+    pub fn sequence(patterns: Vec<(&'static str, f32)>, pos: Vec2) -> Self {
         Self {
             patterns: patterns
                 .into_iter()
                 .map(|(name, duration)| TurretPatternDef { name, duration })
                 .collect(),
+            pos,
         }
     }
 }
@@ -387,6 +410,8 @@ pub struct Mothership {
     pub vulnerable: bool,
     /// Bord d'apparition — détermine la direction d'entrée, de fuite et la disposition.
     pub edge: EntryEdge,
+    /// Taille du sprite en pixels (convention écran, après scaling).
+    pub size: Vec2,
     /// Timer de la phase Entering.
     pub anim_timer: Timer,
     /// Position de départ hors écran (pour l'animation Entering).
@@ -424,28 +449,13 @@ fn preload_gatling_frames(mut commands: Commands, asset_server: Res<AssetServer>
     commands.insert_resource(GatlingFrames(frames));
 }
 
-// ─── Offsets Gatling dynamiques (convention Top) ────────────────────
+// ─── Offsets Gatling (convention Top) ────────────────────────────────
 
-/// Calcule les offsets des Gatlings répartis uniformément le long du bord
-/// inférieur du Mothership (convention Top).
-/// `n` = nombre de gatlings, `ms_size` = taille du mothership (convention Top),
-/// `screen_span` = largeur (ou hauteur) de l'écran pour clamper les positions.
-fn compute_gatling_offsets(n: usize, ms_size: Vec2, screen_span: f32) -> Vec<Vec2> {
-    let depth_y = -(ms_size.y * GATLING_DEPTH_RATIO);
-    if n == 0 {
-        return Vec::new();
-    }
-    if n == 1 {
-        return vec![Vec2::new(0.0, depth_y)];
-    }
-    // Spread = min(largeur mothership, largeur écran) - marge pour ne pas coller aux bords
-    let max_spread = (ms_size.x - GATLING_SPRITE_SIZE).min(screen_span - GATLING_SPRITE_SIZE * 3.0);
-    (0..n)
-        .map(|i| {
-            let t = i as f32 / (n - 1) as f32;
-            Vec2::new(-max_spread / 2.0 + t * max_spread, depth_y)
-        })
-        .collect()
+/// Convertit la position normalisée d'un `TurretConfig` en offset pixel
+/// relatif au centre du mothership (convention Top).
+/// `pos` = coordonnées normalisées (-0.5..0.5), `ms_size` = taille pixel du mothership.
+fn turret_pos_to_offset(pos: Vec2, ms_size: Vec2) -> Vec2 {
+    Vec2::new(pos.x * ms_size.x, pos.y * ms_size.y)
 }
 
 /// Étendue totale depuis le centre du Mothership jusqu'au bout des Gatlings
@@ -470,6 +480,7 @@ fn spawn_mothership_oneshot(
         return;
     }
     let config = spawn_queue.0.remove(0);
+    info!("Spawning mothership with {} turrets", config.turrets.len());
 
     let edge = EntryEdge::from_spawn_position(config.edge);
     let window = windows.single();
@@ -504,30 +515,21 @@ fn spawn_mothership_oneshot(
 
     // ─── Spawn des Gatlings (1 par TurretConfig) ──────────────────
     let n_gatlings = config.turrets.len().max(1);
-    // Pour compute_gatling_offsets, on passe la taille en convention Top (largeur × hauteur)
+    // Taille en convention Top pour calculer les offsets
     let ms_size_top = match edge {
         EntryEdge::Top | EntryEdge::Bottom => ms_size,
         EntryEdge::Left | EntryEdge::Right => Vec2::new(ms_size.y, ms_size.x),
     };
-    let screen_span = match edge {
-        EntryEdge::Top | EntryEdge::Bottom => window.width(),
-        EntryEdge::Left | EntryEdge::Right => window.height(),
-    };
-    let base_offsets = compute_gatling_offsets(n_gatlings, ms_size_top, screen_span);
     let mut gatling_entities = Vec::with_capacity(n_gatlings);
 
-    for (i, base_offset) in base_offsets.iter().enumerate() {
-        let offset = edge.transform_offset(*base_offset);
+    for (i, turret_cfg) in config.turrets.iter().enumerate() {
+        let base_offset = turret_pos_to_offset(turret_cfg.pos, ms_size_top);
+        let offset = edge.transform_offset(base_offset);
         let gatling_pos = Vec2::new(pos.x + offset.x, pos.y + offset.y);
         let phase = &GATLING.phases[0];
         let first_frame = frames.0.first().cloned().unwrap_or_default();
 
-        // Récupérer la config de cette tourelle (ou la dernière si pas assez de configs)
-        let turret_config = if config.turrets.is_empty() {
-            None
-        } else {
-            Some(config.turrets[i.min(config.turrets.len() - 1)].clone())
-        };
+        let turret_config = Some(turret_cfg.clone());
 
         let mut entity_cmds = commands.spawn((
             SpriteBundle {
@@ -595,6 +597,7 @@ fn spawn_mothership_oneshot(
         state: MothershipPhase::Entering,
         vulnerable: false,
         edge,
+        size: ms_size,
         anim_timer: Timer::from_seconds(GATLING_ENTERING_DURATION, TimerMode::Once),
         start_pos: pos,
         anchor_pos: anchor,
@@ -692,9 +695,8 @@ fn mothership_entering(
         transform.translation.y = mothership.start_pos.y + displacement.y;
 
         if mothership.anim_timer.finished() {
-            let final_disp = dir * GATLING_ENTERING_DISTANCE;
-            transform.translation.x = mothership.start_pos.x + final_disp.x;
-            transform.translation.y = mothership.start_pos.y + final_disp.y;
+            // L'ancre du drift = position actuelle à la fin de l'entering
+            mothership.anchor_pos = transform.translation.truncate();
             mothership.state = MothershipPhase::Active;
 
             // Transitionner toutes les Gatlings en Active(0)
@@ -730,7 +732,7 @@ fn mothership_drift(
         // Axe principal = perpendiculaire au bord d'entrée (gauche-droite pour Top/Bottom)
         // Axe secondaire = parallèle (haut-bas pour Top/Bottom)
         let main_offset = (t * MOTHERSHIP_DRIFT_MAIN_FREQ).sin() * MOTHERSHIP_DRIFT_MAIN_AMP;
-        let minor_offset = (t * MOTHERSHIP_DRIFT_MINOR_FREQ).cos() * MOTHERSHIP_DRIFT_MINOR_AMP;
+        let minor_offset = (t * MOTHERSHIP_DRIFT_MINOR_FREQ).sin() * MOTHERSHIP_DRIFT_MINOR_AMP;
 
         match mothership.edge {
             EntryEdge::Top | EntryEdge::Bottom => {

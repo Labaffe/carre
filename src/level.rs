@@ -457,10 +457,15 @@ pub fn build_level_1() -> Vec<LevelStep> {
 // ═══════════════════════════════════════════════════════════════════════
 
 pub fn build_level_2() -> Vec<LevelStep> {
+    // Positions normalisées sur le sprite : x = gauche(-0.5)..droite(0.5), y = haut(0.5)..bas(-0.5)
     let turrets = vec![
-        TurretConfig::single("full_auto", 15.0),
-        TurretConfig::single("full_auto", 15.0),
-        TurretConfig::single("full_auto", 15.0),
+        TurretConfig::single("aim_and_shoot", 3.0, Vec2::new(-0.47, -0.1)),  // 500px à gauche de la 1ère
+        TurretConfig::single("full_auto", 15.0, Vec2::new(-0.3, -0.1)),      // 1ère originale
+        TurretConfig::single("full_auto", 15.0, Vec2::new(-0.15, -0.2)),     // entre gauche et centre
+        TurretConfig::single("full_auto", 15.0, Vec2::new(0.0, -0.3)),       // centre
+        TurretConfig::single("full_auto", 15.0, Vec2::new(0.15, -0.2)),      // entre centre et droite
+        TurretConfig::single("full_auto", 15.0, Vec2::new(0.3, -0.1)),       // 5ème originale
+        TurretConfig::single("aim_and_shoot", 3.0, Vec2::new(0.47, -0.1)),   // 500px à droite de la 5ème
     ];
     vec![
         LevelStep::at(0.0, "game_start").with(Action::Log("Niveau 2 démarré")),

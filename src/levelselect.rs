@@ -148,7 +148,7 @@ fn setup_level_select(
     // Noms des sprites par slot (sans extension)
     let card_names = [
         "prime_space_invader",
-        "empty_prime",
+        "prime_mothership",
         "empty_prime",
         "empty_prime",
     ];

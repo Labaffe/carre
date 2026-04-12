@@ -8,7 +8,7 @@ use crate::asteroid::Asteroid;
 use crate::boss::{BossCharge, BossMarker};
 use crate::game::{IntroSound, LevelPhase, LevelPhaseKind};
 use crate::green_ufo::GreenUFOMarker;
-use crate::gatling::{GatlingMarker, MothershipMarker};
+use crate::gatling::{GatlingMarker, Mothership, MothershipMarker, MOTHERSHIP_BOTTOM_PROFILE};
 use crate::collision::Hittable;
 use crate::difficulty::Difficulty;
 use crate::enemy::{Enemy, EnemyProjectile, EnemyState, PatternIndex, PatternTimer};
@@ -683,21 +683,50 @@ fn draw_hitboxes(
     draw_hittable(&mut gizmos, &enemy_proj_q, Color::rgba(1.0, 0.5, 0.0, 1.0));
 }
 
-/// Dessine en debug la position des tourelles (croix magenta) et du mothership (rectangle jaune).
+/// Dessine en debug la position des tourelles (croix magenta),
+/// le rectangle du mothership (jaune) et la silhouette du bord bas (rouge).
 fn debug_draw_gatling_positions(
     debug: Res<DebugMode>,
     mut gizmos: Gizmos,
     gatling_q: Query<&Transform, With<GatlingMarker>>,
-    mothership_q: Query<(&Transform, &Sprite), With<MothershipMarker>>,
+    mothership_q: Query<(&Transform, &Mothership, &Sprite), With<MothershipMarker>>,
 ) {
     if !debug.0 {
         return;
     }
 
-    // Mothership : rectangle jaune
-    for (tf, sprite) in mothership_q.iter() {
-        let size = sprite.custom_size.unwrap_or(Vec2::new(100.0, 100.0));
-        gizmos.rect_2d(tf.translation.truncate(), 0.0, size, Color::YELLOW);
+    for (tf, ms, sprite) in mothership_q.iter() {
+        let size = sprite.custom_size.unwrap_or(ms.size);
+        let center = tf.translation.truncate();
+
+        // Rectangle jaune du sprite
+        gizmos.rect_2d(center, 0.0, size, Color::YELLOW);
+
+        // Silhouette du bord bas (rouge) — profil MOTHERSHIP_BOTTOM_PROFILE
+        // Convention Top : les coords normalisées sont converties en pixels
+        // puis transformées selon le bord d'entrée.
+        let ms_size_top = match ms.edge {
+            crate::gatling::EntryEdge::Top | crate::gatling::EntryEdge::Bottom => size,
+            crate::gatling::EntryEdge::Left | crate::gatling::EntryEdge::Right => Vec2::new(size.y, size.x),
+        };
+
+        let profile_points: Vec<Vec2> = MOTHERSHIP_BOTTOM_PROFILE
+            .iter()
+            .map(|&(nx, ny)| {
+                let base = Vec2::new(nx * ms_size_top.x, ny * ms_size_top.y);
+                let offset = ms.edge.transform_offset(base);
+                center + offset
+            })
+            .collect();
+
+        for pair in profile_points.windows(2) {
+            gizmos.line_2d(pair[0], pair[1], Color::RED);
+        }
+
+        // Points du profil (petits cercles rouges)
+        for &pt in &profile_points {
+            gizmos.circle_2d(pt, 8.0, Color::RED);
+        }
     }
 
     // Gatlings : croix magenta
@@ -714,7 +743,6 @@ fn debug_draw_gatling_positions(
             pos + Vec2::new(cross_size, -cross_size),
             Color::rgba(1.0, 0.0, 1.0, 1.0),
         );
-        // Cercle autour
         gizmos.circle_2d(pos, cross_size, Color::rgba(1.0, 0.0, 1.0, 1.0));
     }
 }
