@@ -365,7 +365,7 @@ impl Trigger {
 /// Noms des niveaux, indexés par numéro (1-indexed).
 const LEVEL_NAMES: &[&str] = &[
     "Space Invader", // Niveau 1
-    "Empty",         // Niveau 2
+    "MotherShip",    // Niveau 2
 ];
 
 /// Retourne le nom d'un niveau (1-indexed). Fallback : "Niveau N".
