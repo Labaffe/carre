@@ -324,6 +324,7 @@ fn update_debug_level_ui(
     runner: Option<Res<LevelRunner>>,
     progress: Res<crate::game::GameProgress>,
     mut ui_q: Query<&mut Text, With<DebugLevelUI>>,
+    level_phase: Option<Res<crate::game::LevelPhase>>,
 ) {
     if !debug.0 {
         return;
@@ -338,7 +339,26 @@ fn update_debug_level_ui(
     let elapsed = runner.elapsed;
 
     let name = crate::level::level_name(progress.current_level);
-    let mut lines = format!("--- {} (Niveau {}) ---\n\n", name, progress.current_level);
+    let mut lines = format!("--- {} (Niveau {}) ---\n", name, progress.current_level);
+
+    // Afficher la phase courante du niveau
+    if let Some(ref phase) = level_phase {
+        let phase_str = match &phase.phase {
+            crate::game::LevelPhaseKind::Intro { elapsed, duration, sound_finished, .. } => {
+                format!("INTRO  {:.1}s / {:.1}s  son:{}", elapsed, duration, if *sound_finished { "fini" } else { "en cours" })
+            }
+            crate::game::LevelPhaseKind::Running => "RUNNING".to_string(),
+            crate::game::LevelPhaseKind::OutroCountdown { timer } => {
+                let remaining = timer.duration().as_secs_f32() - timer.elapsed_secs();
+                format!("OUTRO COUNTDOWN  {:.1}s", remaining)
+            }
+            crate::game::LevelPhaseKind::Outro { elapsed, .. } => {
+                format!("OUTRO  {:.1}s", elapsed)
+            }
+        };
+        lines.push_str(&format!("Phase : {}\n", phase_str));
+    }
+    lines.push('\n');
 
     for (i, step) in steps.iter().enumerate() {
         // ─── Indicateur de statut ───────────────────────────────

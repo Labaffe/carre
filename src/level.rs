@@ -461,6 +461,20 @@ fn setup_level(mut commands: Commands, progress: Res<crate::game::GameProgress>)
         _ => build_level_1(), // fallback
     };
     commands.insert_resource(LevelRunner::new(steps));
+
+    // Créer la LevelPhase : tous les niveaux commencent par une intro
+    let intro = crate::game::level_intro(progress.current_level);
+    let phase = crate::game::LevelPhaseKind::Intro {
+        elapsed: 0.0,
+        duration: intro.duration,
+        sound: intro.sound,
+        sound_played: false,
+        sound_finished: false,
+        start_y: 0.0,
+        target_y: 0.0,
+        initialized: false,
+    };
+    commands.insert_resource(crate::game::LevelPhase { phase });
 }
 
 fn run_level(
@@ -472,7 +486,13 @@ fn run_level(
     mut boom_events: EventWriter<BoomEvent>,
     mut countdown_events: EventWriter<crate::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
+    level_phase: Option<Res<crate::game::LevelPhase>>,
 ) {
+    // Ne faire tourner les LevelSteps que pendant la phase Running
+    let Some(ref phase) = level_phase else { return };
+    if !matches!(phase.phase, crate::game::LevelPhaseKind::Running) {
+        return;
+    }
     let Some(mut runner) = runner else { return };
     runner.elapsed += time.delta_seconds();
 
@@ -589,7 +609,7 @@ pub(crate) fn execute_action(
             difficulty.planet_appear_elapsed = Some(difficulty.elapsed);
         }
         Action::MarkLevelComplete => {
-            difficulty.boss_spawned = true;
+            difficulty.level_complete = true;
         }
         Action::Log(msg) => {
             info!("[Level] {}", msg);

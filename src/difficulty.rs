@@ -101,6 +101,8 @@ pub struct Difficulty {
     pub landing_played: bool,
     /// Le boss a déjà été spawné (empêche le double spawn avec F3).
     pub boss_spawned: bool,
+    /// Le niveau est terminé — déclenche l'outro.
+    pub level_complete: bool,
     /// Son charging joué avant la phase 3 du vaisseau.
     pub phase3_charging_played: bool,
     /// Son boom joué au passage en phase 3 du vaisseau.
@@ -136,6 +138,7 @@ impl Default for Difficulty {
             boss_bg_initialized: false,
             landing_played: false,
             boss_spawned: false,
+            level_complete: false,
             phase3_charging_played: false,
             phase3_boom_played: false,
             spawn_requests: Vec::new(),

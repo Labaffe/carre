@@ -1,19 +1,17 @@
-//! Progression du jeu et outro de niveau.
+//! Progression du jeu — machine à état du niveau.
 //!
-//! Le `GameProgress` suit le niveau courant. Quand le dernier boss meurt,
-//! un countdown de 3s démarre, puis l'outro freeze le jeu et affiche
-//! un écran de victoire avec la musique `stage_clear.ogg`.
-//!
-//! Le freeze utilise `PauseState.outro_active` : tous les systèmes gatés
-//! par `not_paused()` s'arrêtent, mais le temps réel continue pour
-//! animer l'outro.
-//!
-//! ## Flow
+//! Chaque niveau suit le flow :
 //! ```text
-//! Boss meurt → 3s countdown → outro (freeze + musique + texte)
-//!   → Entrée → LevelTransition → Playing (niveau suivant)
-//!                ou MainMenu (dernier niveau terminé)
+//! Intro (optionnelle) → Running (LevelSteps) → OutroCountdown → Outro
 //! ```
+//!
+//! - **Intro** : le vaisseau monte depuis le bas de l'écran + son.
+//!   Le gameplay est gelé via `PauseState.intro_active`.
+//! - **Running** : les LevelSteps s'exécutent. Le niveau ne se termine
+//!   PAS quand toutes les étapes sont jouées — il faut un événement
+//!   explicite (`MarkLevelComplete` ou mort du dernier boss).
+//! - **OutroCountdown** : 3s d'attente.
+//! - **Outro** : freeze le jeu, musique `stage_clear.ogg`, écran de victoire.
 
 use std::collections::HashSet;
 
@@ -23,6 +21,7 @@ use crate::difficulty::Difficulty;
 use crate::enemy::{Enemy, EnemyState};
 use crate::level::level_name;
 use crate::pause::PauseState;
+use crate::player::Player;
 use crate::state::GameState;
 use crate::MusicMain;
 use bevy::prelude::*;
@@ -35,6 +34,8 @@ impl Plugin for GamePlugin {
             .add_systems(
                 Update,
                 (
+                    level_phase_system,
+                    detect_boss_death,
                     detect_level_complete,
                     debug_skip_to_outro,
                     level_outro_animate,
@@ -42,7 +43,7 @@ impl Plugin for GamePlugin {
                 )
                     .run_if(in_state(GameState::Playing)),
             )
-            .add_systems(OnExit(GameState::Playing), cleanup_outro)
+            .add_systems(OnExit(GameState::Playing), cleanup_playing)
             .add_systems(
                 OnEnter(GameState::LevelTransition),
                 auto_start_next_level,
@@ -103,15 +104,42 @@ pub struct ConfirmPopupUI;
 #[derive(Component)]
 pub struct ConfirmOptionMarker(pub usize);
 
-/// Countdown avant le déclenchement de l'outro (3s après la mort du boss).
-#[derive(Resource)]
-struct OutroCountdown(Timer);
+// ═══════════════════════════════════════════════════════════════════════
+//  Machine à état du niveau : LevelPhase
+// ═══════════════════════════════════════════════════════════════════════
 
-/// Active pendant la séquence d'outro.
+/// Machine à état du niveau en cours.
+///
+/// ```text
+/// Intro (optionnel) → Running → OutroCountdown → Outro
+/// ```
 #[derive(Resource)]
-struct LevelOutro {
-    elapsed: f32,
-    music_spawned: bool,
+pub struct LevelPhase {
+    pub phase: LevelPhaseKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum LevelPhaseKind {
+    /// Animation d'entrée du vaisseau (optionnelle).
+    /// L'intro se termine quand le son ET l'animation sont finis.
+    Intro {
+        elapsed: f32,
+        /// Durée de l'animation du vaisseau (= durée du son).
+        duration: f32,
+        sound: &'static str,
+        sound_played: bool,
+        /// Le son d'intro a fini de jouer (entité IntroSound despawnée).
+        sound_finished: bool,
+        start_y: f32,
+        target_y: f32,
+        initialized: bool,
+    },
+    /// Niveau en cours : les LevelSteps s'exécutent.
+    Running,
+    /// Countdown avant l'outro (3s après level_complete).
+    OutroCountdown { timer: Timer },
+    /// Séquence d'outro (victoire).
+    Outro { elapsed: f32, music_spawned: bool },
 }
 
 // ─── Composants ─────────────────────────────────────────────────────
@@ -120,18 +148,198 @@ struct LevelOutro {
 #[derive(Component)]
 struct OutroUI;
 
+/// Marqueur pour le son d'intro (landing.ogg). Despawné automatiquement
+/// par Bevy quand la lecture est terminée (PlaybackSettings::DESPAWN).
+#[derive(Component)]
+struct IntroSound;
+
 /// Marqueur pour la musique de l'outro.
 #[derive(Component)]
 pub struct MusicOutro;
 
 // ─── Constantes ─────────────────────────────────────────────────────
 
-/// Délai entre la mort du boss et le début de l'outro (secondes).
+/// Délai entre level_complete et le début de l'outro (secondes).
 const OUTRO_COUNTDOWN: f32 = 3.0;
 /// Délai minimum avant d'accepter l'input pour continuer (secondes).
 const OUTRO_INPUT_DELAY: f32 = 3.0;
 
-// ─── Systèmes ───────────────────────────────────────────────────────
+// ─── Configuration d'intro par niveau ───────────────────────────────
+
+/// Configuration d'une intro de niveau.
+pub struct IntroConfig {
+    /// Durée de l'animation d'entrée du vaisseau (= durée du son).
+    pub duration: f32,
+    /// Son joué pendant l'intro.
+    pub sound: &'static str,
+}
+
+/// Retourne la config d'intro pour un niveau.
+pub fn level_intro(level: usize) -> IntroConfig {
+    match level {
+        2 => IntroConfig {
+            duration: 5.0, // durée de landing.ogg
+            sound: "audio/sfx/landing.ogg",
+        },
+        _ => IntroConfig {
+            duration: 5.0,
+            sound: "audio/sfx/landing.ogg",
+        },
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Systèmes
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Système principal de la machine à état du niveau.
+/// Gère Intro (animation vaisseau) et OutroCountdown (tick timer).
+fn level_phase_system(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut pause: ResMut<PauseState>,
+    asset_server: Res<AssetServer>,
+    mut player_q: Query<&mut Transform, With<Player>>,
+    windows: Query<&Window>,
+    level_phase: Option<ResMut<LevelPhase>>,
+    intro_sound_q: Query<Entity, With<IntroSound>>,
+) {
+    let Some(mut level_phase) = level_phase else { return };
+
+    match &mut level_phase.phase {
+        LevelPhaseKind::Intro {
+            elapsed,
+            duration,
+            sound,
+            sound_played,
+            sound_finished,
+            start_y,
+            target_y,
+            initialized,
+        } => {
+            let window = windows.single();
+            let half_h = window.height() / 2.0;
+
+            // Premier frame : initialiser les positions et activer le freeze
+            if !*initialized {
+                *target_y = -half_h * 0.5;
+                *start_y = -half_h - 150.0;
+                *initialized = true;
+                pause.intro_active = true;
+
+                if let Ok(mut transform) = player_q.get_single_mut() {
+                    transform.translation.y = *start_y;
+                }
+            }
+
+            // Jouer le son une seule fois (avec marqueur IntroSound)
+            if !*sound_played {
+                *sound_played = true;
+                commands.spawn((
+                    AudioBundle {
+                        source: asset_server.load(*sound),
+                        settings: PlaybackSettings::DESPAWN,
+                    },
+                    IntroSound,
+                ));
+            }
+
+            // Détecter la fin du son (entité IntroSound despawnée par Bevy)
+            if *sound_played && !*sound_finished && intro_sound_q.is_empty() {
+                *sound_finished = true;
+            }
+
+            *elapsed += time.delta_seconds();
+            let anim_t = (*elapsed / *duration).clamp(0.0, 1.0);
+
+            // Ease-out quadratique
+            let eased = 1.0 - (1.0 - anim_t).powi(2);
+
+            if let Ok(mut transform) = player_q.get_single_mut() {
+                transform.translation.y = *start_y + (*target_y - *start_y) * eased;
+            }
+
+            // Intro terminée quand l'animation ET le son sont finis
+            if anim_t >= 1.0 && *sound_finished {
+                if let Ok(mut transform) = player_q.get_single_mut() {
+                    transform.translation.y = *target_y;
+                }
+                pause.intro_active = false;
+                level_phase.phase = LevelPhaseKind::Running;
+            }
+        }
+        LevelPhaseKind::Running => {
+            // Le LevelRunner tourne dans level.rs
+        }
+        LevelPhaseKind::OutroCountdown { timer } => {
+            timer.tick(time.delta());
+            // La transition vers Outro est gérée par detect_level_complete
+        }
+        LevelPhaseKind::Outro { .. } => {
+            // Géré par level_outro_animate et level_outro_input
+        }
+    }
+}
+
+/// Détecte la fin de l'animation de mort du dernier boss et envoie
+/// `MarkLevelComplete` via le pipeline du niveau.
+/// Pour les niveaux sans boss, `MarkLevelComplete` dans la timeline fait le travail.
+fn detect_boss_death(
+    difficulty: Res<Difficulty>,
+    boss_q: Query<&Enemy, With<BossMarker>>,
+    mut level_events: EventWriter<crate::level::LevelActionEvent>,
+) {
+    // Le boss a été spawné, toutes les entités boss ont disparu (fin d'anim de mort),
+    // et le niveau n'est pas encore marqué comme terminé.
+    if difficulty.boss_spawned && boss_q.is_empty() && !difficulty.level_complete {
+        level_events.send(crate::level::LevelActionEvent(vec![
+            crate::level::Action::MarkLevelComplete,
+        ]));
+    }
+}
+
+/// Vérifie `level_complete` et fait avancer la machine à état :
+/// Running → OutroCountdown → Outro.
+fn detect_level_complete(
+    mut commands: Commands,
+    mut difficulty: ResMut<Difficulty>,
+    mut pause: ResMut<PauseState>,
+    asset_server: Res<AssetServer>,
+    music_q: Query<Entity, With<MusicMain>>,
+    boss_music_q: Query<Entity, With<MusicBoss>>,
+    progress: Res<GameProgress>,
+    mut level_phase: Option<ResMut<LevelPhase>>,
+) {
+    let Some(ref mut level_phase) = level_phase else { return };
+
+    match &level_phase.phase {
+        LevelPhaseKind::Running => {
+            if !difficulty.level_complete {
+                return;
+            }
+            // Running → OutroCountdown
+            level_phase.phase = LevelPhaseKind::OutroCountdown {
+                timer: Timer::from_seconds(OUTRO_COUNTDOWN, TimerMode::Once),
+            };
+        }
+        LevelPhaseKind::OutroCountdown { timer } => {
+            if timer.finished() {
+                // OutroCountdown → Outro
+                start_outro(
+                    &mut commands,
+                    &mut pause,
+                    &mut difficulty,
+                    &asset_server,
+                    &music_q,
+                    &boss_music_q,
+                    &progress,
+                    level_phase,
+                );
+            }
+        }
+        _ => {}
+    }
+}
 
 /// Lance la séquence d'outro : freeze le jeu, coupe les musiques,
 /// stoppe le background, affiche l'UI.
@@ -143,9 +351,8 @@ fn start_outro(
     music_q: &Query<Entity, With<MusicMain>>,
     boss_music_q: &Query<Entity, With<MusicBoss>>,
     progress: &Res<GameProgress>,
+    level_phase: &mut ResMut<LevelPhase>,
 ) {
-    // Freeze le jeu via le flag outro (pas d'appel à time.pause(),
-    // le temps réel continue pour animer l'outro)
     pause.outro_active = true;
 
     // Couper les musiques
@@ -163,79 +370,29 @@ fn start_outro(
     // Stopper le background
     difficulty.bg_speed_override = Some(0.0);
 
-    commands.remove_resource::<OutroCountdown>();
-    commands.insert_resource(LevelOutro {
+    // Transition de phase → Outro
+    level_phase.phase = LevelPhaseKind::Outro {
         elapsed: 0.0,
         music_spawned: false,
-    });
+    };
 
     spawn_outro_ui(commands, asset_server, progress);
-}
-
-/// Détecte quand tous les boss sont morts (entités despawnées) et lance
-/// le countdown de 3s avant l'outro.
-fn detect_level_complete(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut difficulty: ResMut<Difficulty>,
-    boss_q: Query<&Enemy, With<BossMarker>>,
-    countdown: Option<ResMut<OutroCountdown>>,
-    outro: Option<Res<LevelOutro>>,
-    mut pause: ResMut<PauseState>,
-    asset_server: Res<AssetServer>,
-    music_q: Query<Entity, With<MusicMain>>,
-    boss_music_q: Query<Entity, With<MusicBoss>>,
-    progress: Res<GameProgress>,
-) {
-    // Déjà en outro → rien à faire
-    if outro.is_some() {
-        return;
-    }
-
-    // Le boss doit avoir été spawné ET toutes les entités boss doivent
-    // avoir disparu (fin de l'animation de mort + despawn)
-    if !difficulty.boss_spawned {
-        return;
-    }
-    if !boss_q.is_empty() {
-        return;
-    }
-
-    if let Some(mut cd) = countdown {
-        cd.0.tick(time.delta());
-        if cd.0.finished() {
-            start_outro(
-                &mut commands,
-                &mut pause,
-                &mut difficulty,
-                &asset_server,
-                &music_q,
-                &boss_music_q,
-                &progress,
-            );
-        }
-    } else {
-        // Premier frame de détection → démarrer le countdown
-        commands.insert_resource(OutroCountdown(Timer::from_seconds(
-            OUTRO_COUNTDOWN,
-            TimerMode::Once,
-        )));
-    }
 }
 
 /// Anime l'écran d'outro : musique.
 fn level_outro_animate(
     mut commands: Commands,
     time: Res<Time>,
-    outro: Option<ResMut<LevelOutro>>,
+    level_phase: Option<ResMut<LevelPhase>>,
     asset_server: Res<AssetServer>,
 ) {
-    let Some(mut outro) = outro else { return };
-    outro.elapsed += time.delta_seconds();
+    let Some(mut level_phase) = level_phase else { return };
+    let LevelPhaseKind::Outro { elapsed, music_spawned } = &mut level_phase.phase else { return };
 
-    // Lancer la musique une seule fois
-    if !outro.music_spawned {
-        outro.music_spawned = true;
+    *elapsed += time.delta_seconds();
+
+    if !*music_spawned {
+        *music_spawned = true;
         commands.spawn((
             AudioBundle {
                 source: asset_server.load("audio/music/stage_clear.ogg"),
@@ -250,7 +407,7 @@ fn level_outro_animate(
 fn level_outro_input(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
-    outro: Option<Res<LevelOutro>>,
+    level_phase: Option<Res<LevelPhase>>,
     mut next_state: ResMut<NextState<GameState>>,
     mut pause: ResMut<PauseState>,
     progress: Res<GameProgress>,
@@ -258,22 +415,20 @@ fn level_outro_input(
     mut campaign: Option<ResMut<CampaignProgress>>,
     music_q: Query<Entity, With<MusicOutro>>,
 ) {
-    let Some(outro) = outro else { return };
+    let Some(ref level_phase) = level_phase else { return };
+    let LevelPhaseKind::Outro { elapsed, .. } = &level_phase.phase else { return };
 
-    // Attendre avant d'accepter l'input
-    if outro.elapsed < OUTRO_INPUT_DELAY {
+    if *elapsed < OUTRO_INPUT_DELAY {
         return;
     }
 
     if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
-        // Nettoyage musique outro
         for entity in music_q.iter() {
             if let Some(e) = commands.get_entity(entity) {
                 e.despawn_recursive();
             }
         }
         pause.outro_active = false;
-        commands.remove_resource::<LevelOutro>();
 
         let level = progress.current_level;
         let mode = play_mode.map(|m| *m);
@@ -282,7 +437,6 @@ fn level_outro_input(
             Some(PlayMode::Campaign) => {
                 if let Some(ref mut camp) = campaign {
                     camp.completed.insert(level);
-                    // Tous les niveaux terminés ?
                     if camp.completed.len() >= progress.total_levels {
                         commands.remove_resource::<CampaignProgress>();
                         commands.remove_resource::<PlayMode>();
@@ -293,11 +447,9 @@ fn level_outro_input(
                 }
             }
             Some(PlayMode::Primes) => {
-                // Pas de tracking en Primes — le joueur peut rejouer librement
                 next_state.set(GameState::LevelSelect);
             }
             None => {
-                // Fallback (ne devrait pas arriver)
                 next_state.set(GameState::MainMenu);
             }
         }
@@ -310,7 +462,6 @@ fn level_outro_input(
 fn debug_skip_to_outro(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
-    outro: Option<Res<LevelOutro>>,
     mut pause: ResMut<PauseState>,
     mut difficulty: ResMut<Difficulty>,
     asset_server: Res<AssetServer>,
@@ -319,11 +470,13 @@ fn debug_skip_to_outro(
     music_q: Query<Entity, With<MusicMain>>,
     boss_music_q: Query<Entity, With<MusicBoss>>,
     progress: Res<GameProgress>,
+    mut level_phase: Option<ResMut<LevelPhase>>,
 ) {
     if !keyboard.just_pressed(KeyCode::F4) {
         return;
     }
-    if outro.is_some() {
+    let Some(ref mut level_phase) = level_phase else { return };
+    if matches!(level_phase.phase, LevelPhaseKind::Outro { .. }) {
         return;
     }
 
@@ -332,7 +485,6 @@ fn debug_skip_to_outro(
         if matches!(enemy.state, EnemyState::Dying | EnemyState::Dead) {
             continue;
         }
-        // Despawn direct (pas d'animation de mort)
         if let Some(e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
@@ -345,9 +497,12 @@ fn debug_skip_to_outro(
         }
     }
 
-    // Marquer le boss comme spawné pour que detect_level_complete se déclenche
-    difficulty.boss_spawned = true;
+    // Marquer le niveau comme terminé
+    difficulty.level_complete = true;
     difficulty.active_spawners.clear();
+
+    // Désactiver l'intro si elle était en cours
+    pause.intro_active = false;
 
     // Lancer l'outro immédiatement (sans countdown)
     start_outro(
@@ -358,6 +513,7 @@ fn debug_skip_to_outro(
         &music_q,
         &boss_music_q,
         &progress,
+        level_phase,
     );
 }
 
@@ -430,18 +586,24 @@ fn auto_start_next_level(mut next_state: ResMut<NextState<GameState>>) {
     next_state.set(GameState::LevelSelect);
 }
 
-/// Nettoyage de l'outro en sortant de Playing.
-fn cleanup_outro(
+/// Nettoyage en sortant de Playing (intro, outro, popups).
+fn cleanup_playing(
     mut commands: Commands,
     mut pause: ResMut<PauseState>,
     outro_ui_q: Query<Entity, With<OutroUI>>,
     music_q: Query<Entity, With<MusicOutro>>,
+    intro_sound_q: Query<Entity, With<IntroSound>>,
     confirm_ui_q: Query<Entity, With<ConfirmPopupUI>>,
 ) {
+    pause.intro_active = false;
     pause.outro_active = false;
-    commands.remove_resource::<LevelOutro>();
-    commands.remove_resource::<OutroCountdown>();
+    commands.remove_resource::<LevelPhase>();
     commands.remove_resource::<ConfirmPopup>();
+    for entity in intro_sound_q.iter() {
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
+    }
     for entity in outro_ui_q.iter() {
         if let Some(e) = commands.get_entity(entity) {
             e.despawn_recursive();

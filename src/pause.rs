@@ -31,7 +31,7 @@ impl Plugin for PausePlugin {
 
 /// Run condition : le jeu n'est pas en pause et pas en outro.
 pub fn not_paused(pause: Res<PauseState>) -> bool {
-    !pause.paused && !pause.outro_active
+    !pause.paused && !pause.intro_active && !pause.outro_active
 }
 
 // ─── Ressource ──────────────────────────────────────────────────────
@@ -39,6 +39,8 @@ pub fn not_paused(pause: Res<PauseState>) -> bool {
 #[derive(Resource, Default)]
 pub struct PauseState {
     pub paused: bool,
+    /// Vrai pendant l'intro de niveau — freeze le gameplay, le joueur monte.
+    pub intro_active: bool,
     /// Vrai pendant l'outro de niveau — bloque la pause et freeze le jeu.
     pub outro_active: bool,
     selected: usize,
@@ -130,8 +132,8 @@ fn handle_pause_input(
 
     // ─── Gestion normale de la pause ────────────────────────────
     if keyboard.just_pressed(KeyCode::Escape) {
-        // Bloquer la pause pendant l'outro de niveau
-        if pause.outro_active {
+        // Bloquer la pause pendant l'intro ou l'outro de niveau
+        if pause.intro_active || pause.outro_active {
             return;
         }
         if pause.paused {
