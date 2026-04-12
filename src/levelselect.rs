@@ -4,7 +4,10 @@
 //! construit l'écran interactif : titre, grille 2×2 de cartes de prime,
 //! et footer d'instructions. La navigation est directionnelle (ZQSD / flèches).
 
-use crate::game::{CampaignProgress, GameProgress, PlayMode};
+use crate::game::{
+    CampaignProgress, ConfirmOptionMarker, ConfirmPopup, ConfirmPopupUI, GameProgress, PlayMode,
+    despawn_confirm_popup, spawn_confirm_popup,
+};
 use crate::level::level_name;
 use crate::mainmenu::MainMenuMusic;
 use crate::state::GameState;
@@ -47,13 +50,14 @@ struct CardLabel(usize);
 #[derive(Component)]
 struct FooterText;
 
+
 // ─── Ressources ─────────────────────────────────────────────────────
 
 #[derive(Resource)]
 struct LevelSelectState {
     selected: usize,
-    total: usize,  // nombre de cartes affichées
-    elapsed: f32,   // pour animations
+    total: usize,       // nombre de cartes affichées
+    elapsed: f32,        // pour animations
 }
 
 /// Textures normal/selected pour chaque carte.
@@ -347,6 +351,10 @@ fn handle_level_select_input(
     mut next_state: ResMut<NextState<GameState>>,
     mut progress: ResMut<GameProgress>,
     menu_music_q: Query<Entity, With<MainMenuMusic>>,
+    mut confirm: Option<ResMut<ConfirmPopup>>,
+    confirm_ui_q: Query<Entity, With<ConfirmPopupUI>>,
+    mut confirm_options_q: Query<(&ConfirmOptionMarker, &mut Text)>,
+    asset_server: Res<AssetServer>,
 ) {
     let Some(ref mut state) = state else { return };
     let mode = play_mode.map(|m| *m).unwrap_or(PlayMode::Primes);
@@ -356,6 +364,50 @@ fn handle_level_select_input(
         PlayMode::Campaign => campaign.map(|c| c.completed.clone()).unwrap_or_default(),
         PlayMode::Primes => std::collections::HashSet::new(),
     };
+
+    // ── Popup de confirmation active ────────────────────────────
+    if let Some(ref mut confirm) = confirm {
+        let ui_yellow = Color::rgba(1.0, 0.85, 0.0, 1.0);
+
+        // Navigation gauche/droite
+        if keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyQ) {
+            confirm.selected = 0;
+        }
+        if keyboard.just_pressed(KeyCode::ArrowRight) || keyboard.just_pressed(KeyCode::KeyD) {
+            confirm.selected = 1;
+        }
+
+        // Mise à jour des couleurs
+        for (marker, mut text) in confirm_options_q.iter_mut() {
+            for section in text.sections.iter_mut() {
+                if marker.0 == confirm.selected {
+                    section.style.color = ui_yellow;
+                } else {
+                    section.style.color = Color::rgba(0.6, 0.6, 0.6, 1.0);
+                }
+            }
+        }
+
+        if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
+            if confirm.selected == 1 {
+                // Oui → quitter
+                commands.remove_resource::<CampaignProgress>();
+                commands.remove_resource::<PlayMode>();
+                commands.remove_resource::<ConfirmPopup>();
+                despawn_confirm_popup(&mut commands, &confirm_ui_q);
+                next_state.set(GameState::MainMenu);
+            } else {
+                // Non → fermer la popup
+                commands.remove_resource::<ConfirmPopup>();
+                despawn_confirm_popup(&mut commands, &confirm_ui_q);
+            }
+        }
+        if keyboard.just_pressed(KeyCode::Escape) {
+            commands.remove_resource::<ConfirmPopup>();
+            despawn_confirm_popup(&mut commands, &confirm_ui_q);
+        }
+        return;
+    }
 
     // Helper : un slot est sélectionnable s'il n'est pas complété
     let is_available = |idx: usize| -> bool {
@@ -405,15 +457,21 @@ fn handle_level_select_input(
         }
     }
 
-    // Escape — retour au menu
+    // Escape — confirmation si campagne avec progression, sinon retour direct
     if keyboard.just_pressed(KeyCode::Escape) {
+        let has_progress = !completed.is_empty();
+
         match mode {
             PlayMode::Primes => {
                 commands.remove_resource::<PlayMode>();
                 next_state.set(GameState::MainMenu);
             }
+            PlayMode::Campaign if has_progress => {
+                // Afficher la popup de confirmation
+                commands.insert_resource(ConfirmPopup { selected: 0 });
+                spawn_confirm_popup(&mut commands, &asset_server);
+            }
             PlayMode::Campaign => {
-                // En campagne aussi, on peut revenir
                 commands.remove_resource::<PlayMode>();
                 next_state.set(GameState::MainMenu);
             }

@@ -464,87 +464,126 @@ fn cleanup_outro(
 /// Spawne la popup de confirmation "Votre progression sera perdue."
 pub(crate) fn spawn_confirm_popup(commands: &mut Commands, asset_server: &Res<AssetServer>) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
+    let ui_yellow = Color::rgba(1.0, 0.85, 0.0, 1.0);
 
+    // Fond opaque plein écran
     commands
         .spawn((
             NodeBundle {
                 style: Style {
+                    position_type: PositionType::Absolute,
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     align_items: AlignItems::Center,
                     justify_content: JustifyContent::Center,
-                    flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(30.0),
                     ..default()
                 },
-                background_color: Color::rgba(0.0, 0.0, 0.0, 0.8).into(),
-                z_index: ZIndex::Global(110),
+                background_color: Color::rgba(0.0, 0.0, 0.0, 1.0).into(),
+                z_index: ZIndex::Global(200),
                 ..default()
             },
             ConfirmPopupUI,
         ))
-        .with_children(|parent| {
-            parent.spawn((
-                TextBundle::from_section(
-                    "Votre progression sera perdue.",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 28.0,
-                        color: Color::WHITE,
-                    },
-                ),
-                ConfirmPopupUI,
-            ));
-            parent.spawn((
-                TextBundle::from_section(
-                    "Continuer ?",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 28.0,
-                        color: Color::WHITE,
-                    },
-                ),
-                ConfirmPopupUI,
-            ));
-            // Options côte à côte
-            parent
-                .spawn((
-                    NodeBundle {
-                        style: Style {
-                            flex_direction: FlexDirection::Row,
-                            column_gap: Val::Px(80.0),
-                            margin: UiRect::top(Val::Px(20.0)),
-                            ..default()
-                        },
+        .with_children(|overlay| {
+            // Bordure jaune (padding = épaisseur du bord)
+            overlay
+                .spawn(NodeBundle {
+                    style: Style {
+                        padding: UiRect::all(Val::Px(4.0)),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
                         ..default()
                     },
-                    ConfirmPopupUI,
-                ))
-                .with_children(|row| {
-                    row.spawn((
-                        TextBundle::from_section(
-                            "Non",
-                            TextStyle {
-                                font: font.clone(),
-                                font_size: 36.0,
-                                color: Color::rgba(1.0, 0.85, 0.0, 1.0), // sélectionné par défaut
+                    background_color: ui_yellow.into(),
+                    ..default()
+                })
+                .with_children(|border| {
+                    // Panneau noir intérieur
+                    border
+                        .spawn(NodeBundle {
+                            style: Style {
+                                flex_direction: FlexDirection::Column,
+                                align_items: AlignItems::Center,
+                                padding: UiRect::new(
+                                    Val::Px(50.0),
+                                    Val::Px(50.0),
+                                    Val::Px(35.0),
+                                    Val::Px(35.0),
+                                ),
+                                row_gap: Val::Px(25.0),
+                                ..default()
                             },
-                        ),
-                        ConfirmPopupUI,
-                        ConfirmOptionMarker(0),
-                    ));
-                    row.spawn((
-                        TextBundle::from_section(
-                            "Oui",
-                            TextStyle {
-                                font,
-                                font_size: 36.0,
-                                color: Color::rgba(0.6, 0.6, 0.6, 1.0),
-                            },
-                        ),
-                        ConfirmPopupUI,
-                        ConfirmOptionMarker(1),
-                    ));
+                            background_color: Color::rgba(0.0, 0.0, 0.0, 1.0).into(),
+                            ..default()
+                        })
+                        .with_children(|panel| {
+                            // Question
+                            panel.spawn((
+                                TextBundle::from_section(
+                                    "Votre progression sera perdue.",
+                                    TextStyle {
+                                        font: font.clone(),
+                                        font_size: 22.0,
+                                        color: Color::WHITE,
+                                    },
+                                ),
+                                ConfirmPopupUI,
+                            ));
+
+                            // Avertissement
+                            panel.spawn((
+                                TextBundle::from_section(
+                                    "Etes-vous sur de vouloir quitter ?",
+                                    TextStyle {
+                                        font: font.clone(),
+                                        font_size: 18.0,
+                                        color: ui_yellow,
+                                    },
+                                ),
+                                ConfirmPopupUI,
+                            ));
+
+                            // Options côte à côte
+                            panel
+                                .spawn((
+                                    NodeBundle {
+                                        style: Style {
+                                            flex_direction: FlexDirection::Row,
+                                            column_gap: Val::Px(80.0),
+                                            margin: UiRect::top(Val::Px(10.0)),
+                                            ..default()
+                                        },
+                                        ..default()
+                                    },
+                                    ConfirmPopupUI,
+                                ))
+                                .with_children(|row| {
+                                    row.spawn((
+                                        TextBundle::from_section(
+                                            "Non",
+                                            TextStyle {
+                                                font: font.clone(),
+                                                font_size: 32.0,
+                                                color: ui_yellow,
+                                            },
+                                        ),
+                                        ConfirmPopupUI,
+                                        ConfirmOptionMarker(0),
+                                    ));
+                                    row.spawn((
+                                        TextBundle::from_section(
+                                            "Oui",
+                                            TextStyle {
+                                                font,
+                                                font_size: 32.0,
+                                                color: Color::rgba(0.6, 0.6, 0.6, 1.0),
+                                            },
+                                        ),
+                                        ConfirmPopupUI,
+                                        ConfirmOptionMarker(1),
+                                    ));
+                                });
+                        });
                 });
         });
 }
