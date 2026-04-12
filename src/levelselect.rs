@@ -89,6 +89,7 @@ fn setup_level_select(
     progress: Res<GameProgress>,
     campaign: Option<Res<CampaignProgress>>,
     windows: Query<&Window>,
+    existing_music: Query<Entity, With<MainMenuMusic>>,
 ) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     let mode = play_mode.map(|m| *m).unwrap_or(PlayMode::Primes);
@@ -127,6 +128,17 @@ fn setup_level_select(
         },
         LevelSelectUI,
     ));
+
+    // ── Musique du menu (relancer si elle ne tourne pas) ──────────
+    if existing_music.is_empty() {
+        commands.spawn((
+            AudioBundle {
+                source: asset_server.load("audio/music/main_menu.ogg"),
+                settings: PlaybackSettings::LOOP,
+            },
+            MainMenuMusic,
+        ));
+    }
 
     // ── Cartes positionnées en absolu sur les slots du background ──
     // Noms des sprites par slot (sans extension)
@@ -258,9 +270,9 @@ fn animate_level_select(
     time: Res<Time>,
     play_mode: Option<Res<PlayMode>>,
     campaign: Option<Res<CampaignProgress>>,
-    mut border_q: Query<(&CardBorder, &mut BackgroundColor)>,
+    mut border_q: Query<(&CardBorder, &mut BackgroundColor), Without<PrimeCard>>,
     mut label_q: Query<(&CardLabel, &mut Text)>,
-    mut card_q: Query<(&PrimeCard, &mut UiImage)>,
+    mut card_q: Query<(&PrimeCard, &mut UiImage, &mut BackgroundColor), Without<CardBorder>>,
     textures: Res<CardTextures>,
 ) {
     state.elapsed += time.delta_seconds();
@@ -292,13 +304,22 @@ fn animate_level_select(
         }
     }
 
-    // Texture normal/selected
-    for (card, mut image) in card_q.iter_mut() {
+    // Texture normal/selected + filtre grisé si complété
+    for (card, mut image, mut bg) in card_q.iter_mut() {
+        let level_num = card.index + 1;
         let is_selected = card.index == state.selected;
+        let is_completed = completed.contains(&level_num);
+
         if is_selected {
             image.texture = textures.selected[card.index].clone();
         } else {
             image.texture = textures.normal[card.index].clone();
+        }
+
+        if is_completed {
+            bg.0 = Color::rgba(0.6, 0.6, 0.6, 1.0);
+        } else {
+            bg.0 = Color::WHITE;
         }
     }
 
@@ -336,31 +357,40 @@ fn handle_level_select_input(
         PlayMode::Primes => std::collections::HashSet::new(),
     };
 
+    // Helper : un slot est sélectionnable s'il n'est pas complété
+    let is_available = |idx: usize| -> bool {
+        idx < total && !completed.contains(&(idx + 1))
+    };
+
     // Navigation grille 2×2
     //  0  1
     //  2  3
     if keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyQ) {
-        if state.selected % 2 == 1 {
-            state.selected -= 1;
+        let target = if state.selected % 2 == 1 { state.selected - 1 } else { state.selected };
+        if target != state.selected && is_available(target) {
+            state.selected = target;
         }
     }
     if keyboard.just_pressed(KeyCode::ArrowRight) || keyboard.just_pressed(KeyCode::KeyD) {
-        if state.selected % 2 == 0 && state.selected + 1 < total {
-            state.selected += 1;
+        let target = if state.selected % 2 == 0 && state.selected + 1 < total { state.selected + 1 } else { state.selected };
+        if target != state.selected && is_available(target) {
+            state.selected = target;
         }
     }
     if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyZ) {
-        if state.selected >= 2 {
-            state.selected -= 2;
+        let target = if state.selected >= 2 { state.selected - 2 } else { state.selected };
+        if target != state.selected && is_available(target) {
+            state.selected = target;
         }
     }
     if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
-        if state.selected + 2 < total {
-            state.selected += 2;
+        let target = if state.selected + 2 < total { state.selected + 2 } else { state.selected };
+        if target != state.selected && is_available(target) {
+            state.selected = target;
         }
     }
 
-    // Lancer un niveau (seulement si non-complété)
+    // Lancer un niveau (bloqué si complété en Campagne)
     if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
         let level_num = state.selected + 1;
         if level_num <= total && !completed.contains(&level_num) {
