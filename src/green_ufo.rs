@@ -192,6 +192,7 @@ fn spawn_one_green_ufo(
             death_shake_max: GREEN_UFO.death_shake_max,
             hit_sound: GREEN_UFO.hit_sound,
             death_explosion_sound: GREEN_UFO.death_explosion_sound,
+            hit_flash_color: None,
         },
         GreenUFOMarker,
         GreenUFOAnim {

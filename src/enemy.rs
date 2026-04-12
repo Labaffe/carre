@@ -132,6 +132,8 @@ pub struct Enemy {
     pub death_shake_max: f32,
     pub hit_sound: &'static str,
     pub death_explosion_sound: &'static str,
+    /// Couleur du flash au hit. None = blanc pur (par défaut).
+    pub hit_flash_color: Option<Color>,
 }
 
 /// Flash blanc au hit.
@@ -183,16 +185,16 @@ const HIT_FLASH_DURATION: f32 = 0.06;
 fn enemy_hit_flash(
     mut commands: Commands,
     time: Res<Time>,
-    mut query: Query<(Entity, &mut Sprite, &mut EnemyHitFlash), With<Enemy>>,
+    mut query: Query<(Entity, &mut Sprite, &mut EnemyHitFlash, &Enemy)>,
 ) {
-    for (entity, mut sprite, mut flash) in query.iter_mut() {
+    for (entity, mut sprite, mut flash, enemy) in query.iter_mut() {
         flash.0.tick(time.delta());
         if flash.0.finished() {
             sprite.color = Color::WHITE;
             commands.entity(entity).remove::<EnemyHitFlash>();
         } else {
-            // Blanc pur intense (même style que les astéroïdes)
-            sprite.color = Color::rgba(100.0, 100.0, 100.0, 1.0);
+            sprite.color = enemy.hit_flash_color
+                .unwrap_or(Color::rgba(100.0, 100.0, 100.0, 1.0));
         }
     }
 }

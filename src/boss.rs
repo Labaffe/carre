@@ -212,6 +212,7 @@ fn spawn_boss(
                 death_shake_max: BOSS.death_shake_max,
                 hit_sound: BOSS.hit_sound,
                 death_explosion_sound: BOSS.death_explosion_sound,
+                hit_flash_color: Some(Color::rgba(2.5, 2.5, 2.5, 1.0)),
             },
             BossMarker,
             BossIdleAnim {
@@ -927,6 +928,7 @@ fn debug_skip_to_boss(
             death_shake_max: BOSS.death_shake_max,
             hit_sound: BOSS.hit_sound,
             death_explosion_sound: BOSS.death_explosion_sound,
+            hit_flash_color: Some(Color::rgba(2.5, 2.5, 2.5, 1.0)),
         },
         BossMarker,
         BossIdleAnim {
