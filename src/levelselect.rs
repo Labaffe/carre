@@ -327,15 +327,19 @@ fn animate_level_select(
         }
     }
 
-    // Couleur du label sélectionné
+    // Couleur du label selon l'état
     for (label, mut text) in label_q.iter_mut() {
+        let level_num = label.0 + 1;
         let is_selected = label.0 == state.selected;
+        let is_completed = completed.contains(&level_num);
         for section in text.sections.iter_mut() {
-            if is_selected {
-                section.style.color = Color::rgba(0.659, 1.0, 0.984, 1.0);
+            section.style.color = if is_completed {
+                Color::rgba(0.18, 0.541, 0.525, 1.0)
+            } else if is_selected {
+                Color::rgba(0.659, 1.0, 0.984, 1.0)
             } else {
-                section.style.color = Color::rgba(0.31, 0.949, 0.933, 1.0);
-            }
+                Color::rgba(0.31, 0.949, 0.933, 1.0)
+            };
         }
     }
 }

@@ -34,6 +34,7 @@ impl Plugin for GatlingPlugin {
                     spawn_mothership_oneshot,
                     spawn_gatlings_oneshot,
                     mothership_entering,
+                    mothership_drift,
                     mothership_sync_positions,
                     mothership_death_detection,
                     mothership_dying,
@@ -62,6 +63,18 @@ const GATLING_SPRITE_SIZE: f32 = 128.0;
 const GATLING_SPACING: f32 = 200.0;
 /// Vitesse de recul du Mothership pendant la mort (pixels/seconde).
 const MOTHERSHIP_DYING_SPEED: f32 = 100.0;
+
+// ─── Flottement du Mothership (à ajuster) ───────────────────────
+// Axe principal = perpendiculaire au bord d'entrée (gauche↔droite pour Top/Bottom).
+// Axe secondaire = parallèle au bord d'entrée (haut↔bas pour Top/Bottom).
+/// Amplitude du flottement principal (pixels).
+const MOTHERSHIP_DRIFT_MAIN_AMP: f32 = 60.0;
+/// Amplitude du flottement secondaire (pixels).
+const MOTHERSHIP_DRIFT_MINOR_AMP: f32 = 15.0;
+/// Fréquence du flottement principal (rad/s). Plus haut = plus rapide.
+const MOTHERSHIP_DRIFT_MAIN_FREQ: f32 = 0.5;
+/// Fréquence du flottement secondaire (rad/s).
+const MOTHERSHIP_DRIFT_MINOR_FREQ: f32 = 0.3;
 /// Taille de base du placeholder Mothership (7×2 tiles de 128px).
 /// Pour Top/Bottom : largeur × hauteur. Pour Left/Right : inversé automatiquement.
 const MOTHERSHIP_BASE_SIZE: Vec2 = Vec2::new(896.0, 256.0);
@@ -209,8 +222,12 @@ pub struct Mothership {
     pub edge: EntryEdge,
     /// Timer de la phase Entering.
     pub anim_timer: Timer,
-    /// Position de départ (pour l'animation Entering).
+    /// Position de départ hors écran (pour l'animation Entering).
     pub start_pos: Vec2,
+    /// Position de repos après Entering (ancre pour le flottement).
+    pub anchor_pos: Vec2,
+    /// Temps accumulé pour le flottement sinusoïdal.
+    pub drift_time: f32,
     /// Entités Gatling rattachées.
     pub gatlings: Vec<Entity>,
 }
@@ -368,12 +385,17 @@ fn spawn_mothership_oneshot(
     }
 
     // ─── Insérer le composant Mothership avec la liste des gatlings ─
+    // L'ancre = position finale après Entering.
+    let dir = edge.enter_direction();
+    let anchor = pos + dir * GATLING_ENTERING_DISTANCE;
     commands.entity(mothership_entity).insert(Mothership {
         state: MothershipPhase::Entering,
         vulnerable: false,
         edge,
         anim_timer: Timer::from_seconds(GATLING_ENTERING_DURATION, TimerMode::Once),
         start_pos: pos,
+        anchor_pos: anchor,
+        drift_time: 0.0,
         gatlings: gatling_entities,
     });
 }
@@ -478,6 +500,41 @@ fn mothership_entering(
                     enemy.health = phase_def.health;
                     enemy.max_health = phase_def.health;
                 }
+            }
+        }
+    }
+}
+
+// ─── Flottement du Mothership pendant Active ───────────────────────
+
+/// Flottement sinusoïdal du Mothership en phase Active.
+/// Axe principal (grande amplitude) = perpendiculaire au bord d'entrée.
+/// Axe secondaire (petite amplitude) = parallèle au bord d'entrée.
+fn mothership_drift(
+    time: Res<Time>,
+    mut query: Query<(&mut Mothership, &mut Transform), With<MothershipMarker>>,
+) {
+    for (mut mothership, mut transform) in query.iter_mut() {
+        if mothership.state != MothershipPhase::Active {
+            continue;
+        }
+
+        mothership.drift_time += time.delta_seconds();
+        let t = mothership.drift_time;
+
+        // Axe principal = perpendiculaire au bord d'entrée (gauche-droite pour Top/Bottom)
+        // Axe secondaire = parallèle (haut-bas pour Top/Bottom)
+        let main_offset = (t * MOTHERSHIP_DRIFT_MAIN_FREQ).sin() * MOTHERSHIP_DRIFT_MAIN_AMP;
+        let minor_offset = (t * MOTHERSHIP_DRIFT_MINOR_FREQ).cos() * MOTHERSHIP_DRIFT_MINOR_AMP;
+
+        match mothership.edge {
+            EntryEdge::Top | EntryEdge::Bottom => {
+                transform.translation.x = mothership.anchor_pos.x + main_offset;
+                transform.translation.y = mothership.anchor_pos.y + minor_offset;
+            }
+            EntryEdge::Left | EntryEdge::Right => {
+                transform.translation.x = mothership.anchor_pos.x + minor_offset;
+                transform.translation.y = mothership.anchor_pos.y + main_offset;
             }
         }
     }
