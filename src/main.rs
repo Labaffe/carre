@@ -171,6 +171,7 @@ fn cleanup_playing(
     boss_music: Query<Entity, With<MusicBoss>>,
     outro_music: Query<Entity, With<MusicOutro>>,
     droppables: Query<Entity, With<Droppable>>,
+    motherships: Query<Entity, With<gatling::MothershipMarker>>,
 ) {
     let all_entities = players.iter()
         .chain(asteroids.iter())
@@ -183,7 +184,8 @@ fn cleanup_playing(
         .chain(music.iter())
         .chain(boss_music.iter())
         .chain(outro_music.iter())
-        .chain(droppables.iter());
+        .chain(droppables.iter())
+        .chain(motherships.iter());
 
     for entity in all_entities {
         if let Some(e) = commands.get_entity(entity) {

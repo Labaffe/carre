@@ -445,9 +445,18 @@ pub fn build_level_2() -> Vec<LevelStep> {
     vec![
         LevelStep::at(0.0, "game_start")
             .with(Action::Log("Niveau 2 démarré")),
-        LevelStep::at(2.0, "spawn_gatling")
-            .with(Action::SpawnEnemy("gatling", 1, SpawnPosition::Top))
-            .with(Action::Log("Gatling spawné")),
+        LevelStep::at(2.0, "spawn_top")
+            .with(Action::SpawnEnemy("mothership", 1, SpawnPosition::Top))
+            .with(Action::Log("Mothership TOP")),
+        LevelStep::at(8.0, "spawn_bottom")
+            .with(Action::SpawnEnemy("mothership", 1, SpawnPosition::Bottom))
+            .with(Action::Log("Mothership BOTTOM")),
+        LevelStep::at(14.0, "spawn_left")
+            .with(Action::SpawnEnemy("mothership", 1, SpawnPosition::Left))
+            .with(Action::Log("Mothership LEFT")),
+        LevelStep::at(20.0, "spawn_right")
+            .with(Action::SpawnEnemy("mothership", 1, SpawnPosition::Right))
+            .with(Action::Log("Mothership RIGHT")),
     ]
 }
 
