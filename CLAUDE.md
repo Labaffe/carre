@@ -228,7 +228,7 @@ Le runner parcourt les étapes dans l'ordre. Quand le déclencheur d'une étape 
 
 ```
  0.0s  game_start      Music(gradius.ogg), Diff(0.5), Start(asteroid)
- 7.0s  countdown       Sound(charging.ogg), Countdown
+ 7.0s  countdown       Sound(t_ready.ogg), Countdown
 10.0s  phase_2_start   Diff(3.5), Start(2×green_ufo,4s)
 14.3s  boom_1          Diff(4.5), Sound(t_go.wav), Boom
 18.3s  boom_2          Diff(6.5), Sound(t_go.wav), Boom

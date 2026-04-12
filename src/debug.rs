@@ -33,6 +33,7 @@ impl Plugin for DebugPlugin {
                     update_debug_level_ui,
                     manage_asteroid_labels,
                     debug_mouse_coords,
+                    debug_kill_player,
                 ),
             );
     }
@@ -305,7 +306,8 @@ fn update_debug_ui(
              F1 : Debug Mode ON/OFF\n\
              F2 : Skip asteroides\n\
              F3 : Skip au boss\n\
-             F4 : Win niveau (outro)",
+             F4 : Win niveau (outro)\n\
+             F5 : Game Over (mort)",
             fps, minutes, seconds, factor,
             lives.lives,
             score.value(),
@@ -581,6 +583,23 @@ fn debug_mouse_coords(
             ">>> CLICK  world=({:.1}, {:.1})  screen=({:.1}, {:.1})",
             world_pos.x, world_pos.y, cursor_pos.x, cursor_pos.y,
         );
+    }
+}
+
+fn debug_kill_player(
+    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    state: Res<State<crate::state::GameState>>,
+    mut next_state: ResMut<NextState<crate::state::GameState>>,
+    mut lives: ResMut<PlayerLives>,
+    player_q: Query<Entity, With<Player>>,
+) {
+    if keyboard.just_pressed(KeyCode::F5) && *state.get() == crate::state::GameState::Playing {
+        lives.lives = 0;
+        for entity in player_q.iter() {
+            if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        }
+        next_state.set(crate::state::GameState::GameOver);
     }
 }
 

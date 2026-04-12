@@ -10,7 +10,6 @@
 //! ## Exemple
 //! ```ignore
 //! LevelStep::at(7.0, "countdown")
-//!     .with(Action::PlaySound("audio/sfx/charging.ogg"))
 //!     .with(Action::StartCountdown)
 //! ```
 
@@ -309,7 +308,9 @@ impl Action {
                     SpawnPosition::Bottom => " ↓",
                     SpawnPosition::Left => " ←",
                     SpawnPosition::Right => " →",
-                    SpawnPosition::At(x, y) => return format!("Spawn({}×{} @{:.0},{:.0})", count, name, x, y),
+                    SpawnPosition::At(x, y) => {
+                        return format!("Spawn({}×{} @{:.0},{:.0})", count, name, x, y);
+                    }
                 };
                 if *count == 1 {
                     format!("Spawn({}{})", name, pos_str)
@@ -323,7 +324,12 @@ impl Action {
                     SpawnPosition::Bottom => " ↓",
                     SpawnPosition::Left => " ←",
                     SpawnPosition::Right => " →",
-                    SpawnPosition::At(x, y) => return format!("Start({}×{},{}s @{:.0},{:.0})", count, name, interval, x, y),
+                    SpawnPosition::At(x, y) => {
+                        return format!(
+                            "Start({}×{},{}s @{:.0},{:.0})",
+                            count, name, interval, x, y
+                        );
+                    }
                 };
                 format!("Start({}×{},{}s{})", count, name, interval, pos_str)
             }
@@ -377,18 +383,28 @@ pub fn build_level_1() -> Vec<LevelStep> {
         LevelStep::at(0.0, "game_start")
             .with(Action::StartMusic("audio/music/gradius.ogg"))
             .with(Action::SetDifficulty(0.5))
-            .with(Action::StartSpawning("asteroid", 1, 1.0, SpawnPosition::Top))
+            .with(Action::StartSpawning(
+                "asteroid",
+                1,
+                1.0,
+                SpawnPosition::Top,
+            ))
             .with(Action::Log("Niveau 1 démarré")),
         // ─── Countdown (7-10s) ──────────────────────────────────
         LevelStep::at(7.0, "countdown")
-            .with(Action::PlaySound("audio/sfx/charging.ogg"))
+            .with(Action::PlaySound("audio/sfx/t_ready.ogg"))
             .with(Action::StartCountdown),
         // Note : le countdown envoie un BoomEvent au "GO!" (10s)
 
         // ─── Phase 2 : montée en difficulté ─────────────────────
         LevelStep::at(10.0, "phase_2_start")
             .with(Action::SetDifficulty(3.5))
-            .with(Action::StartSpawning("green_ufo", 2, 4.0, SpawnPosition::Top)),
+            .with(Action::StartSpawning(
+                "green_ufo",
+                2,
+                4.0,
+                SpawnPosition::Top,
+            )),
         LevelStep::at(14.3, "boom_1")
             .with(Action::SetDifficulty(4.5))
             .with(Action::PlaySound("audio/sfx/t_go.wav"))
@@ -427,8 +443,7 @@ pub fn build_level_1() -> Vec<LevelStep> {
 
 pub fn build_level_2() -> Vec<LevelStep> {
     vec![
-        LevelStep::at(0.0, "game_start")
-            .with(Action::Log("Niveau 2 démarré")),
+        LevelStep::at(0.0, "game_start").with(Action::Log("Niveau 2 démarré")),
         LevelStep::at(2.0, "level_complete")
             .with(Action::MarkLevelComplete)
             .with(Action::Log("Niveau 2 terminé")),
@@ -540,7 +555,9 @@ pub(crate) fn execute_action(
         }
         Action::StopMainMusic => {
             for entity in music_q.iter() {
-                if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+                if let Some(e) = commands.get_entity(entity) {
+                    e.despawn_recursive();
+                }
             }
         }
         Action::StartCountdown => {
@@ -553,7 +570,9 @@ pub(crate) fn execute_action(
             difficulty.spawn_requests.push((name, *count, *pos));
         }
         Action::StartSpawning(name, count, interval, pos) => {
-            difficulty.active_spawners.insert(name, (*count, *interval, *pos));
+            difficulty
+                .active_spawners
+                .insert(name, (*count, *interval, *pos));
         }
         Action::StopSpawning(name) => {
             difficulty.active_spawners.remove(name);

@@ -7,7 +7,7 @@
 
 use crate::game::{
     CampaignProgress, ConfirmOptionMarker, ConfirmPopup, ConfirmPopupUI, PlayMode,
-    despawn_confirm_popup, spawn_confirm_popup,
+    despawn_confirm_popup,
 };
 use crate::state::GameState;
 use crate::{MusicGameOver, MusicMain};
@@ -45,11 +45,34 @@ struct GameOverBackground;
 
 // --- Ressource d'animation ---
 
+#[derive(Component)]
+struct GameOverRestartText;
+
 #[derive(Resource)]
 struct GameOverAnim {
     elapsed: f32,
     music_spawned: bool,
+    is_campaign: bool,
+    /// En campagne : le joueur a demandé à passer plus vite.
+    skipping: bool,
+    /// Temps de début du fondu au noir (déclenché par skip ou auto).
+    fade_start_time: Option<f32>,
+    /// Volume de la musique capturé au moment où le fondu démarre.
+    fade_start_volume: Option<f32>,
+    /// Alpha du fond capturé au moment où le fondu démarre.
+    fade_start_bg_alpha: Option<f32>,
+    /// Alpha du texte capturé au moment où le fondu démarre.
+    fade_start_text_alpha: Option<f32>,
 }
+
+/// Durée totale avant le fondu automatique en campagne.
+const CAMPAIGN_AUTO_FADE_START: f32 = 9.0;
+/// Durée du fondu au noir en campagne (normal).
+const CAMPAIGN_FADE_DURATION: f32 = 2.0;
+/// Durée du fondu au noir accéléré (skip).
+const CAMPAIGN_SKIP_FADE_DURATION: f32 = 1.0;
+/// Délai minimum avant de pouvoir skip (laisser le texte apparaître).
+const CAMPAIGN_SKIP_MIN_DELAY: f32 = 3.0;
 
 // --- Setup ---
 
@@ -58,8 +81,14 @@ struct GameOverAnim {
 /// Cette fonction ne fait plus rien car le nettoyage est centralisé.
 fn cleanup_playing_entities() {}
 
-fn setup_gameover_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup_gameover_ui(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    play_mode: Option<Res<PlayMode>>,
+) {
     let font = asset_server.load("fonts/optimus_princeps.ttf");
+    let is_campaign = play_mode.map(|m| *m) == Some(PlayMode::Campaign);
+
     commands
         .spawn((
             NodeBundle {
@@ -92,22 +121,33 @@ fn setup_gameover_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 ),
                 GameOverText,
             ));
-            parent.spawn((
-                TextBundle::from_section(
-                    "R pour rejouer | Echap pour quitter",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 28.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 0.0),
-                    },
-                ),
-                GameOverText,
-            ));
+
+            // En campagne, pas de texte "R pour rejouer"
+            if !is_campaign {
+                parent.spawn((
+                    TextBundle::from_section(
+                        "R pour rejouer | Echap pour quitter",
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: 28.0,
+                            color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                        },
+                    ),
+                    GameOverText,
+                    GameOverRestartText,
+                ));
+            }
         });
 
     commands.insert_resource(GameOverAnim {
         elapsed: 0.0,
         music_spawned: false,
+        is_campaign,
+        skipping: false,
+        fade_start_time: None,
+        fade_start_volume: None,
+        fade_start_bg_alpha: None,
+        fade_start_text_alpha: None,
     });
 }
 
@@ -129,15 +169,19 @@ fn animate_gameover(
     mut bg_q: Query<&mut BackgroundColor, With<GameOverBackground>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut next_state: ResMut<NextState<GameState>>,
+    gameover_music_q: Query<(Entity, Option<&AudioSink>), With<MusicGameOver>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mouse: Res<ButtonInput<MouseButton>>,
 ) {
     anim.elapsed += time.delta_seconds();
 
-    // rien avant le délai de 2 secondes
+    // rien avant le délai
     if anim.elapsed < DELAY {
         return;
     }
 
-    // musique et animation démarrent ensemble à 2s
+    // musique et animation démarrent ensemble
     if !anim.music_spawned {
         anim.music_spawned = true;
         commands.spawn((
@@ -152,6 +196,89 @@ fn animate_gameover(
     // progression calculée depuis le début de l'animation (après le délai)
     let progress = ((anim.elapsed - DELAY) / ANIM_DURATION).clamp(0.0, 1.0);
 
+    // Valeurs actuelles de l'animation normale (avant fondu)
+    let current_bg_alpha = 1.0 - progress * 0.25;
+    let current_text_alpha = progress;
+
+    // ── Mode campagne : détection du skip ────────────────────────
+    if anim.is_campaign && !anim.skipping && anim.elapsed >= CAMPAIGN_SKIP_MIN_DELAY {
+        if keyboard.just_pressed(KeyCode::Enter)
+            || keyboard.just_pressed(KeyCode::Space)
+            || mouse.just_pressed(MouseButton::Left)
+        {
+            anim.skipping = true;
+            anim.fade_start_time = Some(anim.elapsed);
+            // Capturer les valeurs actuelles au moment du skip
+            anim.fade_start_bg_alpha = Some(current_bg_alpha);
+            anim.fade_start_text_alpha = Some(current_text_alpha);
+            for (_entity, sink) in gameover_music_q.iter() {
+                if let Some(sink) = sink {
+                    anim.fade_start_volume = Some(sink.volume());
+                }
+            }
+        }
+    }
+
+    // ── Mode campagne : fondu au noir (auto ou skip) ────────────
+    if anim.is_campaign {
+        // Déclenchement auto si pas encore de fade
+        if anim.fade_start_time.is_none() && anim.elapsed >= CAMPAIGN_AUTO_FADE_START {
+            anim.fade_start_time = Some(anim.elapsed);
+            // Capturer les valeurs actuelles au moment du déclenchement auto
+            anim.fade_start_bg_alpha = Some(current_bg_alpha);
+            anim.fade_start_text_alpha = Some(current_text_alpha);
+            for (_entity, sink) in gameover_music_q.iter() {
+                if let Some(sink) = sink {
+                    anim.fade_start_volume = Some(sink.volume());
+                }
+            }
+        }
+
+        if let Some(fade_start) = anim.fade_start_time {
+            let fade_duration = if anim.skipping {
+                CAMPAIGN_SKIP_FADE_DURATION
+            } else {
+                CAMPAIGN_FADE_DURATION
+            };
+            let fade_progress = ((anim.elapsed - fade_start) / fade_duration).clamp(0.0, 1.0);
+
+            // Fondu au noir progressif (depuis l'alpha capturé → 1.0)
+            let base_bg = anim.fade_start_bg_alpha.unwrap_or(current_bg_alpha);
+            if let Ok(mut bg) = bg_q.get_single_mut() {
+                bg.0.set_a(base_bg + fade_progress * (1.0 - base_bg));
+            }
+
+            // Fondu des textes (depuis l'alpha capturé → 0.0)
+            let base_text = anim.fade_start_text_alpha.unwrap_or(current_text_alpha);
+            for (mut text, _) in text_q.iter_mut() {
+                for section in text.sections.iter_mut() {
+                    section.style.color.set_a(base_text * (1.0 - fade_progress));
+                }
+            }
+
+            // Fondu progressif du volume de la musique (depuis le volume capturé)
+            let base_volume = anim.fade_start_volume.unwrap_or(1.0);
+            for (_entity, sink) in gameover_music_q.iter() {
+                if let Some(sink) = sink {
+                    sink.set_volume(base_volume * (1.0 - fade_progress));
+                }
+            }
+
+            // Transition quand le fondu est terminé
+            if fade_progress >= 1.0 {
+                for (entity, _) in gameover_music_q.iter() {
+                    if let Some(mut e) = commands.get_entity(entity) { e.despawn(); }
+                }
+                // Progression perdue en campagne
+                commands.remove_resource::<CampaignProgress>();
+                commands.remove_resource::<PlayMode>();
+                next_state.set(GameState::MainMenu);
+            }
+            return;
+        }
+    }
+
+    // ── Animation normale ────────────────────────────────────────
     // fond : noir opaque → semi-transparent
     if let Ok(mut bg) = bg_q.get_single_mut() {
         bg.0.set_a(1.0 - progress * 0.25);
@@ -190,7 +317,6 @@ fn handle_restart(
     confirm: Option<ResMut<ConfirmPopup>>,
     confirm_ui_q: Query<Entity, With<ConfirmPopupUI>>,
     mut confirm_text_q: Query<(&mut Text, &ConfirmOptionMarker)>,
-    asset_server: Res<AssetServer>,
 ) {
     // ─── Popup de confirmation active ───────────────────────────
     if let Some(mut popup) = confirm {
@@ -236,26 +362,22 @@ fn handle_restart(
         return;
     }
 
-    // ─── R = rejouer le niveau ──────────────────────────────────
-    if keyboard.just_pressed(KeyCode::KeyR) {
+    let is_campaign = play_mode.map(|m| *m) == Some(PlayMode::Campaign);
+
+    // ─── R = rejouer le niveau (hors campagne uniquement) ──────
+    if !is_campaign && keyboard.just_pressed(KeyCode::KeyR) {
         for entity in gameover_music_q.iter() {
             if let Some(mut e) = commands.get_entity(entity) { e.despawn(); }
         }
         next_state.set(GameState::Playing);
     }
 
-    // ─── Echap = quitter ────────────────────────────────────────
-    if keyboard.just_pressed(KeyCode::Escape) {
-        let is_campaign = play_mode.map(|m| *m) == Some(PlayMode::Campaign);
-        if is_campaign {
-            commands.insert_resource(ConfirmPopup { selected: 0 });
-            spawn_confirm_popup(&mut commands, &asset_server);
-        } else {
-            commands.remove_resource::<PlayMode>();
-            for entity in gameover_music_q.iter() {
-                if let Some(mut e) = commands.get_entity(entity) { e.despawn(); }
-            }
-            next_state.set(GameState::MainMenu);
+    // ─── Echap = quitter (hors campagne uniquement) ────────────
+    if !is_campaign && keyboard.just_pressed(KeyCode::Escape) {
+        commands.remove_resource::<PlayMode>();
+        for entity in gameover_music_q.iter() {
+            if let Some(mut e) = commands.get_entity(entity) { e.despawn(); }
         }
+        next_state.set(GameState::MainMenu);
     }
 }
