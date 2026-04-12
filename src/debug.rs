@@ -22,6 +22,7 @@ pub struct DebugPlugin;
 impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DebugMode(false))
+            .insert_resource(DebugMousePos(Vec2::ZERO))
             .add_systems(Startup, setup_debug_ui)
             .add_systems(
                 Update,
@@ -31,6 +32,7 @@ impl Plugin for DebugPlugin {
                     update_debug_ui,
                     update_debug_level_ui,
                     manage_asteroid_labels,
+                    debug_mouse_coords,
                 ),
             );
     }
@@ -41,6 +43,12 @@ struct AsteroidLabel(Entity);
 
 #[derive(Resource)]
 pub struct DebugMode(pub bool);
+
+#[derive(Resource)]
+struct DebugMousePos(Vec2);
+
+#[derive(Component)]
+struct DebugMouseUI;
 
 #[derive(Component)]
 struct DebugUI;
@@ -73,6 +81,30 @@ fn setup_debug_ui(mut commands: Commands) {
         DebugUI,
     ));
 
+    // Coordonnées souris (en bas à gauche)
+    commands.spawn((
+        TextBundle {
+            text: Text::from_sections([TextSection::new(
+                "Mouse: (0, 0)",
+                TextStyle {
+                    font_size: 16.0,
+                    color: Color::rgba(0.0, 1.0, 1.0, 1.0),
+                    ..default()
+                },
+            )]),
+            style: Style {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(10.0),
+                left: Val::Px(10.0),
+                ..default()
+            },
+            visibility: Visibility::Hidden,
+            z_index: ZIndex::Global(100),
+            ..default()
+        },
+        DebugMouseUI,
+    ));
+
     // Panneau droit : timeline du niveau
     commands.spawn((
         TextBundle {
@@ -102,8 +134,9 @@ fn toggle_debug(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut debug: ResMut<DebugMode>,
-    mut ui_q: Query<&mut Visibility, (With<DebugUI>, Without<DebugLevelUI>)>,
-    mut level_ui_q: Query<&mut Visibility, (With<DebugLevelUI>, Without<DebugUI>)>,
+    mut ui_q: Query<&mut Visibility, (With<DebugUI>, Without<DebugLevelUI>, Without<DebugMouseUI>)>,
+    mut level_ui_q: Query<&mut Visibility, (With<DebugLevelUI>, Without<DebugUI>, Without<DebugMouseUI>)>,
+    mut mouse_ui_q: Query<&mut Visibility, (With<DebugMouseUI>, Without<DebugUI>, Without<DebugLevelUI>)>,
     mut difficulty: ResMut<crate::difficulty::Difficulty>,
     runner: Option<ResMut<crate::level::LevelRunner>>,
     music_q: Query<Entity, With<MusicMain>>,
@@ -160,6 +193,9 @@ fn toggle_debug(
             *vis = new_vis;
         }
         if let Ok(mut vis) = level_ui_q.get_single_mut() {
+            *vis = new_vis;
+        }
+        if let Ok(mut vis) = mouse_ui_q.get_single_mut() {
             *vis = new_vis;
         }
     }
@@ -500,6 +536,51 @@ fn draw_hittable<T: Hittable>(gizmos: &mut Gizmos, query: &Query<(&Transform, &T
                 }
             }
         }
+    }
+}
+
+fn debug_mouse_coords(
+    debug: Res<DebugMode>,
+    windows: Query<&Window>,
+    camera_q: Query<(&Camera, &GlobalTransform)>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    mut mouse_pos: ResMut<DebugMousePos>,
+    mut mouse_ui_q: Query<&mut Text, With<DebugMouseUI>>,
+) {
+    if !debug.0 {
+        return;
+    }
+
+    let window = windows.single();
+    let Some(cursor_pos) = window.cursor_position() else {
+        return;
+    };
+
+    // Convertir en coordonnées world
+    let world_pos = if let Ok((camera, cam_transform)) = camera_q.get_single() {
+        camera
+            .viewport_to_world_2d(cam_transform, cursor_pos)
+            .unwrap_or(Vec2::ZERO)
+    } else {
+        Vec2::ZERO
+    };
+
+    mouse_pos.0 = world_pos;
+
+    // Mettre à jour l'UI
+    if let Ok(mut text) = mouse_ui_q.get_single_mut() {
+        text.sections[0].value = format!(
+            "Mouse: ({:.0}, {:.0})  |  Screen: ({:.0}, {:.0})",
+            world_pos.x, world_pos.y, cursor_pos.x, cursor_pos.y,
+        );
+    }
+
+    // Clic droit → log dans la console
+    if mouse.just_pressed(MouseButton::Right) {
+        info!(
+            ">>> CLICK  world=({:.1}, {:.1})  screen=({:.1}, {:.1})",
+            world_pos.x, world_pos.y, cursor_pos.x, cursor_pos.y,
+        );
     }
 }
 

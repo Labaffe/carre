@@ -30,7 +30,7 @@ impl Plugin for MainMenuPlugin {
 struct MainMenuUI;
 
 #[derive(Component)]
-struct MainMenuMusic;
+pub struct MainMenuMusic;
 
 /// Tile de fond (world-space sprite).
 #[derive(Component)]
@@ -101,6 +101,7 @@ fn setup_main_menu(
     asset_server: Res<AssetServer>,
     windows: Query<&Window>,
     camera_q: Query<(&Camera, &GlobalTransform, &OrthographicProjection)>,
+    existing_music: Query<Entity, With<MainMenuMusic>>,
 ) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     let tile_texture = asset_server.load("images/backgrounds/space_tile_1.png");
@@ -154,15 +155,16 @@ fn setup_main_menu(
         }
     }
 
-    // Musique du menu
-    commands.spawn((
-        AudioBundle {
-            source: asset_server.load("audio/music/main_menu.ogg"),
-            settings: PlaybackSettings::LOOP,
-        },
-        MainMenuMusic,
-        MainMenuUI,
-    ));
+    // Musique du menu (ne pas re-spawner si elle tourne déjà)
+    if existing_music.is_empty() {
+        commands.spawn((
+            AudioBundle {
+                source: asset_server.load("audio/music/main_menu.ogg"),
+                settings: PlaybackSettings::LOOP,
+            },
+            MainMenuMusic,
+        ));
+    }
 
     // UI racine (fond noir, recouvre tout l'écran)
     commands
