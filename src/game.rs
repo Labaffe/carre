@@ -35,6 +35,7 @@ impl Plugin for GamePlugin {
                 Update,
                 (
                     level_phase_system,
+                    skip_intro_input,
                     detect_boss_death,
                     detect_level_complete,
                     debug_skip_to_outro,
@@ -132,6 +133,8 @@ pub enum LevelPhaseKind {
         sound_finished: bool,
         start_y: f32,
         target_y: f32,
+        /// Position Y cible, en ratio de half_h.
+        spawn_y_ratio: f32,
         initialized: bool,
     },
     /// Niveau en cours : les LevelSteps s'exécutent.
@@ -151,7 +154,7 @@ struct OutroUI;
 /// Marqueur pour le son d'intro (landing.ogg). Despawné automatiquement
 /// par Bevy quand la lecture est terminée (PlaybackSettings::DESPAWN).
 #[derive(Component)]
-struct IntroSound;
+pub struct IntroSound;
 
 /// Marqueur pour la musique de l'outro.
 #[derive(Component)]
@@ -172,18 +175,18 @@ pub struct IntroConfig {
     pub duration: f32,
     /// Son joué pendant l'intro.
     pub sound: &'static str,
+    /// Position Y cible du vaisseau, en ratio de half_h.
+    /// Ex: -0.5 → -half_h * 0.5 (milieu de la moitié basse).
+    pub spawn_y_ratio: f32,
 }
 
 /// Retourne la config d'intro pour un niveau.
 pub fn level_intro(level: usize) -> IntroConfig {
     match level {
-        2 => IntroConfig {
-            duration: 5.0, // durée de landing.ogg
-            sound: "audio/sfx/landing.ogg",
-        },
         _ => IntroConfig {
             duration: 5.0,
             sound: "audio/sfx/landing.ogg",
+            spawn_y_ratio: -0.5,
         },
     }
 }
@@ -215,6 +218,7 @@ fn level_phase_system(
             sound_finished,
             start_y,
             target_y,
+            spawn_y_ratio,
             initialized,
         } => {
             let window = windows.single();
@@ -222,7 +226,7 @@ fn level_phase_system(
 
             // Premier frame : initialiser les positions et activer le freeze
             if !*initialized {
-                *target_y = -half_h * 0.5;
+                *target_y = half_h * *spawn_y_ratio;
                 *start_y = -half_h - 150.0;
                 *initialized = true;
                 pause.intro_active = true;
@@ -230,6 +234,11 @@ fn level_phase_system(
                 if let Ok(mut transform) = player_q.get_single_mut() {
                     transform.translation.y = *start_y;
                 }
+            }
+
+            // Ne pas avancer l'intro pendant la pause
+            if pause.paused {
+                return;
             }
 
             // Jouer le son une seule fois (avec marqueur IntroSound)
@@ -279,6 +288,74 @@ fn level_phase_system(
             // Géré par level_outro_animate et level_outro_input
         }
     }
+}
+
+/// Skip l'intro avec Entrée ou clic gauche.
+fn skip_intro_input(
+    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    mut level_phase: Option<ResMut<LevelPhase>>,
+    mut pause: ResMut<PauseState>,
+    mut player_q: Query<&mut Transform, With<Player>>,
+    intro_sound_q: Query<Entity, With<IntroSound>>,
+    windows: Query<&Window>,
+) {
+    if !keyboard.just_pressed(KeyCode::Enter)
+        && !keyboard.just_pressed(KeyCode::Space)
+        && !mouse.just_pressed(MouseButton::Left)
+    {
+        return;
+    }
+
+    let Some(ref mut level_phase) = level_phase else { return };
+    if !matches!(level_phase.phase, LevelPhaseKind::Intro { .. }) {
+        return;
+    }
+    if pause.paused {
+        return;
+    }
+
+    do_skip_intro(&mut commands, level_phase, &mut pause, &mut player_q, &intro_sound_q, &windows);
+}
+
+/// Skip l'intro : place le joueur à sa position cible, despawn le son, passe en Running.
+pub(crate) fn do_skip_intro(
+    commands: &mut Commands,
+    level_phase: &mut ResMut<LevelPhase>,
+    pause: &mut ResMut<PauseState>,
+    player_q: &mut Query<&mut Transform, With<Player>>,
+    intro_sound_q: &Query<Entity, With<IntroSound>>,
+    windows: &Query<&Window>,
+) {
+    // Calculer target_y à partir du ratio si l'intro n'a pas été initialisée
+    let final_y = if let LevelPhaseKind::Intro { target_y, spawn_y_ratio, initialized, .. } = &level_phase.phase {
+        if *initialized {
+            *target_y
+        } else {
+            let window = windows.single();
+            let half_h = window.height() / 2.0;
+            half_h * *spawn_y_ratio
+        }
+    } else {
+        return;
+    };
+
+    // Placer le joueur à sa position cible
+    if let Ok(mut transform) = player_q.get_single_mut() {
+        transform.translation.y = final_y;
+    }
+
+    // Despawn le son d'intro
+    for entity in intro_sound_q.iter() {
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
+    }
+
+    // Passer en Running
+    pause.intro_active = false;
+    level_phase.phase = LevelPhaseKind::Running;
 }
 
 /// Détecte la fin de l'animation de mort du dernier boss et envoie

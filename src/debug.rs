@@ -6,12 +6,14 @@
 use crate::MusicMain;
 use crate::asteroid::Asteroid;
 use crate::boss::{BossCharge, BossMarker};
+use crate::game::{IntroSound, LevelPhase, LevelPhaseKind};
 use crate::green_ufo::GreenUFOMarker;
 use crate::collision::Hittable;
 use crate::difficulty::Difficulty;
 use crate::enemy::{Enemy, EnemyProjectile, EnemyState, PatternIndex, PatternTimer};
 use crate::level::{LevelRunner, Trigger};
 use crate::missile::Missile;
+use crate::pause::PauseState;
 use crate::player::{Player, PlayerLives};
 use crate::score::Score;
 use crate::weapon::HitboxShape;
@@ -27,6 +29,7 @@ impl Plugin for DebugPlugin {
             .add_systems(
                 Update,
                 (
+                    debug_skip_intro,
                     toggle_debug,
                     draw_hitboxes,
                     update_debug_ui,
@@ -605,6 +608,39 @@ fn debug_mouse_coords(
             world_pos.x, world_pos.y, cursor_pos.x, cursor_pos.y,
         );
     }
+}
+
+/// F2/F3/F4 pendant l'intro : skip l'intro et passe en Running.
+/// Doit tourner avant toggle_debug et debug_skip_to_boss pour que
+/// l'intro soit déjà terminée quand ces systèmes s'exécutent.
+fn debug_skip_intro(
+    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut level_phase: Option<ResMut<LevelPhase>>,
+    mut pause: ResMut<PauseState>,
+    mut player_q: Query<&mut Transform, With<Player>>,
+    intro_sound_q: Query<Entity, With<IntroSound>>,
+    windows: Query<&Window>,
+) {
+    if !keyboard.just_pressed(KeyCode::F2)
+        && !keyboard.just_pressed(KeyCode::F3)
+        && !keyboard.just_pressed(KeyCode::F4)
+    {
+        return;
+    }
+    let Some(ref mut level_phase) = level_phase else { return };
+    if !matches!(level_phase.phase, LevelPhaseKind::Intro { .. }) {
+        return;
+    }
+
+    crate::game::do_skip_intro(
+        &mut commands,
+        level_phase,
+        &mut pause,
+        &mut player_q,
+        &intro_sound_q,
+        &windows,
+    );
 }
 
 fn debug_kill_player(

@@ -5,7 +5,7 @@
 //! Le temps de jeu est gelé tant que la pause est active.
 
 use crate::game::{
-    CampaignProgress, ConfirmOptionMarker, ConfirmPopup, ConfirmPopupUI, PlayMode,
+    CampaignProgress, ConfirmOptionMarker, ConfirmPopup, ConfirmPopupUI, IntroSound, PlayMode,
     despawn_confirm_popup, spawn_confirm_popup,
 };
 use crate::state::GameState;
@@ -21,7 +21,11 @@ impl Plugin for PausePlugin {
         app.init_resource::<PauseState>()
             .add_systems(
                 Update,
-                handle_pause_input.run_if(in_state(GameState::Playing)),
+                (
+                    handle_pause_input,
+                    sync_intro_sound_pause,
+                )
+                    .run_if(in_state(GameState::Playing)),
             )
             .add_systems(OnExit(GameState::Playing), cleanup_pause);
     }
@@ -132,8 +136,8 @@ fn handle_pause_input(
 
     // ─── Gestion normale de la pause ────────────────────────────
     if keyboard.just_pressed(KeyCode::Escape) {
-        // Bloquer la pause pendant l'intro ou l'outro de niveau
-        if pause.intro_active || pause.outro_active {
+        // Bloquer la pause pendant l'outro de niveau
+        if pause.outro_active {
             return;
         }
         if pause.paused {
@@ -329,6 +333,20 @@ fn spawn_pause_ui(commands: &mut Commands, asset_server: &Res<AssetServer>) {
                 },
             ));
         });
+}
+
+/// Synchronise le son d'intro avec l'état de pause.
+fn sync_intro_sound_pause(
+    pause: Res<PauseState>,
+    intro_sound_q: Query<&AudioSink, With<IntroSound>>,
+) {
+    for sink in intro_sound_q.iter() {
+        if pause.paused {
+            sink.pause();
+        } else {
+            sink.play();
+        }
+    }
 }
 
 /// Nettoyage de la pause quand on quitte l'état Playing (ex: game over).

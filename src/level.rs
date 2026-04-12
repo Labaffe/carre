@@ -472,6 +472,7 @@ fn setup_level(mut commands: Commands, progress: Res<crate::game::GameProgress>)
         sound_finished: false,
         start_y: 0.0,
         target_y: 0.0,
+        spawn_y_ratio: intro.spawn_y_ratio,
         initialized: false,
     };
     commands.insert_resource(crate::game::LevelPhase { phase });
