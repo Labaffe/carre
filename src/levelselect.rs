@@ -131,7 +131,7 @@ fn setup_level_select(
     // ── Cartes positionnées en absolu sur les slots du background ──
     // Noms des sprites par slot (sans extension)
     let card_names = [
-        "empty_prime",
+        "prime_space_invader",
         "empty_prime",
         "empty_prime",
         "empty_prime",
