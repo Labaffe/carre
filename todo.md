@@ -28,6 +28,7 @@ C'est ok pour moi ! si t'es chaud d'ajouter ce systeme c'est avec grand plaisir 
 Question : en fait ce que je proposer impliquait une certaine liberté de choix de la part du joueur au niveau des armes, mais peut être ca va pas avec la philosophie shoot em up ? Est-ce que la selection doit être automatique ? Sinon j'explique un peu plus en détails ce à quoi je pensais avec les 4 points précedent.
 
 Dans Megaman il y a un vrai intéret à aller taper un boss plutot qu'un autre car il te donne des armes spéciales. Etant donné qu'on veut faire une dimension roguelike autant garder simplement le choix de l'ordre des boss. 
+
 A la base je me suis dis que créer des niveaux fixes (meme si on peut y ajouter du random à l'intérieur) était un objectif relativement atteignables.
 
 - Créer des niveaux visitables dans tous les sens comme dans Megaman. 
@@ -39,7 +40,18 @@ A la base je me suis dis que créer des niveaux fixes (meme si on peut y ajouter
  Choix :
  - Les boss sont dans un ordre précis, ils sont donc de plus en plus difficiles (plus facile a équilibrer)
  - Les boss sont tous disponibles, mais les boss ont une version 1, 2, 3, 4 suivant l'ordre dans lequel tu les rencontres (cela peut etre simplement un scale de pv/vitesse) (je pars du principe que pour l'instant on part sur 4 boss
- - Les boss sont tous disponibles mais comme dans Megaman, ils sont difficiles. L'avantage c'est que si tu galères sur un Boss tu peux essayer d'en faire un autre sens rester bloqué. 
+ - Les boss sont tous disponibles mais comme dans Megaman, ils sont difficiles. L'avantage c'est que si tu galères sur un Boss tu peux essayer d'en faire un autre sens rester bloqué.
+
+Accèder à un petit shop dans l'écran de selection des primes entre chaque niveau.
+Faire drop des pièces par les monstres + tuer un boss accorde une prime. 
+
+Des objects pas chers -> bombe ? shield ? vie ? ce sont des recompenses qui font un peu doublon avec la montée de ShipLevel. 
+
+Des objets plus cher et peut etre pas achetables au premier shop (sauf si tu gères ou que tu es large en vie)
+Des passifs : 
+    - possibilité de faire un barrel roll et de devenir invulnérable pendant 0.5 secondes
+    - possiblité de faire un long dash devant toi pour t'échapper 
+    Les deux combinés te font dasher + invulnérable
   
 ### Améliorations
 
