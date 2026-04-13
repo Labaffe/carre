@@ -46,6 +46,8 @@ A full run consists of:
 5. At the end of each level, the **boss fight** takes place.
 6. Defeating a boss rewards the player with that boss's **unique Boss Card**.
 
+Lounis: Actuellement, à part les cartes, tout est implémenté pour créer des niveaux avec des évenements (vagues d'enemies en continu, enemie avec différents pattern et différentes phases, etc...). La boucle de gameplay est en place -> il faut compléter tous les niveaux d'affilés sans mourrir pour finir le jeu et obtenir l'écran de fin.
+
 ---
 
 ## Boss System
@@ -62,6 +64,14 @@ Inspired by the Mega Man formula: each boss has a unique identity, and defeating
 | **Glacius** | Ice / Slow | *Permafrost* — Freezes all enemies on screen |
 | **Voltex** | Lightning / Chain | *Arc Surge* — Chains damage between enemies |
 | **Noctis** | Shadow / Stealth | *Eclipse* — Player becomes invulnerable for 2s, resets cooldowns |
+
+Actuellement :
+- "Space Invader" à la base c'était du troll pour tester, mais je commence à trouver le boss interessant premier degrés. Il bouge bien, il est ni trop dur ni trop fort. C'est surtout la partie visuelle qui me gène.
+
+- "Mothership" : lui je pense que c'est un incontournable des "SHMUP" (shoot 'em up). Un gros vaisseau avec des tourelles posées dessus. A l'inverse de "Space Invader" qui se contente de bouger et charger, "Mothership" envoie des millions de boulettes à l'écran.
+
+Idées : 
+- Un boss "rigolo". Ce ne serait pas forcement un des 4 boss de base, mais sa prime pourrait apparaitre un peu cachée dans l'UI au bout de 3 boss battus. Musique ridicule, il parait faible mais pas tant que ça, il joue avec les codes qu'on aura mis en place dans les niveaux précédents (ex: il drop un faux coeur quand tu le tapes et se moque si tu le ramasses, il vole ton argent ou ton exp si tu le laisses toucher trop longtemps à ton UI). Je sais pas si c'est vraiment interessant mais j'ai révé de ce boss hier et c'était fun dans mon rêve.
 
 ### Boss Weaknesses
 
@@ -85,7 +95,10 @@ When a Boss Card is used against its corresponding weak boss, it deals **bonus d
 The player starts each run with a small **starter deck** of 6–8 basic cards. The deck grows through :
 
 - **Level-up drafts** — Killing enemies grants XP. On level-up, the player draws a randomized hand of 3 cards from the **global card pool** and picks one to add permanently to their deck.
+Pas vraiment de rapport mais je pense que les enemies doivent drop l'exp pour te forcer à aller la chercher. A voir si ça ne rend pas le jeu insupportable mais cette notion d'objet qui tombe et qui force le joueur à prendre des risques pour le récupérer est cool.
+
 - **Encounter drafts** — After each completed encounter room, the player picks 1 of 3 offered cards to add to their deck.
+Créer un système de "Sous-niveau/salle ?" A voir si le système de "LevelStep" actuel suffit ou si c'est plus commode de séparer les niveaux en segments qui rapportent une carte.
 
 ### Playing Cards — The Mana System
 
@@ -109,6 +122,12 @@ This is intentionally inspired by Slay the Spire's economy, adapted for real-tim
 | **Discarded** | Used, waiting to cycle back |
 
 ---
+
+J'ai rien compris ahah. Genre tu dois joueur aux cartes tout en évitant les boulettes ?
+
+Il faudrait définir un pull de cartes de bases je n'arrive pas à me projeter.
+
+Dans todo.md j'avais l'idée de deux passifs : un dash, un temps d'invulnérabilité (+ j'ai pensé à un chargeur de bombe, au bout de 30sec tu génères une bombe si tu n'en as pas sur toi)
 
 ## System Integration
 
@@ -150,6 +169,8 @@ This means boss order also shapes **what you can draft**, not just what you rece
 | Playing a Boss Card mid-run | Powerful in any context | Decisive against the matching weak boss |
 
 ---
+
+Sur le papier la partie "macro" est insane mais je ne comprends toujours pas comment ça se traduit en jeu. 
 
 ## Card Taxonomy
 
