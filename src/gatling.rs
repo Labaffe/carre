@@ -155,12 +155,13 @@ pub struct TurretConfig {
 }
 
 /// Configuration complète d'un Mothership.
-/// `turrets` : un `TurretConfig` par tourelle (gauche, centre, droite).
-/// Si moins de 3, les tourelles manquantes reprennent la dernière config.
+/// `turrets` : un `TurretConfig` par tourelle.
+/// `on_death` : si Some, spawne un autre Mothership à la mort de celui-ci.
 #[derive(Clone, Debug)]
 pub struct MothershipConfig {
     pub edge: SpawnPosition,
     pub turrets: Vec<TurretConfig>,
+    pub on_death: Option<Box<MothershipConfig>>,
 }
 
 /// Helpers pour construire un `TurretConfig` rapidement.
@@ -402,6 +403,10 @@ struct GatlingBaseEdge(EntryEdge);
 #[derive(Component)]
 pub struct MothershipMarker;
 
+/// Si présent, un nouveau Mothership sera spawné à la mort de celui-ci.
+#[derive(Component)]
+pub struct MothershipSpawnOnDeath(pub MothershipConfig);
+
 /// État et données du Mothership.
 #[derive(Component)]
 pub struct Mothership {
@@ -604,6 +609,11 @@ fn spawn_mothership_oneshot(
         drift_time: 0.0,
         gatlings: gatling_entities,
     });
+
+    // Si un mothership suivant est configuré, attacher le composant
+    if let Some(next) = config.on_death {
+        commands.entity(mothership_entity).insert(MothershipSpawnOnDeath(*next));
+    }
 }
 
 // ─── Spawn Gatling standalone (via spawn_requests "gatling") ────────
@@ -796,23 +806,21 @@ fn mothership_dying(
     mut commands: Commands,
     time: Res<Time>,
     mut mothership_q: Query<
-        (Entity, &Mothership, &mut Transform, &mut Sprite),
+        (Entity, &Mothership, &mut Transform, &mut Sprite, Option<&MothershipSpawnOnDeath>),
         With<MothershipMarker>,
     >,
     mut level_events: EventWriter<LevelActionEvent>,
+    mut spawn_queue: ResMut<MothershipSpawnQueue>,
     windows: Query<&Window>,
 ) {
-    // Compter les Motherships encore en jeu AVANT la boucle (évite le conflit borrow).
-    let total_alive: usize = mothership_q.iter().count();
-
     let window = windows.single();
     let half_w = window.width() / 2.0;
     let half_h = window.height() / 2.0;
     let dt = time.delta_seconds();
 
-    let mut despawned_count = 0usize;
+    let mut to_despawn: Vec<(Entity, Option<MothershipConfig>)> = Vec::new();
 
-    for (entity, mothership, mut transform, mut sprite) in mothership_q.iter_mut() {
+    for (entity, mothership, mut transform, mut sprite, spawn_on_death) in mothership_q.iter_mut() {
         if mothership.state != MothershipPhase::Dying {
             continue;
         }
@@ -838,16 +846,22 @@ fn mothership_dying(
             .edge
             .is_offscreen(transform.translation, half_w, half_h)
         {
-            if let Some(e) = commands.get_entity(entity) {
-                e.despawn_recursive();
-            }
-            despawned_count += 1;
+            let next_config = spawn_on_death.map(|s| s.0.clone());
+            to_despawn.push((entity, next_config));
         }
     }
 
-    // MarkLevelComplete seulement quand le dernier Mothership vient de sortir
-    if despawned_count > 0 && despawned_count >= total_alive {
-        level_events.send(LevelActionEvent(vec![Action::MarkLevelComplete]));
+    for (entity, next_config) in to_despawn {
+        if let Some(config) = next_config {
+            // Spawner le mothership suivant
+            spawn_queue.0.push(config);
+        } else {
+            // Pas de suivant → niveau terminé
+            level_events.send(LevelActionEvent(vec![Action::MarkLevelComplete]));
+        }
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
 }
 

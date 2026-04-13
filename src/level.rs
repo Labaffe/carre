@@ -467,11 +467,19 @@ pub fn build_level_2() -> Vec<LevelStep> {
         TurretConfig::single("full_auto", 15.0, Vec2::new(0.3, -0.1)),       // 5ème originale
         TurretConfig::single("aim_and_shoot", 3.0, Vec2::new(0.47, -0.1)),   // 500px à droite de la 5ème
     ];
+    // Le 2e mothership (bottom) spawne à la mort du 1er, pas de suivant
+    let second = MothershipConfig {
+        edge: SpawnPosition::Bottom,
+        turrets: turrets.clone(),
+        on_death: None,
+    };
+
     vec![
         LevelStep::at(0.0, "game_start").with(Action::Log("Niveau 2 démarré")),
         LevelStep::at(2.0, "spawn_top").with(Action::SpawnMothership(MothershipConfig {
             edge: SpawnPosition::Top,
             turrets: turrets.clone(),
+            on_death: Some(Box::new(second)),
         })),
     ]
 }
