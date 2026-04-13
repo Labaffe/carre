@@ -1,24 +1,23 @@
-//! Gatling & Mothership — ennemis utilisant le framework `enemy.rs`.
+//! Gatling — tourelles attachées au Mothership ou standalone.
 //!
-//! Le Mothership est un vaisseau mère avec 3 Gatlings attachées.
-//! Il peut apparaître depuis n'importe quel bord de l'écran (`EntryEdge`).
+//! Machine à état : Entering (animation sprite) → Active(0) → Dying → Dead
 //!
-//! Machine à état Mothership : Entering (3s) → Active → Dying (recule vers le bord)
-//! Machine à état Gatling : Entering (animation sprite) → Active(0) → Dying → Dead
+//! Patterns :
+//!   - `aim_and_shoot` : suivi continu du joueur + tir unique en fin de pattern
+//!   - `full_auto` : balayage ping-pong avec tir à cadence croissante
+//!   - `idle` : pause (aucun mouvement)
 //!
-//! Les Gatlings sont des entités indépendantes avec leur propre hitbox,
-//! dont la position est synchronisée au Mothership via `MothershipLink`.
-//!
-//! Le Mothership est immortel par défaut (`vulnerable: false`).
-//! Quand toutes les Gatlings meurent, le Mothership recule hors de l'écran
-//! puis envoie `MarkLevelComplete`.
+//! Les types partagés (MothershipConfig, EntryEdge, composants, etc.)
+//! sont dans `mothership.rs`. Ce module ne contient que le code Gatling.
 
-use crate::difficulty::SpawnPosition;
 use crate::enemies::GATLING;
 use crate::enemy::{Enemy, EnemyProjectile, EnemyState, PatternIndex, PatternTimer};
-use crate::explosion::load_frames_from_folder;
-use crate::item::{DropTable, ItemType};
-use crate::level::{Action, LevelActionEvent};
+use crate::item::DropTable;
+use crate::mothership::{
+    EntryEdge, GatlingFrames, GatlingMarker, GatlingPatternOverride,
+    MothershipLink, MothershipSpawnQueue, GATLING_ANIM_INTERVAL,
+    GATLING_SPRITE_SIZE, MOTHERSHIP_DROP_TABLE, MOTHERSHIP_ENTERING_DURATION,
+};
 use crate::pause::not_paused;
 use crate::player::Player;
 use crate::state::GameState;
@@ -29,17 +28,22 @@ pub struct GatlingPlugin;
 impl Plugin for GatlingPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MothershipSpawnQueue>()
-            .add_systems(Startup, preload_gatling_frames)
+            .add_systems(
+                Startup,
+                crate::mothership::preload_gatling_frames,
+            )
             .add_systems(
                 Update,
                 (
-                    spawn_mothership_oneshot,
+                    // Mothership systems (from mothership.rs)
+                    crate::mothership::spawn_mothership_oneshot,
+                    crate::mothership::mothership_entering,
+                    crate::mothership::mothership_drift,
+                    crate::mothership::mothership_sync_positions,
+                    crate::mothership::mothership_death_detection,
+                    crate::mothership::mothership_dying,
+                    // Gatling systems (local)
                     spawn_gatlings_oneshot,
-                    mothership_entering,
-                    mothership_drift,
-                    mothership_sync_positions,
-                    mothership_death_detection,
-                    mothership_dying,
                     gatling_standalone_entering,
                     gatling_entering_animate,
                     gatling_pattern_executor,
@@ -52,297 +56,44 @@ impl Plugin for GatlingPlugin {
     }
 }
 
-// ─── Constantes ─────────────────────────────────────────────────────
+// ─── Constantes Gatling ────────────────────────────────────────────
 
-/// Intervalle entre deux frames de l'animation d'apparition (secondes).
-const GATLING_ANIM_INTERVAL: f32 = 0.2;
-/// Durée de la phase Entering (secondes).
-const GATLING_ENTERING_DURATION: f32 = 3.0;
-/// Distance parcourue pendant l'Entering (pixels).
-/// Plus la valeur est grande, plus le mothership avance dans l'écran.
-const GATLING_ENTERING_DISTANCE: f32 = 900.0;
-/// Taille du sprite Gatling (pixels).
-const GATLING_SPRITE_SIZE: f32 = 128.0;
-
-/// Vitesse de recul du Mothership pendant la mort (pixels/seconde).
-const MOTHERSHIP_DYING_SPEED: f32 = 100.0;
-
-// ─── Flottement du Mothership (à ajuster) ───────────────────────
-// Axe principal = perpendiculaire au bord d'entrée (gauche↔droite pour Top/Bottom).
-// Axe secondaire = parallèle au bord d'entrée (haut↔bas pour Top/Bottom).
-/// Amplitude du flottement principal (pixels).
-const MOTHERSHIP_DRIFT_MAIN_AMP: f32 = 460.0;
-/// Amplitude du flottement secondaire (pixels).
-const MOTHERSHIP_DRIFT_MINOR_AMP: f32 = 220.0;
-/// Fréquence du flottement principal (rad/s). Plus haut = plus rapide.
-const MOTHERSHIP_DRIFT_MAIN_FREQ: f32 = 0.5;
-/// Fréquence du flottement secondaire (rad/s).
-const MOTHERSHIP_DRIFT_MINOR_FREQ: f32 = 0.3;
-/// Ratio hauteur/largeur du sprite mothership.png (697 / 2048).
-const MOTHERSHIP_SPRITE_RATIO: f32 = 697.0 / 2048.0;
-/// Fraction de la largeur de l'écran occupée par le mothership (Top/Bottom),
-/// ou de la hauteur (Left/Right). >1.0 = dépasse de l'écran.
-const MOTHERSHIP_SCREEN_FRACTION: f32 = 1.5;
-
-// ─── Silhouette du Mothership (bord inférieur, convention Top) ──
-// Coordonnées normalisées (-0.5..0.5) définissant le bord bas du sprite.
-// Les tourelles sont posées SUR cette ligne. Aucun élément ne doit être
-// placé en dessous (côté joueur).
-// Points ordonnés de gauche à droite.
-pub const MOTHERSHIP_BOTTOM_PROFILE: &[(f32, f32)] = &[
-    (-0.50, 0.0),  // extrême gauche (bord du sprite)
-    (-0.47, -0.1), // flanc gauche
-    (-0.3, -0.1),  // épaule gauche
-    (-0.15, -0.2), // descente gauche
-    (0.0, -0.3),   // pointe centrale (point le plus bas)
-    (0.15, -0.2),  // descente droite
-    (0.3, -0.1),   // épaule droite
-    (0.47, -0.1),  // flanc droite
-    (0.50, 0.0),   // extrême droite (bord du sprite)
-];
-
-// ─── Tir de la Gatling (à ajuster) ──────────────────────────────
 /// Angle de rotation max vers le joueur (degrés).
-const GATLING_AIM_MAX_ANGLE: f32 = 40.0;
+const GATLING_AIM_MAX_ANGLE: f32 = 55.0;
 /// Vitesse de rotation vers le joueur (degrés/seconde).
-const GATLING_AIM_SPEED: f32 = 60.0;
+const GATLING_AIM_SPEED: f32 = 80.0;
 /// Vitesse du projectile (pixels/seconde).
-const GATLING_PROJECTILE_SPEED: f32 = 400.0;
+const GATLING_PROJECTILE_SPEED: f32 = 450.0;
 /// Rayon de collision du projectile (pixels).
 const GATLING_PROJECTILE_RADIUS: f32 = 8.0;
 /// Intervalle entre deux frames de l'animation de tir (secondes).
 const GATLING_SHOOT_ANIM_INTERVAL: f32 = 0.1;
 
-// ─── Full Auto (à ajuster) ──────────────────────────────────────
+// ─── Full Auto ─────────────────────────────────────────────────────
+
 /// Vitesse de balayage initiale (degrés/seconde).
 const FULL_AUTO_SWEEP_SPEED_START: f32 = 30.0;
 /// Vitesse de balayage maximale (degrés/seconde).
 const FULL_AUTO_SWEEP_SPEED_MAX: f32 = 180.0;
 /// Intervalle de tir initial (secondes entre chaque tir).
 const FULL_AUTO_FIRE_INTERVAL_START: f32 = 0.8;
-/// Intervalle de tir minimal (cadence max, doit rester > temps d'animation).
+/// Intervalle de tir minimal (cadence max).
 const FULL_AUTO_FIRE_INTERVAL_MIN: f32 = 0.15;
-/// Courbe d'accélération (>1 = montée lente, <1 = montée rapide, 1 = linéaire).
+/// Courbe d'accélération (>1 = montée lente, <1 = montée rapide).
 const FULL_AUTO_RAMP_FACTOR: f32 = 1.5;
 /// Intervalle entre deux frames de l'animation de tir en full auto (secondes).
-/// Plus rapide que le shoot normal pour accompagner la cadence.
 const FULL_AUTO_SHOOT_ANIM_INTERVAL: f32 = 0.04;
 
-/// Drop table : 10% bombe, 15% bonus score.
-static GATLING_DROP_TABLE: [(ItemType, f32); 2] =
-    [(ItemType::Bomb, 0.10), (ItemType::BonusScore, 0.15)];
+/// Distance parcourue pendant l'Entering standalone (pixels).
+const GATLING_ENTERING_DISTANCE: f32 = 900.0;
 
-// ─── Configuration par tourelle ─────────────────────────────────────
-
-/// Définition d'un pattern pour une tourelle (version runtime, non statique).
-#[derive(Clone, Debug)]
-pub struct TurretPatternDef {
-    pub name: &'static str,
-    pub duration: f32,
-}
-
-/// Configuration d'une tourelle (liste de patterns qui cyclent + position sur le sprite).
-///
-/// La position est en coordonnées normalisées sur le sprite mothership (convention Top) :
-/// - `(0.0, 0.0)` = centre du sprite
-/// - `(-0.5, -0.5)` = coin bas-gauche (côté joueur, gauche)
-/// - `(0.5, 0.5)` = coin haut-droit
-/// - `x` = gauche/droite, `y` = profondeur (négatif = vers le joueur)
-#[derive(Clone, Debug)]
-pub struct TurretConfig {
-    pub patterns: Vec<TurretPatternDef>,
-    pub pos: Vec2,
-}
-
-/// Configuration complète d'un Mothership.
-/// `turrets` : un `TurretConfig` par tourelle.
-/// `on_death` : si Some, spawne un autre Mothership à la mort de celui-ci.
-#[derive(Clone, Debug)]
-pub struct MothershipConfig {
-    pub edge: SpawnPosition,
-    pub turrets: Vec<TurretConfig>,
-    pub on_death: Option<Box<MothershipConfig>>,
-}
-
-/// Helpers pour construire un `TurretConfig` rapidement.
-impl TurretConfig {
-    /// Un seul pattern qui cycle, à une position donnée sur le sprite.
-    pub fn single(name: &'static str, duration: f32, pos: Vec2) -> Self {
-        Self {
-            patterns: vec![TurretPatternDef { name, duration }],
-            pos,
-        }
-    }
-
-    /// Plusieurs patterns qui cyclent dans l'ordre, à une position donnée.
-    pub fn sequence(patterns: Vec<(&'static str, f32)>, pos: Vec2) -> Self {
-        Self {
-            patterns: patterns
-                .into_iter()
-                .map(|(name, duration)| TurretPatternDef { name, duration })
-                .collect(),
-            pos,
-        }
-    }
-}
-
-/// File d'attente de configs Mothership à spawner.
-#[derive(Resource, Default)]
-pub struct MothershipSpawnQueue(pub Vec<MothershipConfig>);
-
-/// Override des patterns pour une Gatling (remplace enemy.phases).
-#[derive(Component)]
-struct GatlingPatternOverride {
-    patterns: Vec<TurretPatternDef>,
-}
-
-// ─── Bord d'apparition ─────────────────────────────────────────────
-
-/// Bord de l'écran depuis lequel le Mothership apparaît.
-/// Détermine la direction d'entrée, la disposition des Gatlings,
-/// et la direction de fuite à la mort.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum EntryEdge {
-    Top,
-    Bottom,
-    Left,
-    Right,
-}
-
-impl EntryEdge {
-    /// Déduit le bord d'entrée depuis un `SpawnPosition`.
-    /// `At(_, _)` utilise `Top` par défaut.
-    pub fn from_spawn_position(sp: SpawnPosition) -> Self {
-        match sp {
-            SpawnPosition::Top => EntryEdge::Top,
-            SpawnPosition::Bottom => EntryEdge::Bottom,
-            SpawnPosition::Left => EntryEdge::Left,
-            SpawnPosition::Right => EntryEdge::Right,
-            SpawnPosition::At(_, _) => EntryEdge::Top,
-        }
-    }
-
-    /// Direction de déplacement pendant l'Entering (vers l'intérieur de l'écran).
-    pub fn enter_direction(self) -> Vec2 {
-        match self {
-            EntryEdge::Top => Vec2::new(0.0, -1.0),
-            EntryEdge::Bottom => Vec2::new(0.0, 1.0),
-            EntryEdge::Left => Vec2::new(1.0, 0.0),
-            EntryEdge::Right => Vec2::new(-1.0, 0.0),
-        }
-    }
-
-    /// Direction de fuite pendant le Dying (vers l'extérieur de l'écran).
-    pub fn exit_direction(self) -> Vec2 {
-        -self.enter_direction()
-    }
-
-    /// Rotation à appliquer aux sprites (Mothership et Gatlings).
-    /// Top = 0°, Bottom = 180°, Left = -90°, Right = +90°.
-    pub fn sprite_rotation(self) -> Quat {
-        let angle = match self {
-            EntryEdge::Top => 0.0,
-            EntryEdge::Bottom => std::f32::consts::PI,
-            EntryEdge::Left => std::f32::consts::FRAC_PI_2,
-            EntryEdge::Right => -std::f32::consts::FRAC_PI_2,
-        };
-        Quat::from_rotation_z(angle)
-    }
-
-    /// Taille du sprite Mothership selon le bord et la taille de la fenêtre.
-    /// Top/Bottom : largeur = MOTHERSHIP_SCREEN_FRACTION × fenêtre, hauteur = ratio.
-    /// Left/Right : hauteur = MOTHERSHIP_SCREEN_FRACTION × fenêtre, largeur = ratio.
-    pub fn mothership_size(self, window_w: f32, window_h: f32) -> Vec2 {
-        match self {
-            EntryEdge::Top | EntryEdge::Bottom => {
-                let w = window_w * MOTHERSHIP_SCREEN_FRACTION;
-                Vec2::new(w, w * MOTHERSHIP_SPRITE_RATIO)
-            }
-            EntryEdge::Left | EntryEdge::Right => {
-                let h = window_h * MOTHERSHIP_SCREEN_FRACTION;
-                Vec2::new(h * MOTHERSHIP_SPRITE_RATIO, h)
-            }
-        }
-    }
-
-    /// Transforme un offset Gatling de base (conçu pour `Top`) vers ce bord.
-    ///
-    /// Convention base (Top) : `x` = spread horizontal, `y` = profondeur (négatif = vers l'écran).
-    /// - Bottom : flip Y
-    /// - Left   : rotation 90° CCW → profondeur vers +X, spread vers Y
-    /// - Right  : rotation 90° CW  → profondeur vers -X, spread vers Y
-    pub fn transform_offset(self, base: Vec2) -> Vec2 {
-        match self {
-            EntryEdge::Top => base,
-            EntryEdge::Bottom => Vec2::new(base.x, -base.y),
-            EntryEdge::Left => Vec2::new(-base.y, base.x),
-            EntryEdge::Right => Vec2::new(base.y, base.x),
-        }
-    }
-
-    /// Position de spawn (centre du Mothership, entièrement hors écran).
-    /// Le point le plus avancé (bout des Gatlings) est juste au bord.
-    pub fn spawn_position(self, half_w: f32, half_h: f32, gatling_total_extent: f32) -> Vec2 {
-        match self {
-            EntryEdge::Top => Vec2::new(0.0, half_h + gatling_total_extent),
-            EntryEdge::Bottom => Vec2::new(0.0, -(half_h + gatling_total_extent)),
-            EntryEdge::Left => Vec2::new(-(half_w + gatling_total_extent), 0.0),
-            EntryEdge::Right => Vec2::new(half_w + gatling_total_extent, 0.0),
-        }
-    }
-
-    /// Ancre du sprite Gatling : le point d'attache au Mothership.
-    /// C'est le pivot de rotation pour le pattern "shoot".
-    /// En convention Bevy : (0,0) = centre, (0, 0.5) = haut, (0, -0.5) = bas.
-    pub fn gatling_anchor(self) -> bevy::sprite::Anchor {
-        // La rotation du sprite est appliquée AVANT l'anchor. Puisqu'on fait pivoter
-        // le sprite pour qu'il pointe dans la direction d'entrée, l'anchor doit
-        // toujours être "le haut" (côté mothership = opposé au bout du canon).
-        // Top: sprite non tourné → haut = (0, 0.5)
-        // Bottom: sprite tourné 180° → haut original est en bas → anchor = (0, 0.5) aussi
-        //   car Bevy applique anchor AVANT rotation dans le rendu
-        // En fait, l'anchor est en coordonnées locales du sprite (avant rotation),
-        // donc c'est toujours le haut du sprite original.
-        bevy::sprite::Anchor::Custom(Vec2::new(0.0, 0.5))
-    }
-
-    /// Angle absolu de la direction d'entrée (atan2), utilisé comme référence
-    /// pour le calcul de visée. C'est l'angle du canon au repos.
-    pub fn cannon_base_atan2(self) -> f32 {
-        let dir = self.enter_direction();
-        dir.y.atan2(dir.x)
-    }
-
-    /// Vérifie si le Mothership est entièrement sorti de l'écran (pendant le Dying).
-    pub fn is_offscreen(self, pos: Vec3, half_w: f32, half_h: f32) -> bool {
-        let margin = 600.0;
-        match self {
-            EntryEdge::Top => pos.y > half_h + margin,
-            EntryEdge::Bottom => pos.y < -(half_h + margin),
-            EntryEdge::Left => pos.x < -(half_w + margin),
-            EntryEdge::Right => pos.x > half_w + margin,
-        }
-    }
-}
-
-// ─── Composants ─────────────────────────────────────────────────────
-
-/// Marqueur pour identifier les Gatling parmi les Enemy.
-#[derive(Component)]
-pub struct GatlingMarker;
-
-/// Lien vers le Mothership parent. Contient l'offset relatif.
-#[derive(Component)]
-pub struct MothershipLink {
-    pub mothership: Entity,
-    pub offset: Vec2,
-}
+// ─── Composants Gatling-spécifiques ────────────────────────────────
 
 /// Animation de la Gatling pendant l'Entering.
 #[derive(Component)]
-struct GatlingEnteringAnim {
-    timer: Timer,
-    current_frame: usize,
+pub(crate) struct GatlingEnteringAnim {
+    pub(crate) timer: Timer,
+    pub(crate) current_frame: usize,
 }
 
 /// Position Y de départ pour un Gatling standalone (sans Mothership).
@@ -350,276 +101,37 @@ struct GatlingEnteringAnim {
 struct GatlingStartY(f32);
 
 /// Composant actif pendant le pattern "aim_and_shoot".
-/// Suit le joueur en continu, puis tire vers la fin du pattern.
 #[derive(Component)]
 struct GatlingShoot {
-    /// Angle relatif cible (radians, par rapport au repos, clamped à ±max).
     target_angle: f32,
-    /// Angle relatif courant (radians, interpolé vers target_angle).
     current_angle: f32,
-    /// Temps écoulé depuis le début du pattern.
     elapsed: f32,
-    /// Durée totale du pattern (secondes).
     duration: f32,
-    /// Animation de tir.
     anim_timer: Timer,
-    /// Frame courante de l'animation de tir.
     current_frame: usize,
-    /// Le projectile a déjà été tiré.
     fired: bool,
-    /// L'animation de tir a commencé.
     anim_started: bool,
 }
 
 /// Composant actif pendant le pattern "full_auto".
-/// La tourelle balaie de gauche à droite en tirant à intervalle régulier.
-/// La vitesse de balayage et la cadence de tir augmentent avec le temps.
 #[derive(Component)]
 struct GatlingFullAuto {
-    /// Angle relatif courant (radians, par rapport au repos).
     current_angle: f32,
-    /// Direction du balayage : +1.0 ou -1.0.
     sweep_dir: f32,
-    /// Délai avant de commencer le balayage et le tir (secondes).
     startup_delay: f32,
-    /// Temps écoulé depuis le début du pattern (hors startup_delay).
     elapsed: f32,
-    /// Durée totale du pattern (secondes).
     duration: f32,
-    /// Timer pour le prochain tir.
     fire_timer: Timer,
-    /// Frame courante de l'animation de tir (None = pas d'anim en cours).
     anim_frame: Option<usize>,
-    /// Timer de l'animation de tir.
     anim_timer: Timer,
 }
 
 /// Stocke le `EntryEdge` du Mothership parent pour calculer l'angle de base.
-/// Les Gatlings standalone utilisent `Top` par défaut.
 #[derive(Component)]
-struct GatlingBaseEdge(EntryEdge);
+pub(crate) struct GatlingBaseEdge(pub(crate) EntryEdge);
 
-/// Marqueur pour le Mothership.
-#[derive(Component)]
-pub struct MothershipMarker;
+// ─── Spawn Gatling standalone (via spawn_requests "gatling") ───────
 
-/// Si présent, un nouveau Mothership sera spawné à la mort de celui-ci.
-#[derive(Component)]
-pub struct MothershipSpawnOnDeath(pub MothershipConfig);
-
-/// État et données du Mothership.
-#[derive(Component)]
-pub struct Mothership {
-    pub state: MothershipPhase,
-    /// Si true, le Mothership peut être endommagé (réservé pour la suite).
-    pub vulnerable: bool,
-    /// Bord d'apparition — détermine la direction d'entrée, de fuite et la disposition.
-    pub edge: EntryEdge,
-    /// Taille du sprite en pixels (convention écran, après scaling).
-    pub size: Vec2,
-    /// Timer de la phase Entering.
-    pub anim_timer: Timer,
-    /// Position de départ hors écran (pour l'animation Entering).
-    pub start_pos: Vec2,
-    /// Position de repos après Entering (ancre pour le flottement).
-    pub anchor_pos: Vec2,
-    /// Temps accumulé pour le flottement sinusoïdal.
-    pub drift_time: f32,
-    /// Entités Gatling rattachées.
-    pub gatlings: Vec<Entity>,
-}
-
-/// Phases du Mothership.
-#[derive(PartialEq, Eq)]
-pub enum MothershipPhase {
-    /// Se déplace vers l'intérieur de l'écran pendant 3 secondes.
-    Entering,
-    /// Immobile, attend que les Gatlings meurent.
-    Active,
-    /// Recule doucement hors de l'écran vers le bord d'origine.
-    Dying,
-}
-
-// ─── Ressources ─────────────────────────────────────────────────────
-
-/// Frames préchargées de la Gatling (dossier images/gatling/).
-#[derive(Resource)]
-struct GatlingFrames(Vec<Handle<Image>>);
-
-// ─── Préchargement ─────────────────────────────────────────────────
-
-fn preload_gatling_frames(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let frames = load_frames_from_folder(&asset_server, "images/gatling")
-        .expect("gatling frames folder missing or empty");
-    commands.insert_resource(GatlingFrames(frames));
-}
-
-// ─── Offsets Gatling (convention Top) ────────────────────────────────
-
-/// Convertit la position normalisée d'un `TurretConfig` en offset pixel
-/// relatif au centre du mothership (convention Top).
-/// `pos` = coordonnées normalisées (-0.5..0.5), `ms_size` = taille pixel du mothership.
-fn turret_pos_to_offset(pos: Vec2, ms_size: Vec2) -> Vec2 {
-    Vec2::new(pos.x * ms_size.x, pos.y * ms_size.y)
-}
-
-/// Étendue totale depuis le centre du Mothership jusqu'au bout des Gatlings
-/// dans la direction d'entrée (convention Top = vers le bas).
-fn gatling_total_extent(ms_height: f32) -> f32 {
-    ms_height / 2.0 + GATLING_SPRITE_SIZE
-}
-
-// ─── Spawn Mothership (via spawn_requests "mothership") ─────────────
-
-/// Consomme les configs dans `MothershipSpawnQueue`.
-/// Spawne un Mothership (placeholder visuel) + 3 Gatlings liées,
-/// chaque tourelle avec sa propre séquence de patterns.
-fn spawn_mothership_oneshot(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut spawn_queue: ResMut<MothershipSpawnQueue>,
-    frames: Res<GatlingFrames>,
-    windows: Query<&Window>,
-) {
-    if spawn_queue.0.is_empty() {
-        return;
-    }
-    let config = spawn_queue.0.remove(0);
-    info!("Spawning mothership with {} turrets", config.turrets.len());
-
-    let edge = EntryEdge::from_spawn_position(config.edge);
-    let window = windows.single();
-    let half_w = window.width() / 2.0;
-    let half_h = window.height() / 2.0;
-
-    // Taille du mothership : pleine largeur de l'écran (ou pleine hauteur pour Left/Right)
-    let ms_size = edge.mothership_size(window.width(), window.height());
-    let extent = gatling_total_extent(ms_size.y);
-    let pos = edge.spawn_position(half_w, half_h, extent);
-    let rotation = edge.sprite_rotation();
-
-    // ─── Spawn du Mothership ─────────────────────────────────────
-    let mothership_entity = commands
-        .spawn((
-            SpriteBundle {
-                texture: asset_server.load("images/mothership/mothership_2.png"),
-                sprite: Sprite {
-                    custom_size: Some(ms_size),
-                    ..default()
-                },
-                transform: Transform {
-                    translation: Vec3::new(pos.x, pos.y, 0.4),
-                    rotation,
-                    ..default()
-                },
-                ..default()
-            },
-            MothershipMarker,
-        ))
-        .id();
-
-    // ─── Spawn des Gatlings (1 par TurretConfig) ──────────────────
-    let n_gatlings = config.turrets.len().max(1);
-    // Taille en convention Top pour calculer les offsets
-    let ms_size_top = match edge {
-        EntryEdge::Top | EntryEdge::Bottom => ms_size,
-        EntryEdge::Left | EntryEdge::Right => Vec2::new(ms_size.y, ms_size.x),
-    };
-    let mut gatling_entities = Vec::with_capacity(n_gatlings);
-
-    for (i, turret_cfg) in config.turrets.iter().enumerate() {
-        let base_offset = turret_pos_to_offset(turret_cfg.pos, ms_size_top);
-        let offset = edge.transform_offset(base_offset);
-        let gatling_pos = Vec2::new(pos.x + offset.x, pos.y + offset.y);
-        let phase = &GATLING.phases[0];
-        let first_frame = frames.0.first().cloned().unwrap_or_default();
-
-        let turret_config = Some(turret_cfg.clone());
-
-        let mut entity_cmds = commands.spawn((
-            SpriteBundle {
-                texture: first_frame,
-                sprite: Sprite {
-                    custom_size: Some(Vec2::splat(GATLING_SPRITE_SIZE)),
-                    anchor: edge.gatling_anchor(),
-                    ..default()
-                },
-                transform: Transform {
-                    translation: Vec3::new(gatling_pos.x, gatling_pos.y, 0.5),
-                    rotation,
-                    ..default()
-                },
-                ..default()
-            },
-            Enemy {
-                health: phase.health,
-                max_health: phase.health,
-                state: EnemyState::Entering,
-                radius: GATLING.radius,
-                sprite_size: GATLING.sprite_size,
-                anim_timer: Timer::from_seconds(GATLING_ENTERING_DURATION, TimerMode::Once),
-                phases: GATLING.phases,
-                death_duration: GATLING.death_duration,
-                death_shake_max: GATLING.death_shake_max,
-                hit_sound: GATLING.hit_sound,
-                death_explosion_sound: GATLING.death_explosion_sound,
-                hit_flash_color: None,
-            },
-            GatlingMarker,
-            GatlingBaseEdge(edge),
-            MothershipLink {
-                mothership: mothership_entity,
-                offset,
-            },
-            GatlingEnteringAnim {
-                timer: Timer::from_seconds(GATLING_ANIM_INTERVAL, TimerMode::Repeating),
-                current_frame: 0,
-            },
-            PatternIndex(0),
-            PatternTimer(Timer::from_seconds(0.0, TimerMode::Once)),
-            DropTable {
-                drops: &GATLING_DROP_TABLE,
-            },
-        ));
-
-        // Insérer l'override de patterns si une config tourelle est fournie
-        if let Some(tc) = turret_config {
-            entity_cmds.insert(GatlingPatternOverride {
-                patterns: tc.patterns,
-            });
-        }
-
-        let gatling_entity = entity_cmds.id();
-
-        gatling_entities.push(gatling_entity);
-    }
-
-    // ─── Insérer le composant Mothership avec la liste des gatlings ─
-    // L'ancre = position finale après Entering.
-    let dir = edge.enter_direction();
-    let anchor = pos + dir * GATLING_ENTERING_DISTANCE;
-    commands.entity(mothership_entity).insert(Mothership {
-        state: MothershipPhase::Entering,
-        vulnerable: false,
-        edge,
-        size: ms_size,
-        anim_timer: Timer::from_seconds(GATLING_ENTERING_DURATION, TimerMode::Once),
-        start_pos: pos,
-        anchor_pos: anchor,
-        drift_time: 0.0,
-        gatlings: gatling_entities,
-    });
-
-    // Si un mothership suivant est configuré, attacher le composant
-    if let Some(next) = config.on_death {
-        commands.entity(mothership_entity).insert(MothershipSpawnOnDeath(*next));
-    }
-}
-
-// ─── Spawn Gatling standalone (via spawn_requests "gatling") ────────
-
-/// Consomme les requêtes "gatling" dans `difficulty.spawn_requests`.
-/// Spawne des Gatlings indépendantes (sans Mothership).
 fn spawn_gatlings_oneshot(
     mut commands: Commands,
     mut difficulty: ResMut<crate::difficulty::Difficulty>,
@@ -658,7 +170,7 @@ fn spawn_gatlings_oneshot(
                 state: EnemyState::Entering,
                 radius: GATLING.radius,
                 sprite_size: GATLING.sprite_size,
-                anim_timer: Timer::from_seconds(GATLING_ENTERING_DURATION, TimerMode::Once),
+                anim_timer: Timer::from_seconds(MOTHERSHIP_ENTERING_DURATION, TimerMode::Once),
                 phases: GATLING.phases,
                 death_duration: GATLING.death_duration,
                 death_shake_max: GATLING.death_shake_max,
@@ -676,199 +188,14 @@ fn spawn_gatlings_oneshot(
             PatternIndex(0),
             PatternTimer(Timer::from_seconds(0.0, TimerMode::Once)),
             DropTable {
-                drops: &GATLING_DROP_TABLE,
+                drops: &MOTHERSHIP_DROP_TABLE,
             },
         ));
     }
 }
 
-// ─── Mothership Entering : avance vers l'intérieur de l'écran ───────
+// ─── Gatling standalone Entering (sans Mothership) ─────────────────
 
-fn mothership_entering(
-    time: Res<Time>,
-    mut mothership_q: Query<(&mut Mothership, &mut Transform), With<MothershipMarker>>,
-    mut enemy_q: Query<&mut Enemy, With<GatlingMarker>>,
-) {
-    for (mut mothership, mut transform) in mothership_q.iter_mut() {
-        if mothership.state != MothershipPhase::Entering {
-            continue;
-        }
-
-        mothership.anim_timer.tick(time.delta());
-        let progress = mothership.anim_timer.fraction();
-
-        // Ease-out quadratique
-        let eased = 1.0 - (1.0 - progress).powi(2);
-        let dir = mothership.edge.enter_direction();
-        let displacement = dir * GATLING_ENTERING_DISTANCE * eased;
-        transform.translation.x = mothership.start_pos.x + displacement.x;
-        transform.translation.y = mothership.start_pos.y + displacement.y;
-
-        if mothership.anim_timer.finished() {
-            // L'ancre du drift = position actuelle à la fin de l'entering
-            mothership.anchor_pos = transform.translation.truncate();
-            mothership.state = MothershipPhase::Active;
-
-            // Transitionner toutes les Gatlings en Active(0)
-            for &gatling_entity in &mothership.gatlings {
-                if let Ok(mut enemy) = enemy_q.get_mut(gatling_entity) {
-                    let phase_def = &enemy.phases[0];
-                    enemy.state = EnemyState::Active(0);
-                    enemy.health = phase_def.health;
-                    enemy.max_health = phase_def.health;
-                }
-            }
-        }
-    }
-}
-
-// ─── Flottement du Mothership pendant Active ───────────────────────
-
-/// Flottement sinusoïdal du Mothership en phase Active.
-/// Axe principal (grande amplitude) = perpendiculaire au bord d'entrée.
-/// Axe secondaire (petite amplitude) = parallèle au bord d'entrée.
-fn mothership_drift(
-    time: Res<Time>,
-    mut query: Query<(&mut Mothership, &mut Transform), With<MothershipMarker>>,
-) {
-    for (mut mothership, mut transform) in query.iter_mut() {
-        if mothership.state != MothershipPhase::Active {
-            continue;
-        }
-
-        mothership.drift_time += time.delta_seconds();
-        let t = mothership.drift_time;
-
-        // Axe principal = perpendiculaire au bord d'entrée (gauche-droite pour Top/Bottom)
-        // Axe secondaire = parallèle (haut-bas pour Top/Bottom)
-        let main_offset = (t * MOTHERSHIP_DRIFT_MAIN_FREQ).sin() * MOTHERSHIP_DRIFT_MAIN_AMP;
-        let minor_offset = (t * MOTHERSHIP_DRIFT_MINOR_FREQ).sin() * MOTHERSHIP_DRIFT_MINOR_AMP;
-
-        match mothership.edge {
-            EntryEdge::Top | EntryEdge::Bottom => {
-                transform.translation.x = mothership.anchor_pos.x + main_offset;
-                transform.translation.y = mothership.anchor_pos.y + minor_offset;
-            }
-            EntryEdge::Left | EntryEdge::Right => {
-                transform.translation.x = mothership.anchor_pos.x + minor_offset;
-                transform.translation.y = mothership.anchor_pos.y + main_offset;
-            }
-        }
-    }
-}
-
-// ─── Synchronisation positions Gatling → Mothership ─────────────────
-
-fn mothership_sync_positions(
-    mothership_q: Query<&Transform, (With<MothershipMarker>, Without<GatlingMarker>)>,
-    mut gatling_q: Query<
-        (&MothershipLink, &Enemy, &mut Transform),
-        (With<GatlingMarker>, Without<MothershipMarker>),
-    >,
-) {
-    for (link, enemy, mut transform) in gatling_q.iter_mut() {
-        // Ne pas synchroniser pendant la mort (la gatling joue sa propre animation)
-        if matches!(enemy.state, EnemyState::Dying | EnemyState::Dead) {
-            continue;
-        }
-        if let Ok(ms_transform) = mothership_q.get(link.mothership) {
-            transform.translation.x = ms_transform.translation.x + link.offset.x;
-            transform.translation.y = ms_transform.translation.y + link.offset.y;
-        }
-    }
-}
-
-// ─── Détection de mort du Mothership ────────────────────────────────
-
-fn mothership_death_detection(
-    mut mothership_q: Query<&mut Mothership, With<MothershipMarker>>,
-    enemy_q: Query<&Enemy>,
-) {
-    for mut mothership in mothership_q.iter_mut() {
-        if mothership.state != MothershipPhase::Active {
-            continue;
-        }
-
-        let all_dead = mothership.gatlings.iter().all(|&e| match enemy_q.get(e) {
-            Ok(enemy) => matches!(enemy.state, EnemyState::Dying | EnemyState::Dead),
-            Err(_) => true, // entité despawnée = morte
-        });
-
-        if all_dead {
-            mothership.state = MothershipPhase::Dying;
-        }
-    }
-}
-
-// ─── Mothership Dying : recule vers le bord d'origine ───────────────
-
-fn mothership_dying(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut mothership_q: Query<
-        (Entity, &Mothership, &mut Transform, &mut Sprite, Option<&MothershipSpawnOnDeath>),
-        With<MothershipMarker>,
-    >,
-    mut level_events: EventWriter<LevelActionEvent>,
-    mut spawn_queue: ResMut<MothershipSpawnQueue>,
-    windows: Query<&Window>,
-) {
-    let window = windows.single();
-    let half_w = window.width() / 2.0;
-    let half_h = window.height() / 2.0;
-    let dt = time.delta_seconds();
-
-    let mut to_despawn: Vec<(Entity, Option<MothershipConfig>)> = Vec::new();
-
-    for (entity, mothership, mut transform, mut sprite, spawn_on_death) in mothership_q.iter_mut() {
-        if mothership.state != MothershipPhase::Dying {
-            continue;
-        }
-
-        let exit_dir = mothership.edge.exit_direction();
-
-        // Reculer vers le bord d'origine
-        transform.translation.x += exit_dir.x * MOTHERSHIP_DYING_SPEED * dt;
-        transform.translation.y += exit_dir.y * MOTHERSHIP_DYING_SPEED * dt;
-
-        // Fade out progressif
-        let delta = Vec2::new(
-            transform.translation.x - mothership.start_pos.x,
-            transform.translation.y - mothership.start_pos.y,
-        );
-        let dist_toward_exit = delta.dot(exit_dir).max(0.0);
-        let fade_range = GATLING_ENTERING_DISTANCE + 600.0;
-        let progress = (dist_toward_exit / fade_range).clamp(0.0, 1.0);
-        sprite.color.set_a(0.8 * (1.0 - progress));
-
-        // Hors de l'écran → despawn
-        if mothership
-            .edge
-            .is_offscreen(transform.translation, half_w, half_h)
-        {
-            let next_config = spawn_on_death.map(|s| s.0.clone());
-            to_despawn.push((entity, next_config));
-        }
-    }
-
-    for (entity, next_config) in to_despawn {
-        if let Some(config) = next_config {
-            // Spawner le mothership suivant
-            spawn_queue.0.push(config);
-        } else {
-            // Pas de suivant → niveau terminé
-            level_events.send(LevelActionEvent(vec![Action::MarkLevelComplete]));
-        }
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
-        }
-    }
-}
-
-// ─── Gatling standalone Entering (sans Mothership) ──────────────────
-
-/// Descente d'un Gatling standalone (sans Mothership).
-/// Les Gatlings liées à un Mothership sont positionnées par `mothership_sync_positions`.
 fn gatling_standalone_entering(
     time: Res<Time>,
     mut query: Query<
@@ -883,8 +210,6 @@ fn gatling_standalone_entering(
 
         enemy.anim_timer.tick(time.delta());
         let progress = enemy.anim_timer.fraction();
-
-        // Ease-out quadratique
         let eased = 1.0 - (1.0 - progress).powi(2);
         transform.translation.y = start_y.0 - GATLING_ENTERING_DISTANCE * eased;
 
@@ -895,7 +220,7 @@ fn gatling_standalone_entering(
     }
 }
 
-// ─── Animation pendant Entering ─────────────────────────────────────
+// ─── Animation pendant Entering ────────────────────────────────────
 
 fn gatling_entering_animate(
     time: Res<Time>,
@@ -915,11 +240,8 @@ fn gatling_entering_animate(
     }
 }
 
-// ─── Pattern executor ───────────────────────────────────────────────
+// ─── Pattern executor ──────────────────────────────────────────────
 
-/// Cycle les patterns de la Gatling. Quand "shoot" se déclenche :
-/// calcule la direction vers le joueur, insère le composant `GatlingShoot`.
-/// Quand "idle" se déclenche : retire `GatlingShoot`, reset la rotation.
 fn gatling_pattern_executor(
     time: Res<Time>,
     mut commands: Commands,
@@ -964,8 +286,7 @@ fn gatling_pattern_executor(
             continue;
         }
 
-        // Utiliser l'override de patterns si présent, sinon les patterns de la phase
-        let (pattern_name, pattern_duration, pattern_count) = if let Some(ov) = override_opt {
+        let (pattern_name, pattern_duration, _pattern_count) = if let Some(ov) = override_opt {
             if ov.patterns.is_empty() {
                 continue;
             }
@@ -984,7 +305,6 @@ fn gatling_pattern_executor(
 
         pat_idx.0 += 1;
 
-        // Programmer le timer pour le prochain pattern
         let next_duration = if let Some(ov) = override_opt {
             ov.patterns[pat_idx.0 % ov.patterns.len()].duration
         } else {
@@ -993,7 +313,6 @@ fn gatling_pattern_executor(
         };
         pattern_timer.0 = Timer::from_seconds(next_duration, TimerMode::Once);
 
-        // Récupérer l'angle courant de la tourelle (depuis le pattern actif)
         let prev_angle = if let Some(s) = shoot_opt {
             s.current_angle
         } else if let Some(fa) = full_auto_opt {
@@ -1006,11 +325,9 @@ fn gatling_pattern_executor(
             "aim_and_shoot" => {
                 commands.entity(entity).remove::<GatlingFullAuto>();
 
-                // Direction de base du canon (repos) = direction d'entrée du Mothership
                 let cannon_dir = base_edge.0.enter_direction();
                 let base_angle = cannon_dir.y.atan2(cannon_dir.x);
 
-                // Direction vers le joueur
                 let aim_dir = if let Ok(player_transform) = player_q.get_single() {
                     let diff =
                         player_transform.translation.truncate() - transform.translation.truncate();
@@ -1052,7 +369,6 @@ fn gatling_pattern_executor(
             "full_auto" => {
                 commands.entity(entity).remove::<GatlingShoot>();
 
-                // Délai aléatoire 0.1–1.3s avant de commencer et direction initiale random
                 let delay = 0.1 + fastrand::f32() * 1.2;
                 let dir = if fastrand::bool() { 1.0 } else { -1.0 };
 
@@ -1082,9 +398,8 @@ fn gatling_pattern_executor(
     }
 }
 
-// ─── Mise à jour du pattern shoot ───────────────────────────────────
+// ─── Mise à jour du pattern shoot ──────────────────────────────────
 
-/// Gère la rotation vers le joueur, l'animation de tir, et le spawn du projectile.
 fn gatling_shoot_update(
     time: Res<Time>,
     mut commands: Commands,
@@ -1109,12 +424,10 @@ fn gatling_shoot_update(
         let rest_rot = base_edge.0.sprite_rotation();
         shoot.elapsed += dt;
 
-        // Durée de l'animation de tir
         let anim_total_duration = frames.0.len() as f32 * GATLING_SHOOT_ANIM_INTERVAL;
-        // L'animation démarre quand il reste juste assez de temps dans le pattern
         let anim_start_time = shoot.duration - anim_total_duration;
 
-        // ── Suivi continu du joueur (même pendant l'animation de tir) ──
+        // Suivi continu du joueur
         {
             let cannon_dir = base_edge.0.enter_direction();
             let base_atan2 = cannon_dir.y.atan2(cannon_dir.x);
@@ -1135,7 +448,6 @@ fn gatling_shoot_update(
                 }
             }
 
-            // Rotation progressive vers la cible
             let speed_rad = GATLING_AIM_SPEED.to_radians() * dt;
             let angle_diff = shoot.target_angle - shoot.current_angle;
             let step = angle_diff.clamp(-speed_rad, speed_rad);
@@ -1143,7 +455,7 @@ fn gatling_shoot_update(
             transform.rotation = rest_rot * Quat::from_rotation_z(shoot.current_angle);
         }
 
-        // ── Déclencher l'animation de tir quand le temps est venu ──
+        // Animation de tir
         if !shoot.anim_started {
             if shoot.elapsed >= anim_start_time {
                 shoot.anim_started = true;
@@ -1152,7 +464,6 @@ fn gatling_shoot_update(
                     Timer::from_seconds(GATLING_SHOOT_ANIM_INTERVAL, TimerMode::Repeating);
             }
         } else {
-            // Animation de tir
             shoot.anim_timer.tick(time.delta());
 
             if shoot.anim_timer.just_finished() {
@@ -1162,20 +473,15 @@ fn gatling_shoot_update(
                 }
             }
 
-            // Tirer le projectile à mi-animation
             let fire_frame = frames.0.len() / 2;
             if !shoot.fired && shoot.current_frame >= fire_frame {
                 shoot.fired = true;
 
-                // Direction du tir : rotation totale appliquée au vecteur local "vers le bas"
-                // (le canon pointe dans la direction d'entrée, soit -Y en espace local du sprite)
                 let total_rot = rest_rot * Quat::from_rotation_z(shoot.current_angle);
                 let local_cannon = Vec3::new(0.0, -1.0, 0.0);
                 let shoot_dir_3 = total_rot.mul_vec3(local_cannon);
                 let shoot_dir = Vec2::new(shoot_dir_3.x, shoot_dir_3.y);
 
-                // Bout du canon : anchor au sommet, le sprite s'étend de SPRITE_SIZE
-                // dans la direction du canon
                 let cannon_tip = transform.translation.truncate() + shoot_dir * GATLING_SPRITE_SIZE;
 
                 commands.spawn((
@@ -1198,14 +504,12 @@ fn gatling_shoot_update(
                     },
                 ));
 
-                // Son de tir
                 commands.spawn(AudioBundle {
                     source: asset_server.load("audio/sfx/gatling_shoot.ogg"),
                     settings: PlaybackSettings::DESPAWN,
                 });
             }
 
-            // Fin de l'animation → garder la rotation, reset le sprite au repos
             if shoot.current_frame >= frames.0.len() {
                 if let Some(frame) = frames.0.first() {
                     *texture = frame.clone();
@@ -1215,9 +519,8 @@ fn gatling_shoot_update(
     }
 }
 
-// ─── Mise à jour du pattern full_auto ───────────────────────────────
+// ─── Mise à jour du pattern full_auto ──────────────────────────────
 
-/// Balayage automatique gauche↔droite avec tir à cadence croissante.
 fn gatling_full_auto_update(
     time: Res<Time>,
     mut commands: Commands,
@@ -1239,32 +542,29 @@ fn gatling_full_auto_update(
     for (base_edge, mut auto, mut transform, mut texture) in query.iter_mut() {
         let rest_rot = base_edge.0.sprite_rotation();
 
-        // ── Délai de démarrage ──
+        // Délai de démarrage
         if auto.startup_delay > 0.0 {
             auto.startup_delay -= dt;
-            // Garder la rotation fixe pendant l'attente
             transform.rotation = rest_rot * Quat::from_rotation_z(auto.current_angle);
             continue;
         }
 
         auto.elapsed += dt;
 
-        // ── Courbe d'accélération ──
+        // Courbe d'accélération
         let progress = (auto.elapsed / auto.duration).min(1.0);
         let ramp = progress.powf(FULL_AUTO_RAMP_FACTOR);
 
-        // Vitesse de balayage interpolée
         let sweep_speed = FULL_AUTO_SWEEP_SPEED_START
             + (FULL_AUTO_SWEEP_SPEED_MAX - FULL_AUTO_SWEEP_SPEED_START) * ramp;
         let sweep_rad = sweep_speed.to_radians() * dt;
 
-        // Intervalle de tir interpolé
         let fire_interval = FULL_AUTO_FIRE_INTERVAL_START
             + (FULL_AUTO_FIRE_INTERVAL_MIN - FULL_AUTO_FIRE_INTERVAL_START) * ramp;
         auto.fire_timer
             .set_duration(std::time::Duration::from_secs_f32(fire_interval.max(0.05)));
 
-        // ── Balayage ping-pong ──
+        // Balayage ping-pong
         auto.current_angle += auto.sweep_dir * sweep_rad;
         if auto.current_angle >= max_rad {
             auto.current_angle = max_rad;
@@ -1274,10 +574,9 @@ fn gatling_full_auto_update(
             auto.sweep_dir = 1.0;
         }
 
-        // Appliquer la rotation
         transform.rotation = rest_rot * Quat::from_rotation_z(auto.current_angle);
 
-        // ── Animation de tir en cours ──
+        // Animation de tir en cours
         if let Some(frame_idx) = auto.anim_frame {
             auto.anim_timer.tick(time.delta());
             if auto.anim_timer.just_finished() {
@@ -1286,7 +585,6 @@ fn gatling_full_auto_update(
                     auto.anim_frame = Some(next);
                     *texture = frames.0[next].clone();
                 } else {
-                    // Fin de l'animation → retour au sprite de repos
                     auto.anim_frame = None;
                     if let Some(f) = frames.0.first() {
                         *texture = f.clone();
@@ -1295,10 +593,9 @@ fn gatling_full_auto_update(
             }
         }
 
-        // ── Tir ──
+        // Tir
         auto.fire_timer.tick(time.delta());
         if auto.fire_timer.just_finished() {
-            // Lancer l'animation de tir
             auto.anim_frame = Some(0);
             auto.anim_timer =
                 Timer::from_seconds(FULL_AUTO_SHOOT_ANIM_INTERVAL, TimerMode::Repeating);
@@ -1306,13 +603,11 @@ fn gatling_full_auto_update(
                 *texture = f.clone();
             }
 
-            // Direction du tir = direction actuelle du canon
             let total_rot = rest_rot * Quat::from_rotation_z(auto.current_angle);
             let local_cannon = Vec3::new(0.0, -1.0, 0.0);
             let shoot_dir_3 = total_rot.mul_vec3(local_cannon);
             let shoot_dir = Vec2::new(shoot_dir_3.x, shoot_dir_3.y);
 
-            // Bout du canon
             let cannon_tip = transform.translation.truncate() + shoot_dir * GATLING_SPRITE_SIZE;
 
             commands.spawn((
@@ -1335,7 +630,6 @@ fn gatling_full_auto_update(
                 },
             ));
 
-            // Son de tir
             commands.spawn(AudioBundle {
                 source: asset_server.load("audio/sfx/gatling_shoot.ogg"),
                 settings: PlaybackSettings::DESPAWN,

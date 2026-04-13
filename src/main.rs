@@ -19,6 +19,8 @@ pub mod enemy;
 pub mod enemies;
 mod boss;
 mod green_ufo;
+mod mothership;
+mod mothership_heart;
 mod gatling;
 
 // ─── Entités & effets ──────────────────────────────────────────────
@@ -173,7 +175,7 @@ fn cleanup_playing(
     boss_music: Query<Entity, With<MusicBoss>>,
     outro_music: Query<Entity, With<MusicOutro>>,
     droppables: Query<Entity, With<Droppable>>,
-    motherships: Query<Entity, With<gatling::MothershipMarker>>,
+    motherships: Query<Entity, With<mothership::MothershipMarker>>,
 ) {
     let all_entities = players.iter()
         .chain(asteroids.iter())

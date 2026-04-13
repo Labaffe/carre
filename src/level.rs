@@ -16,8 +16,8 @@
 use std::collections::HashMap;
 
 use crate::difficulty::{BoomEvent, Difficulty, SpawnPosition};
-use crate::gatling::{MothershipConfig, MothershipSpawnQueue, TurretConfig};
 use crate::levels::ScrollDirection;
+use crate::mothership::{MothershipConfig, MothershipSpawnQueue, TurretConfig};
 use crate::pause::not_paused;
 use crate::state::GameState;
 use bevy::prelude::*;
@@ -71,7 +71,10 @@ pub struct LevelPlugin;
 impl Plugin for LevelPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<LevelActionEvent>()
-            .add_systems(OnEnter(GameState::Playing), setup_level.in_set(LevelSetupSet))
+            .add_systems(
+                OnEnter(GameState::Playing),
+                setup_level.in_set(LevelSetupSet),
+            )
             .add_systems(
                 Update,
                 (run_level, process_level_action_events)
@@ -484,28 +487,42 @@ pub fn build_level_1() -> Vec<LevelStep> {
 pub fn build_level_2() -> Vec<LevelStep> {
     // Positions normalisées sur le sprite : x = gauche(-0.5)..droite(0.5), y = haut(0.5)..bas(-0.5)
     let turrets = vec![
-        TurretConfig::single("aim_and_shoot", 3.0, Vec2::new(-0.47, -0.1)),  // 500px à gauche de la 1ère
-        TurretConfig::single("full_auto", 15.0, Vec2::new(-0.3, -0.1)),      // 1ère originale
-        TurretConfig::single("full_auto", 15.0, Vec2::new(-0.15, -0.2)),     // entre gauche et centre
-        TurretConfig::single("full_auto", 15.0, Vec2::new(0.0, -0.3)),       // centre
-        TurretConfig::single("full_auto", 15.0, Vec2::new(0.15, -0.2)),      // entre centre et droite
-        TurretConfig::single("full_auto", 15.0, Vec2::new(0.3, -0.1)),       // 5ème originale
-        TurretConfig::single("aim_and_shoot", 3.0, Vec2::new(0.47, -0.1)),   // 500px à droite de la 5ème
+        TurretConfig::single("aim_and_shoot", 2.0, Vec2::new(-0.47, -0.1)), // 500px à gauche de la 1ère
+        TurretConfig::single("full_auto", 15.0, Vec2::new(-0.3, -0.1)),     // 1ère originale
+        TurretConfig::single("full_auto", 15.0, Vec2::new(-0.15, -0.2)), // entre gauche et centre
+        TurretConfig::single("full_auto", 15.0, Vec2::new(0.0, -0.3)),   // centre
+        TurretConfig::single("full_auto", 15.0, Vec2::new(0.15, -0.2)),  // entre centre et droite
+        TurretConfig::single("full_auto", 15.0, Vec2::new(0.3, -0.1)),   // 5ème originale
+        TurretConfig::single("aim_and_shoot", 2.0, Vec2::new(0.47, -0.1)), // 500px à droite de la 5ème
     ];
+
+    // Hearts : entre tourelles, alignés en Y, montés de ~400px
+    let hearts = vec![
+        Vec2::new(-0.385, 0.31), // entre tourelle 1 et 2 (gauche)
+        Vec2::new(-0.225, 0.31), // entre tourelle 2 et 3 (gauche)
+        Vec2::new(0.225, 0.31),  // entre tourelle 5 et 6 (droite, symétrique)
+        Vec2::new(0.385, 0.31),  // entre tourelle 6 et 7 (droite, symétrique)
+    ];
+
     // Le 2e mothership (bottom) spawne à la mort du 1er, pas de suivant
     let second = MothershipConfig {
         edge: SpawnPosition::Bottom,
         turrets: turrets.clone(),
+        hearts: hearts.clone(),
         on_death: None,
     };
 
     vec![
         LevelStep::at(0.0, "game_start").with(Action::Log("Niveau 2 démarré")),
-        LevelStep::at(2.0, "spawn_top").with(Action::SpawnMothership(MothershipConfig {
-            edge: SpawnPosition::Top,
-            turrets: turrets.clone(),
-            on_death: Some(Box::new(second)),
-        })),
+        LevelStep::at(1.5, "alarm").with(Action::PlaySound("audio/sfx/mothership_alarm.ogg")),
+        LevelStep::at(6.8, "spawn_top")
+            .with(Action::StartMusic("audio/music/mothership.ogg"))
+            .with(Action::SpawnMothership(MothershipConfig {
+                edge: SpawnPosition::Top,
+                turrets: turrets.clone(),
+                hearts,
+                on_death: Some(Box::new(second)),
+            })),
     ]
 }
 

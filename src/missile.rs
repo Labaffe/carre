@@ -138,7 +138,7 @@ fn shoot(
     }
 
     let def = &weapon.def;
-    let origin = Vec3::new(player_pos.x, player_pos.y, -0.1); // z négatif = derrière le joueur
+    let origin = Vec3::new(player_pos.x, player_pos.y, 0.6); // au-dessus du mothership (0.4)
 
     // Spawn un projectile par angle dans le pattern
     for shot in def.pattern.iter() {

@@ -185,8 +185,40 @@ pub static GATLING: EnemyDef = EnemyDef {
 };
 
 // ═══════════════════════════════════════════════════════════════════════
+//  MOTHERSHIP HEART
+// ═══════════════════════════════════════════════════════════════════════
+//  Module : src/gatling.rs (spawné avec le Mothership)
+//  Machine à état : Active(0) → Dying → Dead  (pas d'intro, ennemi simple)
+//  Patterns : aucun (idle permanent)
+//  Particularités :
+//    - Attaché au Mothership via MothershipLink
+//    - Sprite statique (mothership_heart.png)
+//    - Mort instantanée style astéroïde
+
+pub static MOTHERSHIP_HEART_PHASES: [PhaseDef; 1] = [PhaseDef {
+    health: 15,
+    enter_sound: None,
+    patterns: &[PatternDef {
+        name: "idle",
+        duration: 999.0,
+    }],
+    has_transition: false,
+}];
+
+pub static MOTHERSHIP_HEART: EnemyDef = EnemyDef {
+    name: "MothershipHeart",
+    radius: 60.0,
+    sprite_size: 160.0,
+    phases: &MOTHERSHIP_HEART_PHASES,
+    death_duration: 0.05,
+    death_shake_max: 0.0,
+    hit_sound: "audio/sfx/asteroid_hit.ogg",
+    death_explosion_sound: "audio/sfx/asteroid_die.ogg",
+};
+
+// ═══════════════════════════════════════════════════════════════════════
 //  LISTE COMPLÈTE
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Tous les ennemis du jeu, pour référence et itération.
-pub static ALL_ENEMIES: &[&EnemyDef] = &[&BOSS, &GREEN_UFO, &GATLING];
+pub static ALL_ENEMIES: &[&EnemyDef] = &[&BOSS, &GREEN_UFO, &GATLING, &MOTHERSHIP_HEART];

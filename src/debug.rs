@@ -8,7 +8,7 @@ use crate::asteroid::Asteroid;
 use crate::boss::{BossCharge, BossMarker};
 use crate::game::{IntroSound, LevelPhase, LevelPhaseKind};
 use crate::green_ufo::GreenUFOMarker;
-use crate::gatling::{GatlingMarker, Mothership, MothershipMarker, MOTHERSHIP_BOTTOM_PROFILE};
+use crate::mothership::{GatlingMarker, Mothership, MothershipHeart, MothershipMarker, MOTHERSHIP_BOTTOM_PROFILE};
 use crate::collision::Hittable;
 use crate::difficulty::Difficulty;
 use crate::enemy::{Enemy, EnemyProjectile, EnemyState, PatternIndex, PatternTimer};
@@ -222,6 +222,8 @@ fn update_debug_ui(
             &Transform,
             Option<&BossMarker>,
             Option<&GreenUFOMarker>,
+            Option<&GatlingMarker>,
+            Option<&MothershipHeart>,
             Option<&PatternIndex>,
             Option<&PatternTimer>,
             Option<&BossCharge>,
@@ -247,11 +249,15 @@ fn update_debug_ui(
         .unwrap_or_else(|_| "N/A".to_string());
 
     let mut enemy_lines = String::new();
-    for (enemy, transform, boss, green_ufo, pat_idx, pat_timer, charge) in enemy_q.iter() {
+    for (enemy, transform, boss, green_ufo, gatling, heart, pat_idx, pat_timer, charge) in enemy_q.iter() {
         let name = if boss.is_some() {
             "Boss"
         } else if green_ufo.is_some() {
             "GreenUFO"
+        } else if gatling.is_some() {
+            "Gatling"
+        } else if heart.is_some() {
+            "MothershipHeart"
         } else {
             "Enemy"
         };
@@ -708,8 +714,8 @@ fn debug_draw_gatling_positions(
         // Convention Top : les coords normalisées sont converties en pixels
         // puis transformées selon le bord d'entrée.
         let ms_size_top = match ms.edge {
-            crate::gatling::EntryEdge::Top | crate::gatling::EntryEdge::Bottom => size,
-            crate::gatling::EntryEdge::Left | crate::gatling::EntryEdge::Right => Vec2::new(size.y, size.x),
+            crate::mothership::EntryEdge::Top | crate::mothership::EntryEdge::Bottom => size,
+            crate::mothership::EntryEdge::Left | crate::mothership::EntryEdge::Right => Vec2::new(size.y, size.x),
         };
 
         let profile_points: Vec<Vec2> = MOTHERSHIP_BOTTOM_PROFILE

@@ -159,7 +159,7 @@ pub fn spawn_player(
                 custom_size: Some(Vec2::new(128.0, 128.0)),
                 ..default()
             },
-            transform: Transform::from_xyz(0.0, start_y, 0.0),
+            transform: Transform::from_xyz(0.0, start_y, 0.5),
             ..default()
         },
         Player,
