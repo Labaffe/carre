@@ -17,9 +17,40 @@ use std::collections::HashMap;
 
 use crate::difficulty::{BoomEvent, Difficulty, SpawnPosition};
 use crate::gatling::{MothershipConfig, MothershipSpawnQueue, TurretConfig};
+use crate::levels::ScrollDirection;
 use crate::pause::not_paused;
 use crate::state::GameState;
 use bevy::prelude::*;
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Configuration visuelle du niveau en cours
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Configuration visuelle du niveau en cours.
+/// Initialisée au démarrage de l'app avec `init_resource`, mise à jour
+/// par `setup_level` avant les autres systèmes `OnEnter(Playing)`.
+#[derive(Resource, Clone)]
+pub struct LevelConfig {
+    pub player_ship: &'static str,
+    pub background_tile: &'static str,
+    pub scroll_direction: ScrollDirection,
+}
+
+impl Default for LevelConfig {
+    fn default() -> Self {
+        let def = crate::levels::level_def(1);
+        Self {
+            player_ship: def.player_ship,
+            background_tile: def.background_tile,
+            scroll_direction: def.scroll_direction,
+        }
+    }
+}
+
+/// Ensemble de systèmes qui initialisent le niveau.
+/// Les systèmes qui dépendent de `LevelConfig` doivent tourner `.after(LevelSetupSet)`.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LevelSetupSet;
 
 /// Événement permettant à n'importe quel système d'injecter des actions
 /// dans le pipeline du niveau. Les actions sont exécutées immédiatement
@@ -40,7 +71,7 @@ pub struct LevelPlugin;
 impl Plugin for LevelPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<LevelActionEvent>()
-            .add_systems(OnEnter(GameState::Playing), setup_level)
+            .add_systems(OnEnter(GameState::Playing), setup_level.in_set(LevelSetupSet))
             .add_systems(
                 Update,
                 (run_level, process_level_action_events)
@@ -377,15 +408,9 @@ impl Trigger {
 //  Noms des niveaux
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Noms des niveaux, indexés par numéro (1-indexed).
-const LEVEL_NAMES: &[&str] = &[
-    "Space Invader", // Niveau 1
-    "MotherShip",    // Niveau 2
-];
-
-/// Retourne le nom d'un niveau (1-indexed). Fallback : "Niveau N".
+/// Retourne le nom d'un niveau (1-indexed).
 pub fn level_name(level: usize) -> &'static str {
-    LEVEL_NAMES.get(level - 1).copied().unwrap_or("???")
+    crate::levels::level_name(level)
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -488,7 +513,17 @@ pub fn build_level_2() -> Vec<LevelStep> {
 //  Systèmes
 // ═══════════════════════════════════════════════════════════════════════
 
-fn setup_level(mut commands: Commands, progress: Res<crate::game::GameProgress>) {
+fn setup_level(
+    mut commands: Commands,
+    progress: Res<crate::game::GameProgress>,
+    mut config: ResMut<LevelConfig>,
+) {
+    // Mettre à jour la config visuelle du niveau (immédiat via ResMut)
+    let def = crate::levels::level_def(progress.current_level);
+    config.player_ship = def.player_ship;
+    config.background_tile = def.background_tile;
+    config.scroll_direction = def.scroll_direction;
+
     let steps = match progress.current_level {
         1 => build_level_1(),
         2 => build_level_2(),
@@ -504,9 +539,9 @@ fn setup_level(mut commands: Commands, progress: Res<crate::game::GameProgress>)
         sound: intro.sound,
         sound_played: false,
         sound_finished: false,
-        start_y: 0.0,
-        target_y: 0.0,
-        spawn_y_ratio: intro.spawn_y_ratio,
+        start_pos: Vec2::ZERO,
+        target_pos: Vec2::ZERO,
+        spawn_ratio: intro.spawn_ratio,
         initialized: false,
     };
     commands.insert_resource(crate::game::LevelPhase { phase });

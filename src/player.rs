@@ -7,6 +7,7 @@
 use crate::crosshair::Crosshair;
 use crate::difficulty::{BoomEvent, Difficulty};
 use crate::explosion::load_frames_from_folder;
+use crate::level::{LevelConfig, LevelSetupSet};
 use crate::pause::not_paused;
 use crate::state::GameState;
 use crate::weapon::Weapon;
@@ -57,7 +58,11 @@ impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PlayerLives>()
             .add_systems(Startup, preload_ship_textures)
-            .add_systems(OnEnter(GameState::Playing), (setup_player, setup_lives_ui))
+            .add_systems(
+                OnEnter(GameState::Playing),
+                (setup_player, setup_lives_ui, update_ship_phase1_texture)
+                    .after(LevelSetupSet),
+            )
             .add_systems(OnExit(GameState::Playing), cleanup_lives_ui)
             .add_systems(
                 Update,
@@ -130,16 +135,26 @@ fn preload_ship_textures(mut commands: Commands, asset_server: Res<AssetServer>)
     });
 }
 
-fn setup_player(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
+fn setup_player(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    windows: Query<&Window>,
+    config: Res<LevelConfig>,
+) {
     let window = windows.single();
     let half_h = window.height() / 2.0;
-    spawn_player(&mut commands, &asset_server, -half_h * 0.5);
+    spawn_player(&mut commands, &asset_server, -half_h * 0.5, config.player_ship);
 }
 
-pub fn spawn_player(commands: &mut Commands, asset_server: &Res<AssetServer>, start_y: f32) {
+pub fn spawn_player(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    start_y: f32,
+    ship_sprite: &'static str,
+) {
     commands.spawn((
         SpriteBundle {
-            texture: asset_server.load("images/player_ship/ship_0.png"),
+            texture: asset_server.load(ship_sprite),
             sprite: Sprite {
                 custom_size: Some(Vec2::new(128.0, 128.0)),
                 ..default()
@@ -156,6 +171,15 @@ pub fn spawn_player(commands: &mut Commands, asset_server: &Res<AssetServer>, st
             current_frame: 0,
         },
     ));
+}
+
+/// Met à jour la texture Phase1 dans ShipTextures pour correspondre au niveau en cours.
+fn update_ship_phase1_texture(
+    mut textures: ResMut<ShipTextures>,
+    asset_server: Res<AssetServer>,
+    config: Res<LevelConfig>,
+) {
+    textures.phase_1 = asset_server.load(config.player_ship);
 }
 
 // ─── Transition de phase ───────────────────────────────────────────
@@ -380,10 +404,11 @@ fn setup_lives_ui(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut lives: ResMut<PlayerLives>,
+    config: Res<LevelConfig>,
 ) {
     *lives = PlayerLives::default();
 
-    let texture = asset_server.load("images/player_ship/ship_0.png");
+    let texture = asset_server.load(config.player_ship);
 
     commands
         .spawn((

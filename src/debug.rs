@@ -624,6 +624,7 @@ fn debug_skip_intro(
     mut player_q: Query<&mut Transform, With<Player>>,
     intro_sound_q: Query<Entity, With<IntroSound>>,
     windows: Query<&Window>,
+    config: Res<crate::level::LevelConfig>,
 ) {
     if !keyboard.just_pressed(KeyCode::F2)
         && !keyboard.just_pressed(KeyCode::F3)
@@ -643,6 +644,7 @@ fn debug_skip_intro(
         &mut player_q,
         &intro_sound_q,
         &windows,
+        &config,
     );
 }
 

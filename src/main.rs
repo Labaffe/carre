@@ -4,6 +4,7 @@ use bevy::prelude::*;
 mod state;
 mod difficulty;
 mod level;
+pub mod levels;
 pub mod game;
 
 // ─── Joueur & armes ────────────────────────────────────────────────
@@ -41,7 +42,7 @@ mod debug;
 use state::GameState;
 use game::{GamePlugin, MusicOutro};
 use difficulty::DifficultyPlugin;
-use level::LevelPlugin;
+use level::{LevelConfig, LevelPlugin};
 
 use player::{Player, PlayerPlugin};
 use missile::{Missile, MissilePlugin};
@@ -78,6 +79,7 @@ fn main() {
         }))
         .insert_resource(ClearColor(Color::BLACK))
         .init_resource::<GameSettings>()
+        .init_resource::<LevelConfig>()
         .init_state::<GameState>()
         // Core
         .add_plugins((
