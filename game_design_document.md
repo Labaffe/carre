@@ -224,4 +224,23 @@ Because the card pool is randomized per draft, two runs with the same boss order
 
 ---
 
+# Idées capacités
+## Espace
+- Bombe
+- Dash
+- Esquive
+- Invinsibilité
+- Bullet time
+
+## Clique gauche
+- projectiles (firerate, angle, dégas)
+- hitscan (chargement ou instant, grosse ou petite hitbox)
+
+## Passive
+- Shield
+- épines
+- armes (patterns autour du joueur)
+
+Les armes peuvent faire des dégats ou des alteration de statut
+
 *End of Document — v0.1*
