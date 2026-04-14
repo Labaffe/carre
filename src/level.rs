@@ -514,8 +514,8 @@ pub fn build_level_2() -> Vec<LevelStep> {
 
     vec![
         LevelStep::at(0.0, "game_start").with(Action::Log("Niveau 2 démarré")),
-        LevelStep::at(1.5, "alarm").with(Action::PlaySound("audio/sfx/mothership_alarm.ogg")),
-        LevelStep::at(6.8, "spawn_top")
+        LevelStep::at(1.6, "alarm").with(Action::PlaySound("audio/sfx/mothership_alarm.ogg")),
+        LevelStep::at(5.0, "spawn_top")
             .with(Action::StartMusic("audio/music/mothership.ogg"))
             .with(Action::SpawnMothership(MothershipConfig {
                 edge: SpawnPosition::Top,

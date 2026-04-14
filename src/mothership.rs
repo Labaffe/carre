@@ -39,7 +39,7 @@ const MOTHERSHIP_DYING_SPEED: f32 = 100.0;
 
 // ─── Flottement Phase 1 (gatlings vivantes) ───────────────────────
 /// Amplitude du flottement principal — horizontal (pixels).
-const P1_DRIFT_MAIN_AMP: f32 = 450.0;
+const P1_DRIFT_MAIN_AMP: f32 = 700.0;
 /// Amplitude du flottement secondaire — vertical, plus ample (pixels).
 const P1_DRIFT_MINOR_AMP: f32 = 100.0;
 /// Fréquence du flottement principal (rad/s).
@@ -49,7 +49,7 @@ const P1_DRIFT_MINOR_FREQ: f32 = 0.55;
 
 // ─── Flottement Phase 2 (gatlings mortes, hearts restants) ────────
 /// Amplitude du flottement principal — horizontal (pixels).
-const P2_DRIFT_MAIN_AMP: f32 = 450.0;
+const P2_DRIFT_MAIN_AMP: f32 = 700.0;
 /// Amplitude du flottement secondaire — vertical, réduit pour garder les hearts visibles (pixels).
 const P2_DRIFT_MINOR_AMP: f32 = 200.0;
 /// Fréquence du flottement principal (rad/s).
@@ -371,10 +371,13 @@ pub(crate) fn spawn_mothership_oneshot(
     // ─── Spawn du Mothership ─────────────────────────────────────
     let mothership_texture = asset_server.load("images/mothership/mothership_2.png");
 
-    // Le sprite enfant miroir est en espace local du parent (qui a déjà la rotation).
-    // En local, Y+ = vers le haut du sprite (côté opposé au joueur).
-    // On le place à +hauteur en Y et on le flip verticalement.
-    let mirror_local_offset = Vec3::new(0.0, ms_size.y, -0.01);
+    // Sprites enfants miroirs en espace local du parent :
+    // - Haut : flip Y, collé au-dessus
+    // - Gauche : flip X, collé à gauche
+    // - Droite : flip X, collé à droite
+    let mirror_top_offset = Vec3::new(0.0, ms_size.y, -0.01);
+    let mirror_left_offset = Vec3::new(-ms_size.x, 0.0, -0.01);
+    let mirror_right_offset = Vec3::new(ms_size.x, 0.0, -0.01);
 
     let mothership_entity = commands
         .spawn((
@@ -394,16 +397,37 @@ pub(crate) fn spawn_mothership_oneshot(
             MothershipMarker,
         ))
         .with_children(|parent| {
-            // Sprite miroir : même texture, flip Y, collé au-dessus en espace local.
-            // Pas de rotation supplémentaire — il hérite de celle du parent.
+            // Miroir haut : flip Y
             parent.spawn(SpriteBundle {
-                texture: mothership_texture,
+                texture: mothership_texture.clone(),
                 sprite: Sprite {
                     custom_size: Some(ms_size),
                     flip_y: true,
                     ..default()
                 },
-                transform: Transform::from_translation(mirror_local_offset),
+                transform: Transform::from_translation(mirror_top_offset),
+                ..default()
+            });
+            // Miroir gauche : flip X
+            parent.spawn(SpriteBundle {
+                texture: mothership_texture.clone(),
+                sprite: Sprite {
+                    custom_size: Some(ms_size),
+                    flip_x: true,
+                    ..default()
+                },
+                transform: Transform::from_translation(mirror_left_offset),
+                ..default()
+            });
+            // Miroir droite : flip X
+            parent.spawn(SpriteBundle {
+                texture: mothership_texture,
+                sprite: Sprite {
+                    custom_size: Some(ms_size),
+                    flip_x: true,
+                    ..default()
+                },
+                transform: Transform::from_translation(mirror_right_offset),
                 ..default()
             });
         })
