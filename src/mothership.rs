@@ -34,8 +34,8 @@ const MOTHERSHIP_INERTIA_POWER: i32 = 5;
 pub(crate) const MOTHERSHIP_ENTERING_DISTANCE: f32 = 650.0;
 /// Taille du sprite Gatling (pixels).
 pub(crate) const GATLING_SPRITE_SIZE: f32 = 128.0;
-/// Vitesse de recul du Mothership pendant la mort (pixels/seconde).
-const MOTHERSHIP_DYING_SPEED: f32 = 100.0;
+/// Durée totale du recul du Mothership pendant la mort (secondes).
+const MOTHERSHIP_DYING_DURATION: f32 = 3.5;
 
 // ─── Flottement Phase 1 (gatlings vivantes) ───────────────────────
 /// Amplitude du flottement principal — horizontal (pixels).
@@ -282,6 +282,10 @@ pub struct Mothership {
     pub transition_to: Vec2,
     /// Timer de la transition Phase1 → Phase2.
     pub transition_timer: Timer,
+    /// Timer de l'animation de mort.
+    pub dying_timer: Timer,
+    /// Position au moment de la mort (pour interpolation).
+    pub dying_start_pos: Vec2,
 }
 
 /// Phases du Mothership.
@@ -574,6 +578,8 @@ pub(crate) fn spawn_mothership_oneshot(
         transition_from: Vec2::ZERO,
         transition_to: Vec2::ZERO,
         transition_timer: Timer::from_seconds(P2_TRANSITION_DURATION, TimerMode::Once),
+        dying_timer: Timer::from_seconds(MOTHERSHIP_DYING_DURATION, TimerMode::Once),
+        dying_start_pos: Vec2::ZERO,
     });
 
     if let Some(next) = config.on_death {
@@ -771,10 +777,10 @@ pub(crate) fn mothership_sync_positions(
 // ═══════════════════════════════════════════════════════════════════════
 
 pub(crate) fn mothership_death_detection(
-    mut mothership_q: Query<&mut Mothership, With<MothershipMarker>>,
+    mut mothership_q: Query<(&mut Mothership, &Transform), With<MothershipMarker>>,
     enemy_q: Query<&Enemy>,
 ) {
-    for mut mothership in mothership_q.iter_mut() {
+    for (mut mothership, transform) in mothership_q.iter_mut() {
         let is_dead = |e: &Entity| match enemy_q.get(*e) {
             Ok(enemy) => matches!(enemy.state, EnemyState::Dying | EnemyState::Dead),
             Err(_) => true,
@@ -804,6 +810,9 @@ pub(crate) fn mothership_death_detection(
             MothershipPhase::TransitionToPhase2 | MothershipPhase::Phase2 => {
                 // Tous les hearts morts → Dying
                 if mothership.hearts.iter().all(is_dead) {
+                    mothership.dying_start_pos = transform.translation.truncate();
+                    mothership.dying_timer =
+                        Timer::from_seconds(MOTHERSHIP_DYING_DURATION, TimerMode::Once);
                     mothership.state = MothershipPhase::Dying;
                 }
             }
@@ -822,7 +831,7 @@ pub(crate) fn mothership_dying(
     mut mothership_q: Query<
         (
             Entity,
-            &Mothership,
+            &mut Mothership,
             &mut Transform,
             &mut Sprite,
             Option<&MothershipSpawnOnDeath>,
@@ -831,37 +840,32 @@ pub(crate) fn mothership_dying(
     >,
     mut level_events: EventWriter<LevelActionEvent>,
     mut spawn_queue: ResMut<MothershipSpawnQueue>,
-    windows: Query<&Window>,
 ) {
-    let window = windows.single();
-    let half_w = window.width() / 2.0;
-    let half_h = window.height() / 2.0;
-    let dt = time.delta_seconds();
-
     let mut to_despawn: Vec<(Entity, Option<MothershipConfig>)> = Vec::new();
 
-    for (entity, mothership, mut transform, mut sprite, spawn_on_death) in mothership_q.iter_mut() {
+    for (entity, mut mothership, mut transform, mut sprite, spawn_on_death) in
+        mothership_q.iter_mut()
+    {
         if mothership.state != MothershipPhase::Dying {
             continue;
         }
 
-        let exit_dir = mothership.edge.exit_direction();
-        transform.translation.x += exit_dir.x * MOTHERSHIP_DYING_SPEED * dt;
-        transform.translation.y += exit_dir.y * MOTHERSHIP_DYING_SPEED * dt;
+        mothership.dying_timer.tick(time.delta());
+        let progress = mothership.dying_timer.fraction();
+        // Ease-in : démarre lentement, accélère à la fin (sensation de masse)
+        let eased = progress * progress;
 
-        let delta = Vec2::new(
-            transform.translation.x - mothership.start_pos.x,
-            transform.translation.y - mothership.start_pos.y,
-        );
-        let dist_toward_exit = delta.dot(exit_dir).max(0.0);
-        let fade_range = MOTHERSHIP_ENTERING_DISTANCE + 600.0;
-        let progress = (dist_toward_exit / fade_range).clamp(0.0, 1.0);
+        let exit_dir = mothership.edge.exit_direction();
+        let total_distance = MOTHERSHIP_ENTERING_DISTANCE + 800.0;
+        let target = mothership.dying_start_pos + exit_dir * total_distance;
+        let pos = mothership.dying_start_pos.lerp(target, eased);
+        transform.translation.x = pos.x;
+        transform.translation.y = pos.y;
+
+        // Fade out progressif
         sprite.color.set_a(0.8 * (1.0 - progress));
 
-        if mothership
-            .edge
-            .is_offscreen(transform.translation, half_w, half_h)
-        {
+        if mothership.dying_timer.finished() {
             let next_config = spawn_on_death.map(|s| s.0.clone());
             to_despawn.push((entity, next_config));
         }
