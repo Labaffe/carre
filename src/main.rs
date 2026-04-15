@@ -31,6 +31,7 @@ mod gameover;
 pub mod pause;
 mod countdown;
 mod score;
+mod deckbuilding;
 
 // ─── Rendu & debug ─────────────────────────────────────────────────
 mod background;
@@ -63,6 +64,8 @@ use score::ScorePlugin;
 
 use background::{Background, BackgroundPlugin, Planet};
 use debug::DebugPlugin;
+
+use deckbuilding::card_hand::CardHandPlugin;
 
 fn main() {
     App::new()
@@ -110,6 +113,7 @@ fn main() {
             levelselect::LevelSelectPlugin,
             GameOverPlugin,
             PausePlugin,
+            CardHandPlugin,
             CountdownPlugin,
             ScorePlugin,
         ))
