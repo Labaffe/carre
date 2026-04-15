@@ -2,7 +2,7 @@ use crate::deckbuilding::cards::Card;
 use bevy::prelude::*;
 
 #[derive(Component)]
-pub struct CardUI(i32);
+pub struct CardUI(pub i32);
 #[derive(Component)]
 struct CardName;
 #[derive(Component)]
@@ -13,55 +13,81 @@ struct CardType;
 struct Description;
 
 
-pub fn spawn_card_ui<T:Card>(
+pub fn spawn_card_ui<T: Card>(
     mut commands: Commands,
-    asset_server:AssetServer, 
-    card:T, 
-    index:i32
+    asset_server: AssetServer,
+    card: T,
+    index: i32,
 ) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     commands
         .spawn((
             NodeBundle {
                 style: Style {
+                    width: Val::Px(200.0),
+                    height: Val::Px(300.0),
+                    flex_direction: FlexDirection::Column,
+                    justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::all(Val::Px(10.0)),
                     position_type: PositionType::Absolute,
-                    top: Val::Px(20.0),
-                    right: Val::Px(20.0),
-                    column_gap: Val::Px(12.0),
-                    
                     ..default()
                 },
-                // fond entièrement noir au départ
-                background_color: Color::rgba(0.0, 0.0, 0.0, 1.0).into(),
-                visibility: Visibility::Hidden,
+                background_color: Color::rgb(0.1, 0.1, 0.1).into(),
                 ..default()
             },
             CardUI(index),
         ))
         .with_children(|parent| {
-            // texte invisible au départ (alpha = 0, scale réduit via Transform)
-            parent.spawn((
-                TextBundle::from_section(
-                    card.name(),
+            // Title (top)
+            parent.spawn(TextBundle::from_section(
+                card.name(),
+                TextStyle {
+                    font: font.clone(),
+                    font_size: 24.0,
+                    color: Color::WHITE,
+                },
+            ));
+
+            // Spacer / description
+            parent.spawn(TextBundle::from_section(
+                card.description(),
+                TextStyle {
+                    font: font.clone(),
+                    font_size: 16.0,
+                    color: Color::GRAY,
+                },
+            ));
+
+            // Bottom row (type + cost)
+            parent.spawn(NodeBundle {
+                style: Style {
+                    flex_direction: FlexDirection::Row,
+                    justify_content: JustifyContent::SpaceBetween,
+                    width: Val::Percent(100.0),
+                    ..default()
+                },
+                ..default()
+            })
+            .with_children(|row| {
+                row.spawn(TextBundle::from_section(
+                    card.card_type().to_string(),
                     TextStyle {
                         font: font.clone(),
-                        font_size: 90.0,
-                        color: Color::rgba(1.0, 0.0, 0.0, 1.0),
+                        font_size: 16.0,
+                        color: Color::YELLOW,
                     },
-                ),
-                CardName,
-            ));
-            parent.spawn((
-                TextBundle::from_section(
+                ));
+
+                row.spawn(TextBundle::from_section(
                     card.requirement().to_string(),
                     TextStyle {
-                        font: font.clone(),
-                        font_size: 90.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 1.0),
+                        font,
+                        font_size: 16.0,
+                        color: Color::CYAN,
                     },
-                ),
-                CardRequirement,
-            ));
+                ));
+            });
         });
 }
 

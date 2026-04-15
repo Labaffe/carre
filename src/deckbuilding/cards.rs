@@ -1,12 +1,12 @@
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum CardType{
+pub enum CardType{
     MainWeapon,
     Passive
 }
 impl CardType {
-    fn to_string(&self)->String {
+    pub fn to_string(&self)->String {
         match self {
             CardType::MainWeapon => "MainWeapon".to_string(),
             CardType::Passive => "Passive".to_string()
