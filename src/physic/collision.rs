@@ -3,7 +3,7 @@
 
 use crate::debug::debug::DebugMode;
 use crate::enemy::asteroid::Asteroid;
-use crate::enemy::enemy::{Enemy, EnemyState};
+use crate::enemy::enemy::Enemy;
 use crate::game_manager::state::GameState;
 use crate::physic::health::Health;
 use crate::player::player::{INVINCIBLE_DURATION, Invincible, Player};
@@ -64,7 +64,7 @@ impl Hittable for Enemy {
         false
     }
     fn is_dangerous(&self) -> bool {
-        matches!(self.state, EnemyState::Active(_))
+        self.is_vulnerable()
     }
 }
 

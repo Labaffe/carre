@@ -1,224 +1,81 @@
-//! Registre central de tous les ennemis du jeu.
-//!
-//! Chaque ennemi est défini par un `EnemyDef` : ses stats, ses phases,
-//! son apparence et ses sons. Pour ajouter un nouvel ennemi :
-//! 1. Définir ses constantes et ses `PhaseDef` ici
-//! 2. Ajouter son `EnemyDef` dans la liste `ALL_ENEMIES`
-//! 3. Créer son module de systèmes spécifiques (intro, patterns, etc.)
-//!
-//! Les systèmes génériques (dégâts, flash, mort, projectiles, patrol)
-//! fonctionnent automatiquement via `EnemyPlugin` dans `enemy.rs`.
+//! Registre central — config statique (sprite, radius, sons) de chaque type
+//! d'ennemi. Les machines à état vivent dans les fichiers d'ennemis.
 
-use crate::enemy::enemy::{PatternDef, PhaseDef};
+use bevy::prelude::Color;
 
-// ═══════════════════════════════════════════════════════════════════════
-//  Définition générique d'un ennemi
-// ═══════════════════════════════════════════════════════════════════════
+use crate::enemy::enemy::EnemyConfig;
 
-/// Fiche descriptive d'un type d'ennemi.
-///
-/// Contient toutes les données nécessaires pour spawner et configurer
-/// un `Enemy` component. Les systèmes spécifiques (intro, patterns)
-/// restent dans le module dédié de chaque ennemi.
-pub struct EnemyDef {
-    /// Nom affiché (debug / logs).
+pub struct EnemyData {
     pub name: &'static str,
-    /// Rayon de la hitbox circulaire.
-    pub radius: f32,
-    /// Taille du sprite (côté, en pixels).
-    pub sprite_size: f32,
-    /// Phases de combat (PV, intervalle, patterns, son).
-    pub phases: &'static [PhaseDef],
-    /// Durée de l'animation de mort (secondes).
-    pub death_duration: f32,
-    /// Amplitude max du tremblement pendant la mort.
-    pub death_shake_max: f32,
-    /// Son joué quand l'ennemi est touché.
-    pub hit_sound: &'static str,
-    /// Son des explosions pendant la mort.
-    pub death_explosion_sound: &'static str,
+    pub config: EnemyConfigData,
+    pub total_hp: i32,
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  BOSS
-// ═══════════════════════════════════════════════════════════════════════
-//  Module : src/boss.rs
-//  Machine à état : Entering → Flexing → Active(0) → Dying → Dead
-//  Patterns : patrol (sinusoïde 5s) → charge (fonce sur le joueur, fin au mur)
-//  Particularités :
-//    - Intro en spirale (7s) + flexing (1.7s)
-//    - Musique dédiée (boss.ogg)
-//    - Mouvement patrol sinusoïdal entre les charges
-//    - Animation de flexing accéléré pendant la mort
+pub struct EnemyConfigData {
+    pub radius: f32,
+    pub sprite_size: f32,
+    pub hit_sound: &'static str,
+    pub death_explosion_sound: &'static str,
+    pub hit_flash_color: Option<Color>,
+}
 
-pub static BOSS_PHASES: [PhaseDef; 3] = [
-    // Phase 1 : patrol 5s + charge, transition vers phase 2
-    PhaseDef {
-        health: 100,
-        enter_sound: Some("audio/sfx/t_go.wav"),
-        patterns: &[
-            PatternDef {
-                name: "patrol",
-                duration: 5.0,
-            },
-            PatternDef {
-                name: "charge",
-                duration: 0.1,
-            },
-        ],
-        has_transition: true,
-    },
-    // Phase 2 : patrol 4s + charge, transition vers phase 3
-    PhaseDef {
-        health: 100,
-        enter_sound: Some("audio/sfx/t_go.wav"),
-        patterns: &[
-            PatternDef {
-                name: "patrol",
-                duration: 4.0,
-            },
-            PatternDef {
-                name: "charge",
-                duration: 0.1,
-            },
-        ],
-        has_transition: true,
-    },
-    // Phase 3 : patrol 2.5s + charge, pas de transition → mort
-    PhaseDef {
-        health: 100,
-        enter_sound: Some("audio/sfx/t_go.wav"),
-        patterns: &[
-            PatternDef {
-                name: "patrol",
-                duration: 3.0,
-            },
-            PatternDef {
-                name: "charge",
-                duration: 0.1,
-            },
-        ],
-        has_transition: false,
-    },
-];
+impl EnemyConfigData {
+    pub const fn new(
+        radius: f32,
+        sprite_size: f32,
+        hit_sound: &'static str,
+        death_explosion_sound: &'static str,
+    ) -> Self {
+        Self {
+            radius,
+            sprite_size,
+            hit_sound,
+            death_explosion_sound,
+            hit_flash_color: None,
+        }
+    }
 
-pub static BOSS: EnemyDef = EnemyDef {
+    pub fn to_config(&self) -> EnemyConfig {
+        EnemyConfig {
+            radius: self.radius,
+            sprite_size: self.sprite_size,
+            hit_sound: self.hit_sound,
+            death_explosion_sound: self.death_explosion_sound,
+            hit_flash_color: self.hit_flash_color,
+        }
+    }
+}
+
+pub const BOSS: EnemyData = EnemyData {
     name: "Boss",
-    radius: 80.0,
-    sprite_size: 256.0,
-    phases: &BOSS_PHASES,
-    death_duration: 4.0,
-    death_shake_max: 20.0,
-    hit_sound: "audio/sfx/asteroid_hit.ogg",
-    death_explosion_sound: "audio/sfx/boss_explosion.ogg",
+    config: EnemyConfigData {
+        radius: 80.0,
+        sprite_size: 256.0,
+        hit_sound: "audio/sfx/asteroid_hit.ogg",
+        death_explosion_sound: "audio/sfx/boss_explosion.ogg",
+        hit_flash_color: None, // défini à Color::rgba(2.5,2.5,2.5,1.0) dans boss.rs
+    },
+    total_hp: 300,
 };
 
-// ═══════════════════════════════════════════════════════════════════════
-//  GREEN UFO
-// ═══════════════════════════════════════════════════════════════════════
-//  Module : src/green_ufo.rs
-//  Machine à état : Active(0) → Dying → Dead  (pas d'intro ni de flexing)
-//  Patterns : rush (fonce sur le joueur 0.4s) → idle (pause 0.2s) → repeat
-//  Particularités :
-//    - Mort instantanée style astéroïde (explosion + despawn)
-//    - Son "green_ufo.ogg" à chaque rush
-//    - Spawn périodique depuis le haut de l'écran
-
-pub static GREEN_UFO_PHASES: [PhaseDef; 1] = [PhaseDef {
-    health: 5,
-    enter_sound: None,
-    patterns: &[
-        PatternDef {
-            name: "rush",
-            duration: 1.5,
-        },
-        // c'est pervert mais la durée du "idle" correspond au temps de rush du pattern précédent
-        PatternDef {
-            name: "idle",
-            duration: 1.0,
-        },
-    ],
-    has_transition: false,
-}];
-
-pub static GREEN_UFO: EnemyDef = EnemyDef {
+pub const GREEN_UFO: EnemyData = EnemyData {
     name: "GreenUFO",
-    radius: 30.0,
-    sprite_size: 64.0,
-    phases: &GREEN_UFO_PHASES,
-    death_duration: 0.05,
-    death_shake_max: 0.0,
-    hit_sound: "audio/sfx/asteroid_hit.ogg",
-    death_explosion_sound: "audio/sfx/asteroid_die.ogg",
+    config: EnemyConfigData::new(
+        30.0,
+        64.0,
+        "audio/sfx/asteroid_hit.ogg",
+        "audio/sfx/asteroid_die.ogg",
+    ),
+    total_hp: 5,
 };
 
-// ═══════════════════════════════════════════════════════════════════════
-//  GATLING
-// ═══════════════════════════════════════════════════════════════════════
-//  Module : src/gatling.rs
-//  Machine à état : Entering → Active(0) → Dying → Dead
-//  Patterns : aim_and_shoot (2s, suivi continu + tir) → repeat
-//  Particularités :
-//    - Attachée à un Mothership via MothershipLink
-//    - Rotation vers le joueur (max 40°) en continu
-//    - Tire un EnemyProjectile vers le joueur à la fin du pattern
-
-pub static GATLING_PHASES: [PhaseDef; 1] = [PhaseDef {
-    health: 10,
-    enter_sound: None,
-    patterns: &[PatternDef {
-        name: "aim_and_shoot",
-        duration: 2.0,
-    }],
-    has_transition: false,
-}];
-
-pub static GATLING: EnemyDef = EnemyDef {
-    name: "Gatling",
-    radius: 50.0,
-    sprite_size: 128.0,
-    phases: &GATLING_PHASES,
-    death_duration: 0.05,
-    death_shake_max: 0.0,
-    hit_sound: "audio/sfx/asteroid_hit.ogg",
-    death_explosion_sound: "audio/sfx/asteroid_die.ogg",
+pub const ASTEROID: EnemyData = EnemyData {
+    name: "Asteroid",
+    config: EnemyConfigData::new(
+        30.0,
+        64.0,
+        "audio/sfx/asteroid_hit.ogg",
+        "audio/sfx/asteroid_die.ogg",
+    ),
+    total_hp: 1,
 };
-
-// ═══════════════════════════════════════════════════════════════════════
-//  MOTHERSHIP HEART
-// ═══════════════════════════════════════════════════════════════════════
-//  Module : src/gatling.rs (spawné avec le Mothership)
-//  Machine à état : Active(0) → Dying → Dead  (pas d'intro, ennemi simple)
-//  Patterns : aucun (idle permanent)
-//  Particularités :
-//    - Attaché au Mothership via MothershipLink
-//    - Sprite statique (mothership_heart.png)
-//    - Mort instantanée style astéroïde
-
-pub static MOTHERSHIP_HEART_PHASES: [PhaseDef; 1] = [PhaseDef {
-    health: 15,
-    enter_sound: None,
-    patterns: &[PatternDef {
-        name: "idle",
-        duration: 999.0,
-    }],
-    has_transition: false,
-}];
-
-pub static MOTHERSHIP_HEART: EnemyDef = EnemyDef {
-    name: "MothershipHeart",
-    radius: 60.0,
-    sprite_size: 160.0,
-    phases: &MOTHERSHIP_HEART_PHASES,
-    death_duration: 0.05,
-    death_shake_max: 0.0,
-    hit_sound: "audio/sfx/asteroid_hit.ogg",
-    death_explosion_sound: "audio/sfx/asteroid_die.ogg",
-};
-
-// ═══════════════════════════════════════════════════════════════════════
-//  LISTE COMPLÈTE
-// ═══════════════════════════════════════════════════════════════════════
-
-/// Tous les ennemis du jeu, pour référence et itération.
-pub static ALL_ENEMIES: &[&EnemyDef] = &[&BOSS, &GREEN_UFO, &GATLING, &MOTHERSHIP_HEART];

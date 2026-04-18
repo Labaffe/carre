@@ -8,7 +8,7 @@
 //! La bombe inflige des dégâts à tous les astéroïdes et ennemis à l'écran.
 
 use crate::enemy::asteroid::Asteroid;
-use crate::enemy::enemy::{Enemy, EnemyState};
+use crate::enemy::enemy::Enemy;
 use crate::fx::explosion::load_frames_from_folder;
 use crate::game_manager::state::GameState;
 use crate::menu::pause::not_paused;
@@ -393,7 +393,7 @@ fn bomb_apply_damage(
 
     // Dégâts à tous les ennemis actifs (le framework enemy gère la mort automatiquement)
     for (enemy, mut health) in enemies.iter_mut() {
-        if matches!(enemy.state, EnemyState::Active(_)) {
+        if enemy.is_vulnerable() {
             health.take_damage(BOMB_DAMAGE_ENEMY);
         }
     }

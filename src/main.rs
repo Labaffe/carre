@@ -30,12 +30,9 @@ use weapon::projectile::{Projectile, ProjectilePlugin};
 
 use enemy::enemy::{Enemy, EnemyPlugin};
 use enemy::boss::{BossPlugin, MusicBoss};
-use enemy::boss_def::BossV2Plugin;
 use enemy::asteroid::{Asteroid, AsteroidPlugin};
 use enemy::green_ufo::GreenUFOPlugin;
-use enemy::gatling::GatlingPlugin;
-use enemy::mothership::{GatlingLaser, MothershipMarker};
-use enemy::system::BehaviorPlugin;
+use enemy::system::BehaviorFrameworkPlugin;
 
 use fx::explosion::{Explosion, ExplosionPlugin};
 use item::item::{Droppable, ItemPlugin};
@@ -89,12 +86,10 @@ fn main() {
         ))
         // Ennemis
         .add_plugins((
+            BehaviorFrameworkPlugin,
             EnemyPlugin,
             BossPlugin,
             GreenUFOPlugin,
-            GatlingPlugin,
-            BehaviorPlugin,
-            BossV2Plugin,
         ))
         // Entités & effets
         .add_plugins((
@@ -168,8 +163,6 @@ fn cleanup_playing(
     boss_music: Query<Entity, With<MusicBoss>>,
     outro_music: Query<Entity, With<MusicOutro>>,
     droppables: Query<Entity, With<Droppable>>,
-    motherships: Query<Entity, With<MothershipMarker>>,
-    lasers: Query<Entity, With<GatlingLaser>>,
 ) {
     let all_entities = players.iter()
         .chain(asteroids.iter())
@@ -181,9 +174,7 @@ fn cleanup_playing(
         .chain(music.iter())
         .chain(boss_music.iter())
         .chain(outro_music.iter())
-        .chain(droppables.iter())
-        .chain(motherships.iter())
-        .chain(lasers.iter());
+        .chain(droppables.iter());
 
     for entity in all_entities {
         if let Some(e) = commands.get_entity(entity) {

@@ -12,7 +12,6 @@ struct CardType;
 #[derive(Component)]
 struct Description;
 
-
 pub fn spawn_card_ui<T: Card>(
     mut commands: Commands,
     asset_server: AssetServer,
@@ -63,35 +62,34 @@ pub fn spawn_card_ui<T: Card>(
             ));
 
             // Bottom row (type + cost)
-            parent.spawn(NodeBundle {
-                style: Style {
-                    flex_direction: FlexDirection::Row,
-                    justify_content: JustifyContent::SpaceBetween,
-                    width: Val::Percent(100.0),
+            parent
+                .spawn(NodeBundle {
+                    style: Style {
+                        flex_direction: FlexDirection::Row,
+                        justify_content: JustifyContent::SpaceBetween,
+                        width: Val::Percent(100.0),
+                        ..default()
+                    },
                     ..default()
-                },
-                ..default()
-            })
-            .with_children(|row| {
-                row.spawn(TextBundle::from_section(
-                    card.card_type().to_string(),
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 16.0,
-                        color: Color::YELLOW,
-                    },
-                ));
+                })
+                .with_children(|row| {
+                    row.spawn(TextBundle::from_section(
+                        card.card_type().to_string(),
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: 16.0,
+                            color: Color::YELLOW,
+                        },
+                    ));
 
-                row.spawn(TextBundle::from_section(
-                    card.requirement().to_string(),
-                    TextStyle {
-                        font,
-                        font_size: 16.0,
-                        color: Color::CYAN,
-                    },
-                ));
-            });
+                    row.spawn(TextBundle::from_section(
+                        card.requirement().to_string(),
+                        TextStyle {
+                            font,
+                            font_size: 16.0,
+                            color: Color::CYAN,
+                        },
+                    ));
+                });
         });
-    
-    }
-
+}

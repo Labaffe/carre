@@ -17,7 +17,8 @@
 
 use bevy::prelude::*;
 
-use crate::enemy::system::{Behavior, EnemyBehavior};
+use crate::enemy::enemy::Enemy;
+use crate::enemy::system::Behavior;
 use crate::game_manager::difficulty::{Difficulty, SpawnPosition};
 use crate::item::item::{DropEvent, DropTable, ItemType};
 use crate::player::player::Player;
@@ -131,7 +132,7 @@ impl Behavior for PatrolSine {
     fn execute(&self, entity: Entity, world: &mut World) {
         let dt = world.resource::<Time>().delta_seconds();
         let t = world
-            .get::<EnemyBehavior>(entity)
+            .get::<Enemy>(entity)
             .map(|e| e.phase_timer.elapsed().as_secs_f32())
             .unwrap_or(0.0);
 
@@ -161,7 +162,7 @@ pub struct DriftFloat {
 impl Behavior for DriftFloat {
     fn execute(&self, entity: Entity, world: &mut World) {
         let t = world
-            .get::<EnemyBehavior>(entity)
+            .get::<Enemy>(entity)
             .map(|e| e.phase_timer.elapsed().as_secs_f32())
             .unwrap_or(0.0);
         let dx = (t * self.main_freq_x).sin() * self.main_amp_x;
@@ -186,7 +187,7 @@ pub struct EnterFromOffscreen {
 impl Behavior for EnterFromOffscreen {
     fn execute(&self, entity: Entity, world: &mut World) {
         let t = world
-            .get::<EnemyBehavior>(entity)
+            .get::<Enemy>(entity)
             .map(|e| (e.phase_timer.elapsed().as_secs_f32() / self.duration).clamp(0.0, 1.0))
             .unwrap_or(1.0);
         let eased = 1.0 - (1.0 - t).powi(2);
@@ -214,7 +215,7 @@ pub struct IntroSpiral {
 impl Behavior for IntroSpiral {
     fn execute(&self, entity: Entity, world: &mut World) {
         let t = world
-            .get::<EnemyBehavior>(entity)
+            .get::<Enemy>(entity)
             .map(|e| (e.phase_timer.elapsed().as_secs_f32() / self.duration).clamp(0.0, 1.0))
             .unwrap_or(1.0);
         let eased = 1.0 - (1.0 - t).powi(2);
@@ -460,7 +461,7 @@ pub struct FlashWhite {
 impl Behavior for FlashWhite {
     fn execute(&self, entity: Entity, world: &mut World) {
         let elapsed = world
-            .get::<EnemyBehavior>(entity)
+            .get::<Enemy>(entity)
             .map(|e| e.phase_timer.elapsed().as_secs_f32())
             .unwrap_or(0.0);
         if let Some(mut sprite) = world.get_mut::<Sprite>(entity) {
