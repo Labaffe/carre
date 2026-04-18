@@ -6,105 +6,71 @@ pub struct CardHandPlugin;
 
 impl Plugin for CardHandPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<CardHandState>()
+        app
+            .init_resource::<HandVisible>()
             .add_systems(OnEnter(GameState::Playing), spawn_hand_ui)
             .add_systems(Update, (
                 toggle_hand,
                 animate_hand,
-                layout_hand,
             ).run_if(in_state(GameState::Playing)));
     }
 }
 
-#[derive(Resource)]
-pub struct CardHandTime {
-    value: f32
-}
-#[derive(Resource)]
-pub struct CardHandState {
-    pub visible: bool,
-    pub progress: f32, // 0.0 = hidden, 1.0 = fully shown
-}
 
-impl Default for CardHandState {
-    fn default() -> Self {
-        Self {
-            visible: false,
-            progress: 0.0,
-        }
-    }
-}
-impl Default for CardHandTime {
-    fn default() -> Self {
-        CardHandTime {
-            value: 0.0,
-        }
-    }
-}
 fn spawn_hand_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     for i in 0..5 {
         spawn_card_ui(commands.reborrow(), asset_server.clone(), DummyCard{}, i);
     }
 }
-fn layout_hand(
-    mut card_uis: Query<(&CardUI, &mut Style)>,
-    state: Res<CardHandState>,
-    windows: Query<&Window>,
-) {
-    let window = windows.single();
-    let center_x = window.width() / 2.0;
 
-    let travel_spacing = 300.0;
-    let final_spacing = 120.0;
+#[derive(Resource, Default)]
+pub struct HandVisible(pub bool);
 
-    let y = window.height() * 0.5;
-
-    for (card_ui, mut style) in card_uis.iter_mut() {
-        let i = card_ui.0 as f32;
-
-        // --- FINAL POSITION (centered, tight)
-        let final_x = center_x + (i - 2.0) * final_spacing;
-
-        // --- START POSITION (off-screen right, wide)
-        let start_x = window.width() + i * travel_spacing;
-
-        // --- INTERPOLATION
-        let t = state.progress;
-        let x = start_x + (final_x - start_x) * t;
-
-        style.position_type = PositionType::Absolute;
-        style.left = Val::Px(x);
-        style.top = Val::Px(y);
-
-        // visibility
-        style.display = if state.progress > 0.01 {
-            Display::Flex
-        } else {
-            Display::None
-        };
-    }
-}
 fn toggle_hand(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut state: ResMut<CardHandState>,
+    mut visible: ResMut<HandVisible>,
 ) {
     if keyboard.just_pressed(KeyCode::KeyU) {
-        state.visible = !state.visible;
+        visible.0 = !visible.0;
     }
 }
-
+use crate::tweening::{Tween, TweenUIPos, Ease};
+use crate::tweening;
 fn animate_hand(
-    time: Res<Time>,
-    mut state: ResMut<CardHandState>,
+    mut commands: Commands,
+    visible: Res<HandVisible>,
+    windows: Query<&Window>,
+    query: Query<(Entity, &CardUI, &Style)>,
 ) {
-    let speed = 3.0;
+    if !visible.is_changed() {
+        return;
+    }
+    let window = windows.single();
+    let center_x = window.width() / 2.0;
+    let y = window.height() * 0.5;
 
-    let target = if state.visible { 1.0 } else { 0.0 };
+    let spacing = 120.0;
 
-    state.progress += (target - state.progress) * speed * time.delta_seconds();
+    for (entity, card_ui, style) in query.iter() {
+        let i = card_ui.0 as f32;
 
-    // snap to avoid endless float drift
-    if (state.progress - target).abs() < 0.01 {
-        state.progress = target;
+        let target_x = if visible.0 {
+            center_x + (i - 2.0) * spacing
+        } else {
+            -300.0 //- i * 200.0 // exit left
+        };
+        let from_x = if visible.0 {
+            window.width()+300.0// - i * 200.0
+        } else {
+            center_x + (i - 2.0) * spacing // exit left
+        };
+        println!("{}",match style.top {Val::Px(f)=>"px".to_string(),Val::Percent(f)=>"percent".to_string(),_=>"other".to_string()});
+
+        tweening::ui_pos(
+            Vec2::new( from_x,y),
+            Vec2::new(target_x, y),
+            0.5,
+            Ease::EaseOut
+        ).play(&mut commands,entity);
     }
 }

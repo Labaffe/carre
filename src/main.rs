@@ -32,7 +32,7 @@ pub mod pause;
 mod countdown;
 mod score;
 mod deckbuilding;
-
+mod tweening;
 // ─── Rendu & debug ─────────────────────────────────────────────────
 mod background;
 mod debug;
@@ -66,7 +66,6 @@ use background::{Background, BackgroundPlugin, Planet};
 use debug::DebugPlugin;
 
 use deckbuilding::card_hand::CardHandPlugin;
-
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -116,6 +115,7 @@ fn main() {
             CardHandPlugin,
             CountdownPlugin,
             ScorePlugin,
+            tweening::plugin::UiTweenPlugin,
         ))
         // Rendu & debug
         .add_plugins((

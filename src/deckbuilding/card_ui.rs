@@ -26,6 +26,8 @@ pub fn spawn_card_ui<T: Card>(
                 style: Style {
                     width: Val::Px(200.0),
                     height: Val::Px(300.0),
+                    top: Val::Px(300.0),
+                    left: Val::Px(300.0),
                     flex_direction: FlexDirection::Column,
                     justify_content: JustifyContent::SpaceBetween,
                     align_items: AlignItems::Center,
@@ -34,6 +36,7 @@ pub fn spawn_card_ui<T: Card>(
                     ..default()
                 },
                 background_color: Color::rgb(0.1, 0.1, 0.1).into(),
+                //transform: Transform::from_translation(Vec3::new(1000.0, 300.0, 0.0)),
                 ..default()
             },
             CardUI(index),
@@ -89,5 +92,6 @@ pub fn spawn_card_ui<T: Card>(
                 ));
             });
         });
-}
+    
+    }
 
