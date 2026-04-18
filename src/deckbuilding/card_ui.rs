@@ -2,7 +2,11 @@ use crate::deckbuilding::cards::Card;
 use bevy::prelude::*;
 
 #[derive(Component)]
-pub struct CardUI(pub i32);
+pub struct CardUI {
+    pub index:i32,
+    pub selectable:bool,
+    pub played:bool
+}
 #[derive(Component)]
 struct CardName;
 #[derive(Component)]
@@ -35,11 +39,13 @@ pub fn spawn_card_ui<T: Card>(
                     position_type: PositionType::Absolute,
                     ..default()
                 },
+                z_index: ZIndex::Global(11),
                 background_color: Color::rgb(0.1, 0.1, 0.1).into(),
                 //transform: Transform::from_translation(Vec3::new(1000.0, 300.0, 0.0)),
                 ..default()
             },
-            CardUI(index),
+            CardUI {index,selectable:false,played:false},
+            Interaction::default(), 
         ))
         .with_children(|parent| {
             // Title (top)
