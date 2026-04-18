@@ -34,7 +34,7 @@ fn toggle_hand(
         visible.0 = !visible.0;
     }
 }
-use crate::tweening::{Tween, TweenUIPos, Ease};
+use crate::tweening::{TweenSequence, Ease,StyleLeft,Tween,StyleTop};
 use crate::tweening;
 fn animate_hand(
     mut commands: Commands,
@@ -65,12 +65,13 @@ fn animate_hand(
             center_x + (i - 2.0) * spacing // exit left
         };
         println!("{}",match style.top {Val::Px(f)=>"px".to_string(),Val::Percent(f)=>"percent".to_string(),_=>"other".to_string()});
-
-        tweening::ui_pos(
-            Vec2::new( from_x,y),
-            Vec2::new(target_x, y),
-            0.5,
-            Ease::EaseOut
-        ).play(&mut commands,entity);
+        commands.entity(entity).insert((
+            TweenSequence::<StyleLeft>::new(
+                Tween::new(0.0, 200.0, 0.5, Ease::OutQuad)
+            ),
+            TweenSequence::<StyleTop>::new(
+                Tween::new(0.0, 100.0, 0.5, Ease::OutQuad)
+            ),
+        ));
     }
 }

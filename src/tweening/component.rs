@@ -1,45 +1,71 @@
 use bevy::prelude::*;
-pub trait TweenTarget: Component {
-    fn apply(value: f32, target: &mut Self);
+pub trait TweenTarget: Send + Sync + 'static {
+    type Component: bevy::ecs::component::Component;
+
+    fn apply(value: f32, target: &mut Self::Component);
 }
 
 /* =========================
-   COMPONENTS
+   TARGET MARKERS
    ========================= */
 
-#[derive(Component)]
-pub struct TweenTranslation;
+// Transform
+pub struct TranslationX;
+pub struct TranslationY;
 
-#[derive(Component)]
-pub struct TweenScale;
+// UI Style
+pub struct StyleLeft;
+pub struct StyleTop;
 
-#[derive(Component)]
-pub struct TweenOpacity;
-
-#[derive(Component)]
-pub struct TweenUIPosX;
-
-#[derive(Component)]
-pub struct TweenUIPosY;
+// Opacity
+pub struct UiOpacity;
 
 /* =========================
-   TARGET IMPLEMENTATIONS
+   IMPLEMENTATIONS
    ========================= */
 
-impl TweenTarget for Transform {
-    fn apply(value: f32, target: &mut Self) {
+// -------- Transform --------
+
+impl TweenTarget for TranslationX {
+    type Component = Transform;
+
+    fn apply(value: f32, target: &mut Transform) {
         target.translation.x = value;
     }
 }
 
-impl TweenTarget for Style {
-    fn apply(value: f32, target: &mut Self) {
+impl TweenTarget for TranslationY {
+    type Component = Transform;
+
+    fn apply(value: f32, target: &mut Transform) {
+        target.translation.y = value;
+    }
+}
+
+// -------- UI Style --------
+
+impl TweenTarget for StyleLeft {
+    type Component = Style;
+
+    fn apply(value: f32, target: &mut Style) {
         target.left = Val::Px(value);
     }
 }
 
-impl TweenTarget for BackgroundColor {
-    fn apply(value: f32, target: &mut Self) {
+impl TweenTarget for StyleTop {
+    type Component = Style;
+
+    fn apply(value: f32, target: &mut Style) {
+        target.top = Val::Px(value);
+    }
+}
+
+// -------- Opacity --------
+
+impl TweenTarget for UiOpacity {
+    type Component = BackgroundColor;
+
+    fn apply(value: f32, target: &mut BackgroundColor) {
         target.0.set_a(value);
     }
 }

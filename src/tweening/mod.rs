@@ -4,9 +4,6 @@ mod easing;
 pub mod plugin;
 mod systems;
 mod tween;
-mod command;
-pub use tween::Tween;
-pub use component::TweenUIPos;
+pub use tween::{TweenSequence,Tween};
 pub use easing::Ease;
-
-pub use tween::ui_pos;
+pub use component::*;
