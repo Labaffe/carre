@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use crate::difficulty::{BoomEvent, Difficulty, SpawnPosition};
 use crate::levels::ScrollDirection;
-use crate::mothership::{MothershipConfig, MothershipSpawnQueue, TurretConfig};
+use crate::mothership::{MothershipConfig, MothershipSpawnQueue, TurretConfig, TurretStyle};
 use crate::pause::not_paused;
 use crate::state::GameState;
 use bevy::prelude::*;
@@ -485,15 +485,33 @@ pub fn build_level_1() -> Vec<LevelStep> {
 // ═══════════════════════════════════════════════════════════════════════
 
 pub fn build_level_2() -> Vec<LevelStep> {
+    // Style des tourelles aim_and_shoot : sprite gatling_2, projectile vert fluo pillule, laser
+    let sniper_style = TurretStyle {
+        sprite: Some("images/gatling_2/gatling_2.png"),
+        projectile_color: Color::rgba(0.2, 1.0, 0.2, 1.0), // vert fluo
+        projectile_speed: 700.0,                           // plus rapide
+        projectile_radius: 6.0,
+        projectile_size: Vec2::new(8.0, 22.0), // forme pillule (allongée)
+        shoot_sound: "audio/reserve_de_sons/sound_7.ogg",
+        shoot_sound_volume: 0.5,
+        laser: true,
+        laser_color: Color::rgba(0.2, 1.0, 0.2, 0.15), // vert fluo semi-transparent
+    };
+
     // Positions normalisées sur le sprite : x = gauche(-0.5)..droite(0.5), y = haut(0.5)..bas(-0.5)
     let turrets = vec![
-        TurretConfig::single("aim_and_shoot", 2.0, Vec2::new(-0.47, -0.1)), // 500px à gauche de la 1ère
-        TurretConfig::single("full_auto", 15.0, Vec2::new(-0.3, -0.1)),     // 1ère originale
-        TurretConfig::single("full_auto", 15.0, Vec2::new(-0.15, -0.2)), // entre gauche et centre
-        TurretConfig::single("full_auto", 15.0, Vec2::new(0.0, -0.3)),   // centre
-        TurretConfig::single("full_auto", 15.0, Vec2::new(0.15, -0.2)),  // entre centre et droite
-        TurretConfig::single("full_auto", 15.0, Vec2::new(0.3, -0.1)),   // 5ème originale
-        TurretConfig::single("aim_and_shoot", 2.0, Vec2::new(0.47, -0.1)), // 500px à droite de la 5ème
+        TurretConfig::styled(
+            "aim_and_shoot",
+            2.0,
+            Vec2::new(-0.47, -0.1),
+            sniper_style.clone(),
+        ), // sniper gauche
+        TurretConfig::single("full_auto", 15.0, Vec2::new(-0.3, -0.1)),
+        TurretConfig::single("full_auto", 15.0, Vec2::new(-0.15, -0.2)),
+        TurretConfig::single("full_auto", 15.0, Vec2::new(0.0, -0.3)), // centre
+        TurretConfig::single("full_auto", 15.0, Vec2::new(0.15, -0.2)),
+        TurretConfig::single("full_auto", 15.0, Vec2::new(0.3, -0.1)),
+        TurretConfig::styled("aim_and_shoot", 2.0, Vec2::new(0.47, -0.1), sniper_style), // sniper droite
     ];
 
     // Hearts : entre tourelles, alignés en Y, montés de ~400px
@@ -514,7 +532,7 @@ pub fn build_level_2() -> Vec<LevelStep> {
 
     vec![
         LevelStep::at(0.0, "game_start").with(Action::Log("Niveau 2 démarré")),
-        LevelStep::at(1.6, "alarm").with(Action::PlaySound("audio/sfx/mothership_alarm.ogg")),
+        LevelStep::at(0.6, "alarm").with(Action::PlaySound("audio/sfx/mothership_alarm.ogg")),
         LevelStep::at(5.0, "spawn_top")
             .with(Action::StartMusic("audio/music/mothership.ogg"))
             .with(Action::SpawnMothership(MothershipConfig {

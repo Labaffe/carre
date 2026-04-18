@@ -97,19 +97,72 @@ pub struct TurretPatternDef {
     pub duration: f32,
 }
 
+/// Style visuel et gameplay d'une tourelle.
+/// Permet de configurer le sprite, le projectile et le laser de visée.
+#[derive(Clone, Debug)]
+pub struct TurretStyle {
+    /// Chemin du sprite (fichier unique, pas de frames d'animation).
+    /// Si `None`, utilise les frames animées standard (images/gatling/).
+    pub sprite: Option<&'static str>,
+    /// Couleur du projectile.
+    pub projectile_color: Color,
+    /// Vitesse du projectile (pixels/seconde).
+    pub projectile_speed: f32,
+    /// Rayon de collision du projectile (pixels).
+    pub projectile_radius: f32,
+    /// Taille visuelle du projectile (largeur, hauteur). Forme pilule si height > width.
+    pub projectile_size: Vec2,
+    /// Son de tir.
+    pub shoot_sound: &'static str,
+    /// Volume du son de tir (1.0 = normal).
+    pub shoot_sound_volume: f32,
+    /// Si true, affiche un laser de visée vers le joueur.
+    pub laser: bool,
+    /// Couleur du laser de visée.
+    pub laser_color: Color,
+}
+
+impl Default for TurretStyle {
+    fn default() -> Self {
+        Self {
+            sprite: None,
+            projectile_color: Color::rgba(1.0, 0.3, 0.3, 1.0),
+            projectile_speed: 450.0,
+            projectile_radius: 8.0,
+            projectile_size: Vec2::splat(16.0),
+            shoot_sound: "audio/sfx/gatling_shoot.ogg",
+            shoot_sound_volume: 1.0,
+            laser: false,
+            laser_color: Color::rgba(0.0, 1.0, 0.0, 0.3),
+        }
+    }
+}
+
 /// Configuration d'une tourelle (patterns + position normalisée sur le sprite).
 #[derive(Clone, Debug)]
 pub struct TurretConfig {
     pub patterns: Vec<TurretPatternDef>,
     pub pos: Vec2,
+    /// Style visuel/gameplay. Si `None`, utilise le style par défaut (gatling rouge).
+    pub style: Option<TurretStyle>,
 }
 
 impl TurretConfig {
-    /// Un seul pattern qui cycle, à une position donnée.
+    /// Un seul pattern qui cycle, à une position donnée (style par défaut).
     pub fn single(name: &'static str, duration: f32, pos: Vec2) -> Self {
         Self {
             patterns: vec![TurretPatternDef { name, duration }],
             pos,
+            style: None,
+        }
+    }
+
+    /// Un seul pattern avec un style custom.
+    pub fn styled(name: &'static str, duration: f32, pos: Vec2, style: TurretStyle) -> Self {
+        Self {
+            patterns: vec![TurretPatternDef { name, duration }],
+            pos,
+            style: Some(style),
         }
     }
 
@@ -121,6 +174,7 @@ impl TurretConfig {
                 .map(|(name, duration)| TurretPatternDef { name, duration })
                 .collect(),
             pos,
+            style: None,
         }
     }
 }
@@ -309,6 +363,51 @@ pub(crate) struct GatlingPatternOverride {
     pub(crate) patterns: Vec<TurretPatternDef>,
 }
 
+/// Style runtime stocké sur chaque Gatling.
+#[derive(Component, Clone)]
+pub(crate) struct GatlingStyleComp {
+    pub(crate) projectile_color: Color,
+    pub(crate) projectile_speed: f32,
+    pub(crate) projectile_radius: f32,
+    pub(crate) projectile_size: Vec2,
+    pub(crate) shoot_sound: &'static str,
+    pub(crate) shoot_sound_volume: f32,
+    pub(crate) has_laser: bool,
+    pub(crate) laser_color: Color,
+    /// true = sprite statique (pas d'animation par frames).
+    pub(crate) static_sprite: bool,
+}
+
+impl Default for GatlingStyleComp {
+    fn default() -> Self {
+        Self {
+            projectile_color: Color::rgba(1.0, 0.3, 0.3, 1.0),
+            projectile_speed: 450.0,
+            projectile_radius: 8.0,
+            projectile_size: Vec2::splat(16.0),
+            shoot_sound: "audio/sfx/gatling_shoot.ogg",
+            shoot_sound_volume: 1.0,
+            has_laser: false,
+            laser_color: Color::rgba(0.0, 1.0, 0.0, 0.3),
+            static_sprite: false,
+        }
+    }
+}
+
+/// Marqueur pour le laser de visée (enfant du Gatling).
+#[derive(Component)]
+pub(crate) struct GatlingLaser;
+
+/// Biais du centre du cône de visée d'une Gatling (en radians, relatif à la direction de base).
+/// Négatif = incliné d'un côté, positif = de l'autre. Permet aux tourelles latérales
+/// de viser davantage vers le centre du Mothership.
+/// Le second champ est un décalage de phase pour désynchroniser le balayage entre tourelles.
+#[derive(Component, Clone, Copy)]
+pub(crate) struct GatlingAimBias {
+    pub(crate) center_rad: f32,
+    pub(crate) phase_offset: f32,
+}
+
 /// Frames préchargées de la Gatling (dossier images/gatling/).
 #[derive(Resource)]
 pub(crate) struct GatlingFrames(pub(crate) Vec<Handle<Image>>);
@@ -375,13 +474,19 @@ pub(crate) fn spawn_mothership_oneshot(
     // ─── Spawn du Mothership ─────────────────────────────────────
     let mothership_texture = asset_server.load("images/mothership/mothership_2.png");
 
-    // Sprites enfants miroirs en espace local du parent :
-    // - Haut : flip Y, collé au-dessus
-    // - Gauche : flip X, collé à gauche
-    // - Droite : flip X, collé à droite
-    let mirror_top_offset = Vec3::new(0.0, ms_size.y, -0.01);
-    let mirror_left_offset = Vec3::new(-ms_size.x, 0.0, -0.01);
-    let mirror_right_offset = Vec3::new(ms_size.x, 0.0, -0.01);
+    // Le Mothership est composé de 6 sprites en grille 2x3 (colonne × ligne) :
+    //   ┌─────────────┬─────────────┬─────────────┐
+    //   │ top-left    │ top-center  │ top-right   │   (ligne haute : flip_y)
+    //   │ (flip_x+y)  │ (flip_y)    │ (flip_x+y)  │
+    //   ├─────────────┼─────────────┼─────────────┤
+    //   │ bottom-left │ bottom-ctr  │ bottom-right│   (ligne basse : rotation de base)
+    //   │ (flip_x)    │ (main)      │ (flip_x)    │
+    //   └─────────────┴─────────────┴─────────────┘
+    let mirror_top_center_offset = Vec3::new(0.0, ms_size.y, -0.01);
+    let mirror_bottom_left_offset = Vec3::new(-ms_size.x, 0.0, -0.01);
+    let mirror_bottom_right_offset = Vec3::new(ms_size.x, 0.0, -0.01);
+    let mirror_top_left_offset = Vec3::new(-ms_size.x, ms_size.y, -0.01);
+    let mirror_top_right_offset = Vec3::new(ms_size.x, ms_size.y, -0.01);
 
     let mothership_entity = commands
         .spawn((
@@ -401,7 +506,7 @@ pub(crate) fn spawn_mothership_oneshot(
             MothershipMarker,
         ))
         .with_children(|parent| {
-            // Miroir haut : flip Y
+            // Haut-centre : flip Y
             parent.spawn(SpriteBundle {
                 texture: mothership_texture.clone(),
                 sprite: Sprite {
@@ -409,10 +514,10 @@ pub(crate) fn spawn_mothership_oneshot(
                     flip_y: true,
                     ..default()
                 },
-                transform: Transform::from_translation(mirror_top_offset),
+                transform: Transform::from_translation(mirror_top_center_offset),
                 ..default()
             });
-            // Miroir gauche : flip X
+            // Bas-gauche : flip X
             parent.spawn(SpriteBundle {
                 texture: mothership_texture.clone(),
                 sprite: Sprite {
@@ -420,18 +525,42 @@ pub(crate) fn spawn_mothership_oneshot(
                     flip_x: true,
                     ..default()
                 },
-                transform: Transform::from_translation(mirror_left_offset),
+                transform: Transform::from_translation(mirror_bottom_left_offset),
                 ..default()
             });
-            // Miroir droite : flip X
+            // Bas-droite : flip X
             parent.spawn(SpriteBundle {
-                texture: mothership_texture,
+                texture: mothership_texture.clone(),
                 sprite: Sprite {
                     custom_size: Some(ms_size),
                     flip_x: true,
                     ..default()
                 },
-                transform: Transform::from_translation(mirror_right_offset),
+                transform: Transform::from_translation(mirror_bottom_right_offset),
+                ..default()
+            });
+            // Haut-gauche : flip X + flip Y (même rotation que haut-centre)
+            parent.spawn(SpriteBundle {
+                texture: mothership_texture.clone(),
+                sprite: Sprite {
+                    custom_size: Some(ms_size),
+                    flip_x: true,
+                    flip_y: true,
+                    ..default()
+                },
+                transform: Transform::from_translation(mirror_top_left_offset),
+                ..default()
+            });
+            // Haut-droite : flip X + flip Y
+            parent.spawn(SpriteBundle {
+                texture: mothership_texture,
+                sprite: Sprite {
+                    custom_size: Some(ms_size),
+                    flip_x: true,
+                    flip_y: true,
+                    ..default()
+                },
+                transform: Transform::from_translation(mirror_top_right_offset),
                 ..default()
             });
         })
@@ -449,14 +578,75 @@ pub(crate) fn spawn_mothership_oneshot(
         let offset = edge.transform_offset(base_offset);
         let gatling_pos = Vec2::new(pos.x + offset.x, pos.y + offset.y);
         let phase = &GATLING.phases[0];
-        let first_frame = frames.0.first().cloned().unwrap_or_default();
+
+        // Biais de visée : la tourelle regarde davantage vers le centre du Mothership.
+        // `offset` est le vecteur centre→tourelle en monde ; direction vers le centre = -offset.
+        // On calcule l'angle relatif par rapport à la direction de base, puis on le borne à ±20°
+        // pour éviter une visée trop oblique.
+        let aim_bias = {
+            let to_center = -Vec2::new(offset.x, offset.y);
+            if to_center.length_squared() > 1.0 {
+                let base_dir = edge.enter_direction();
+                let to_center_n = to_center.normalize();
+                let base_atan2 = base_dir.y.atan2(base_dir.x);
+                let to_center_atan2 = to_center_n.y.atan2(to_center_n.x);
+                let mut rel = to_center_atan2 - base_atan2;
+                while rel > std::f32::consts::PI {
+                    rel -= std::f32::consts::TAU;
+                }
+                while rel < -std::f32::consts::PI {
+                    rel += std::f32::consts::TAU;
+                }
+                rel.clamp(-20f32.to_radians(), 20f32.to_radians())
+            } else {
+                0.0
+            }
+        };
+        // Phase : inverse selon le côté du mothership pour désynchroniser les balayages.
+        let phase_offset = if turret_cfg.pos.x >= 0.0 {
+            std::f32::consts::PI
+        } else {
+            0.0
+        };
+        let aim_bias_comp = crate::mothership::GatlingAimBias {
+            center_rad: aim_bias,
+            phase_offset,
+        };
+
+        // Sprite : statique (TurretStyle.sprite) ou animé (frames standard)
+        let style_comp = if let Some(ref style) = turret_cfg.style {
+            GatlingStyleComp {
+                projectile_color: style.projectile_color,
+                projectile_speed: style.projectile_speed,
+                projectile_radius: style.projectile_radius,
+                projectile_size: style.projectile_size,
+                shoot_sound: style.shoot_sound,
+                shoot_sound_volume: style.shoot_sound_volume,
+                has_laser: style.laser,
+                laser_color: style.laser_color,
+                static_sprite: style.sprite.is_some(),
+            }
+        } else {
+            GatlingStyleComp::default()
+        };
+
+        let texture_handle: Handle<Image> = if let Some(ref style) = turret_cfg.style {
+            if let Some(path) = style.sprite {
+                asset_server.load(path)
+            } else {
+                frames.0.first().cloned().unwrap_or_default()
+            }
+        } else {
+            frames.0.first().cloned().unwrap_or_default()
+        };
 
         let mut entity_cmds = commands.spawn((
             SpriteBundle {
-                texture: first_frame,
+                texture: texture_handle,
                 sprite: Sprite {
                     custom_size: Some(Vec2::splat(GATLING_SPRITE_SIZE)),
                     anchor: edge.gatling_anchor(),
+                    flip_y: style_comp.static_sprite,
                     ..default()
                 },
                 transform: Transform {
@@ -495,13 +685,37 @@ pub(crate) fn spawn_mothership_oneshot(
             DropTable {
                 drops: &MOTHERSHIP_DROP_TABLE,
             },
+            style_comp.clone(),
+            aim_bias_comp,
         ));
 
         entity_cmds.insert(GatlingPatternOverride {
             patterns: turret_cfg.patterns.clone(),
         });
 
-        gatling_entities.push(entity_cmds.id());
+        // Laser de visée
+        let gatling_id = entity_cmds.id();
+        if style_comp.has_laser {
+            commands.spawn((
+                SpriteBundle {
+                    sprite: Sprite {
+                        color: style_comp.laser_color,
+                        custom_size: Some(Vec2::new(2.0, 1.0)), // Sera redimensionné dynamiquement
+                        anchor: bevy::sprite::Anchor::Custom(Vec2::new(0.0, -0.5)),
+                        ..default()
+                    },
+                    transform: Transform::from_xyz(gatling_pos.x, gatling_pos.y, 0.49),
+                    ..default()
+                },
+                GatlingLaser,
+                MothershipLink {
+                    mothership: gatling_id,
+                    offset: Vec2::ZERO,
+                },
+            ));
+        }
+
+        gatling_entities.push(gatling_id);
     }
 
     // ─── Spawn des Hearts ────────────────────────────────────────

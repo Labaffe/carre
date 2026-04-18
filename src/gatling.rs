@@ -14,9 +14,9 @@ use crate::enemies::GATLING;
 use crate::enemy::{Enemy, EnemyProjectile, EnemyState, PatternIndex, PatternTimer};
 use crate::item::DropTable;
 use crate::mothership::{
-    EntryEdge, GatlingFrames, GatlingMarker, GatlingPatternOverride,
-    MothershipLink, MothershipSpawnQueue, GATLING_ANIM_INTERVAL,
-    GATLING_SPRITE_SIZE, MOTHERSHIP_DROP_TABLE, MOTHERSHIP_ENTERING_DURATION,
+    EntryEdge, GATLING_ANIM_INTERVAL, GATLING_SPRITE_SIZE, GatlingAimBias, GatlingFrames,
+    GatlingLaser, GatlingMarker, GatlingPatternOverride, GatlingStyleComp, MOTHERSHIP_DROP_TABLE,
+    MOTHERSHIP_ENTERING_DURATION, MothershipLink, MothershipSpawnQueue,
 };
 use crate::pause::not_paused;
 use crate::player::Player;
@@ -28,10 +28,7 @@ pub struct GatlingPlugin;
 impl Plugin for GatlingPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MothershipSpawnQueue>()
-            .add_systems(
-                Startup,
-                crate::mothership::preload_gatling_frames,
-            )
+            .add_systems(Startup, crate::mothership::preload_gatling_frames)
             .add_systems(
                 Update,
                 (
@@ -49,6 +46,7 @@ impl Plugin for GatlingPlugin {
                     gatling_pattern_executor,
                     gatling_shoot_update,
                     gatling_full_auto_update,
+                    gatling_laser_update,
                 )
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),
@@ -58,14 +56,16 @@ impl Plugin for GatlingPlugin {
 
 // ─── Constantes Gatling ────────────────────────────────────────────
 
-/// Angle de rotation max vers le joueur (degrés).
-const GATLING_AIM_MAX_ANGLE: f32 = 55.0;
+/// Angle de rotation max vers le joueur (degrés, demi-cône de visée).
+const GATLING_AIM_MAX_ANGLE: f32 = 45.0;
 /// Vitesse de rotation vers le joueur (degrés/seconde).
-const GATLING_AIM_SPEED: f32 = 80.0;
-/// Vitesse du projectile (pixels/seconde).
-const GATLING_PROJECTILE_SPEED: f32 = 450.0;
-/// Rayon de collision du projectile (pixels).
-const GATLING_PROJECTILE_RADIUS: f32 = 8.0;
+const GATLING_AIM_SPEED: f32 = 120.0;
+/// Distance max (pixels) à laquelle la tourelle aim_and_shoot peut verrouiller le joueur.
+/// Au-delà, elle balaie sa zone à la recherche du joueur.
+const GATLING_AIM_DETECTION_RANGE: f32 = 450.0;
+/// Pulsation du balayage en mode recherche (radians/seconde).
+const GATLING_SWEEP_FREQUENCY: f32 = 1.4;
+// Vitesse et rayon de projectile par défaut — définis dans GatlingStyleComp::default().
 /// Intervalle entre deux frames de l'animation de tir (secondes).
 const GATLING_SHOOT_ANIM_INTERVAL: f32 = 0.1;
 
@@ -80,7 +80,7 @@ const FULL_AUTO_FIRE_INTERVAL_START: f32 = 0.8;
 /// Intervalle de tir minimal (cadence max).
 const FULL_AUTO_FIRE_INTERVAL_MIN: f32 = 0.15;
 /// Courbe d'accélération (>1 = montée lente, <1 = montée rapide).
-const FULL_AUTO_RAMP_FACTOR: f32 = 1.5;
+const FULL_AUTO_RAMP_FACTOR: f32 = 3.5;
 /// Intervalle entre deux frames de l'animation de tir en full auto (secondes).
 const FULL_AUTO_SHOOT_ANIM_INTERVAL: f32 = 0.04;
 
@@ -111,6 +111,8 @@ struct GatlingShoot {
     current_frame: usize,
     fired: bool,
     anim_started: bool,
+    /// true si le joueur est actuellement verrouillé (dans la portée + cône).
+    player_locked: bool,
 }
 
 /// Composant actif pendant le pattern "full_auto".
@@ -225,10 +227,22 @@ fn gatling_standalone_entering(
 fn gatling_entering_animate(
     time: Res<Time>,
     frames: Res<GatlingFrames>,
-    mut query: Query<(&Enemy, &mut Handle<Image>, &mut GatlingEnteringAnim), With<GatlingMarker>>,
+    mut query: Query<
+        (
+            &Enemy,
+            &mut Handle<Image>,
+            &mut GatlingEnteringAnim,
+            &GatlingStyleComp,
+        ),
+        With<GatlingMarker>,
+    >,
 ) {
-    for (enemy, mut texture, mut anim) in query.iter_mut() {
+    for (enemy, mut texture, mut anim, style) in query.iter_mut() {
         if enemy.state != EnemyState::Entering {
+            continue;
+        }
+        // Pas d'animation de frames pour les sprites statiques
+        if style.static_sprite {
             continue;
         }
 
@@ -364,6 +378,7 @@ fn gatling_pattern_executor(
                     current_frame: 0,
                     fired: false,
                     anim_started: false,
+                    player_locked: false,
                 });
             }
             "full_auto" => {
@@ -409,9 +424,11 @@ fn gatling_shoot_update(
         (
             Entity,
             &GatlingBaseEdge,
+            &GatlingStyleComp,
             &mut GatlingShoot,
             &mut Transform,
             &mut Handle<Image>,
+            Option<&GatlingAimBias>,
         ),
         With<GatlingMarker>,
     >,
@@ -419,23 +436,33 @@ fn gatling_shoot_update(
 ) {
     let dt = time.delta_seconds();
     let max_rad = GATLING_AIM_MAX_ANGLE.to_radians();
+    let now = time.elapsed_seconds();
 
-    for (_entity, base_edge, mut shoot, mut transform, mut texture) in query.iter_mut() {
+    for (_entity, base_edge, style, mut shoot, mut transform, mut texture, aim_bias) in
+        query.iter_mut()
+    {
+        let (bias_center, bias_phase) = aim_bias
+            .map(|b| (b.center_rad, b.phase_offset))
+            .unwrap_or((0.0, 0.0));
+        let min_rel = bias_center - max_rad;
+        let max_rel = bias_center + max_rad;
         let rest_rot = base_edge.0.sprite_rotation();
         shoot.elapsed += dt;
 
         let anim_total_duration = frames.0.len() as f32 * GATLING_SHOOT_ANIM_INTERVAL;
         let anim_start_time = shoot.duration - anim_total_duration;
 
-        // Suivi continu du joueur
+        // Suivi du joueur si proche, balayage sinon
         {
             let cannon_dir = base_edge.0.enter_direction();
             let base_atan2 = cannon_dir.y.atan2(cannon_dir.x);
 
+            let mut player_locked = false;
             if let Ok(player_transform) = player_q.get_single() {
                 let diff =
                     player_transform.translation.truncate() - transform.translation.truncate();
-                if diff.length_squared() > 0.01 {
+                let dist_sq = diff.length_squared();
+                if dist_sq > 0.01 && dist_sq <= GATLING_AIM_DETECTION_RANGE.powi(2) {
                     let aim_atan2 = diff.y.atan2(diff.x);
                     let mut relative = aim_atan2 - base_atan2;
                     while relative > std::f32::consts::PI {
@@ -444,9 +471,22 @@ fn gatling_shoot_update(
                     while relative < -std::f32::consts::PI {
                         relative += std::f32::consts::TAU;
                     }
-                    shoot.target_angle = relative.clamp(-max_rad, max_rad);
+                    let clamped = relative.clamp(min_rel, max_rel);
+                    // Verrou seulement si le joueur est dans le cône (décentré vers le centre MS)
+                    if (relative - clamped).abs() < 1e-3 {
+                        shoot.target_angle = clamped;
+                        player_locked = true;
+                    }
                 }
             }
+
+            if !player_locked {
+                // Balayage sinusoïdal de la zone de recherche, autour du biais,
+                // basé sur le temps global (oscillation continue indépendante du cycle de pattern).
+                shoot.target_angle = bias_center
+                    + max_rad * (now * GATLING_SWEEP_FREQUENCY + bias_phase).sin();
+            }
+            shoot.player_locked = player_locked;
 
             let speed_rad = GATLING_AIM_SPEED.to_radians() * dt;
             let angle_diff = shoot.target_angle - shoot.current_angle;
@@ -455,68 +495,111 @@ fn gatling_shoot_update(
             transform.rotation = rest_rot * Quat::from_rotation_z(shoot.current_angle);
         }
 
-        // Animation de tir
-        if !shoot.anim_started {
-            if shoot.elapsed >= anim_start_time {
-                shoot.anim_started = true;
-                shoot.current_frame = 0;
-                shoot.anim_timer =
-                    Timer::from_seconds(GATLING_SHOOT_ANIM_INTERVAL, TimerMode::Repeating);
+        // Animation de tir (seulement pour les sprites animés)
+        if style.static_sprite {
+            // Sprite statique : pas d'animation, tir à mi-durée,
+            // uniquement si le joueur est verrouillé (sinon on continue de patrouiller).
+            let fire_time = shoot.duration * 0.7;
+            if !shoot.fired && shoot.elapsed >= fire_time && shoot.player_locked {
+                shoot.fired = true;
+                spawn_gatling_projectile(
+                    &mut commands,
+                    &asset_server,
+                    &transform,
+                    rest_rot,
+                    shoot.current_angle,
+                    style,
+                );
             }
         } else {
-            shoot.anim_timer.tick(time.delta());
-
-            if shoot.anim_timer.just_finished() {
-                shoot.current_frame += 1;
-                if shoot.current_frame < frames.0.len() {
-                    *texture = frames.0[shoot.current_frame].clone();
+            if !shoot.anim_started {
+                if shoot.elapsed >= anim_start_time {
+                    shoot.anim_started = true;
+                    shoot.current_frame = 0;
+                    shoot.anim_timer =
+                        Timer::from_seconds(GATLING_SHOOT_ANIM_INTERVAL, TimerMode::Repeating);
                 }
-            }
+            } else {
+                shoot.anim_timer.tick(time.delta());
 
-            let fire_frame = frames.0.len() / 2;
-            if !shoot.fired && shoot.current_frame >= fire_frame {
-                shoot.fired = true;
+                if shoot.anim_timer.just_finished() {
+                    shoot.current_frame += 1;
+                    if shoot.current_frame < frames.0.len() {
+                        *texture = frames.0[shoot.current_frame].clone();
+                    }
+                }
 
-                let total_rot = rest_rot * Quat::from_rotation_z(shoot.current_angle);
-                let local_cannon = Vec3::new(0.0, -1.0, 0.0);
-                let shoot_dir_3 = total_rot.mul_vec3(local_cannon);
-                let shoot_dir = Vec2::new(shoot_dir_3.x, shoot_dir_3.y);
+                let fire_frame = frames.0.len() / 2;
+                if !shoot.fired && shoot.current_frame >= fire_frame {
+                    shoot.fired = true;
+                    spawn_gatling_projectile(
+                        &mut commands,
+                        &asset_server,
+                        &transform,
+                        rest_rot,
+                        shoot.current_angle,
+                        style,
+                    );
+                }
 
-                let cannon_tip = transform.translation.truncate() + shoot_dir * GATLING_SPRITE_SIZE;
-
-                commands.spawn((
-                    SpriteBundle {
-                        sprite: Sprite {
-                            color: Color::rgba(1.0, 0.3, 0.3, 1.0),
-                            custom_size: Some(Vec2::splat(GATLING_PROJECTILE_RADIUS * 2.0)),
-                            ..default()
-                        },
-                        transform: Transform::from_xyz(cannon_tip.x, cannon_tip.y, 0.6),
-                        ..default()
-                    },
-                    EnemyProjectile {
-                        velocity: Vec3::new(
-                            shoot_dir.x * GATLING_PROJECTILE_SPEED,
-                            shoot_dir.y * GATLING_PROJECTILE_SPEED,
-                            0.0,
-                        ),
-                        radius: GATLING_PROJECTILE_RADIUS,
-                    },
-                ));
-
-                commands.spawn(AudioBundle {
-                    source: asset_server.load("audio/sfx/gatling_shoot.ogg"),
-                    settings: PlaybackSettings::DESPAWN,
-                });
-            }
-
-            if shoot.current_frame >= frames.0.len() {
-                if let Some(frame) = frames.0.first() {
-                    *texture = frame.clone();
+                if shoot.current_frame >= frames.0.len() {
+                    if let Some(frame) = frames.0.first() {
+                        *texture = frame.clone();
+                    }
                 }
             }
         }
     }
+}
+
+/// Spawn un projectile de Gatling avec les paramètres du style.
+fn spawn_gatling_projectile(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    transform: &Transform,
+    rest_rot: Quat,
+    current_angle: f32,
+    style: &GatlingStyleComp,
+) {
+    let total_rot = rest_rot * Quat::from_rotation_z(current_angle);
+    let local_cannon = Vec3::new(0.0, -1.0, 0.0);
+    let shoot_dir_3 = total_rot.mul_vec3(local_cannon);
+    let shoot_dir = Vec2::new(shoot_dir_3.x, shoot_dir_3.y);
+
+    let cannon_tip = transform.translation.truncate() + shoot_dir * GATLING_SPRITE_SIZE;
+
+    // Rotation du projectile dans la direction de tir
+    let proj_angle = shoot_dir.y.atan2(shoot_dir.x) - std::f32::consts::FRAC_PI_2;
+
+    commands.spawn((
+        SpriteBundle {
+            sprite: Sprite {
+                color: style.projectile_color,
+                custom_size: Some(style.projectile_size),
+                ..default()
+            },
+            transform: Transform {
+                translation: Vec3::new(cannon_tip.x, cannon_tip.y, 0.6),
+                rotation: Quat::from_rotation_z(proj_angle),
+                ..default()
+            },
+            ..default()
+        },
+        EnemyProjectile {
+            velocity: Vec3::new(
+                shoot_dir.x * style.projectile_speed,
+                shoot_dir.y * style.projectile_speed,
+                0.0,
+            ),
+            radius: style.projectile_radius,
+        },
+    ));
+
+    commands.spawn(AudioBundle {
+        source: asset_server.load(style.shoot_sound),
+        settings: PlaybackSettings::DESPAWN
+            .with_volume(bevy::audio::Volume::new(style.shoot_sound_volume)),
+    });
 }
 
 // ─── Mise à jour du pattern full_auto ──────────────────────────────
@@ -529,6 +612,7 @@ fn gatling_full_auto_update(
     mut query: Query<
         (
             &GatlingBaseEdge,
+            &GatlingStyleComp,
             &mut GatlingFullAuto,
             &mut Transform,
             &mut Handle<Image>,
@@ -539,7 +623,7 @@ fn gatling_full_auto_update(
     let dt = time.delta_seconds();
     let max_rad = GATLING_AIM_MAX_ANGLE.to_radians();
 
-    for (base_edge, mut auto, mut transform, mut texture) in query.iter_mut() {
+    for (base_edge, style, mut auto, mut transform, mut texture) in query.iter_mut() {
         let rest_rot = base_edge.0.sprite_rotation();
 
         // Délai de démarrage
@@ -576,18 +660,20 @@ fn gatling_full_auto_update(
 
         transform.rotation = rest_rot * Quat::from_rotation_z(auto.current_angle);
 
-        // Animation de tir en cours
-        if let Some(frame_idx) = auto.anim_frame {
-            auto.anim_timer.tick(time.delta());
-            if auto.anim_timer.just_finished() {
-                let next = frame_idx + 1;
-                if next < frames.0.len() {
-                    auto.anim_frame = Some(next);
-                    *texture = frames.0[next].clone();
-                } else {
-                    auto.anim_frame = None;
-                    if let Some(f) = frames.0.first() {
-                        *texture = f.clone();
+        // Animation de tir en cours (seulement pour sprites animés)
+        if !style.static_sprite {
+            if let Some(frame_idx) = auto.anim_frame {
+                auto.anim_timer.tick(time.delta());
+                if auto.anim_timer.just_finished() {
+                    let next = frame_idx + 1;
+                    if next < frames.0.len() {
+                        auto.anim_frame = Some(next);
+                        *texture = frames.0[next].clone();
+                    } else {
+                        auto.anim_frame = None;
+                        if let Some(f) = frames.0.first() {
+                            *texture = f.clone();
+                        }
                     }
                 }
             }
@@ -596,44 +682,78 @@ fn gatling_full_auto_update(
         // Tir
         auto.fire_timer.tick(time.delta());
         if auto.fire_timer.just_finished() {
-            auto.anim_frame = Some(0);
-            auto.anim_timer =
-                Timer::from_seconds(FULL_AUTO_SHOOT_ANIM_INTERVAL, TimerMode::Repeating);
-            if let Some(f) = frames.0.first() {
-                *texture = f.clone();
+            if !style.static_sprite {
+                auto.anim_frame = Some(0);
+                auto.anim_timer =
+                    Timer::from_seconds(FULL_AUTO_SHOOT_ANIM_INTERVAL, TimerMode::Repeating);
+                if let Some(f) = frames.0.first() {
+                    *texture = f.clone();
+                }
             }
 
-            let total_rot = rest_rot * Quat::from_rotation_z(auto.current_angle);
-            let local_cannon = Vec3::new(0.0, -1.0, 0.0);
-            let shoot_dir_3 = total_rot.mul_vec3(local_cannon);
-            let shoot_dir = Vec2::new(shoot_dir_3.x, shoot_dir_3.y);
-
-            let cannon_tip = transform.translation.truncate() + shoot_dir * GATLING_SPRITE_SIZE;
-
-            commands.spawn((
-                SpriteBundle {
-                    sprite: Sprite {
-                        color: Color::rgba(1.0, 0.3, 0.3, 1.0),
-                        custom_size: Some(Vec2::splat(GATLING_PROJECTILE_RADIUS * 2.0)),
-                        ..default()
-                    },
-                    transform: Transform::from_xyz(cannon_tip.x, cannon_tip.y, 0.6),
-                    ..default()
-                },
-                EnemyProjectile {
-                    velocity: Vec3::new(
-                        shoot_dir.x * GATLING_PROJECTILE_SPEED,
-                        shoot_dir.y * GATLING_PROJECTILE_SPEED,
-                        0.0,
-                    ),
-                    radius: GATLING_PROJECTILE_RADIUS,
-                },
-            ));
-
-            commands.spawn(AudioBundle {
-                source: asset_server.load("audio/sfx/gatling_shoot.ogg"),
-                settings: PlaybackSettings::DESPAWN,
-            });
+            spawn_gatling_projectile(
+                &mut commands,
+                &asset_server,
+                &transform,
+                rest_rot,
+                auto.current_angle,
+                style,
+            );
         }
+    }
+}
+
+// ─── Laser de visée ───────────────────────────────────────────────
+
+/// Met à jour les lasers de visée : ligne fine du bout du canon vers le joueur.
+fn gatling_laser_update(
+    mut commands: Commands,
+    gatling_q: Query<
+        (&Transform, &GatlingBaseEdge, &Enemy, &GatlingStyleComp),
+        With<GatlingMarker>,
+    >,
+    mut laser_q: Query<
+        (Entity, &MothershipLink, &mut Transform, &mut Sprite),
+        (With<GatlingLaser>, Without<GatlingMarker>),
+    >,
+    player_q: Query<&Transform, (With<Player>, Without<GatlingMarker>, Without<GatlingLaser>)>,
+) {
+    let player_pos = player_q.get_single().map(|t| t.translation.truncate()).ok();
+
+    for (laser_entity, link, mut laser_tf, mut laser_sprite) in laser_q.iter_mut() {
+        // Le laser est lié à un Gatling (mothership = gatling_entity)
+        let Ok((gatling_tf, base_edge, enemy, style)) = gatling_q.get(link.mothership) else {
+            // Gatling détruit → despawn le laser
+            if let Some(mut e) = commands.get_entity(laser_entity) {
+                e.despawn();
+            }
+            continue;
+        };
+
+        // Pas de laser si le gatling n'est pas actif
+        if !matches!(enemy.state, EnemyState::Active(_)) || !style.has_laser {
+            laser_sprite.color.set_a(0.0);
+            continue;
+        }
+
+        // Position du bout du canon (dans la direction réelle de visée du sprite)
+        let rest_rot = base_edge.0.sprite_rotation();
+        let total_rot = gatling_tf.rotation;
+        let local_cannon = Vec3::new(0.0, -1.0, 0.0);
+        let shoot_dir_3 = total_rot.mul_vec3(local_cannon);
+        let cannon_dir = Vec2::new(shoot_dir_3.x, shoot_dir_3.y);
+
+        let cannon_tip = gatling_tf.translation.truncate() + cannon_dir * GATLING_SPRITE_SIZE;
+
+        // Le laser suit toujours la direction du canon (sweep ou lock)
+        // et continue jusqu'au hors-écran : longueur fixe largement supérieure.
+        let cannon_angle = cannon_dir.y.atan2(cannon_dir.x) - std::f32::consts::FRAC_PI_2;
+
+        laser_tf.translation = Vec3::new(cannon_tip.x, cannon_tip.y, 0.49);
+        laser_tf.rotation = Quat::from_rotation_z(cannon_angle);
+
+        laser_sprite.custom_size = Some(Vec2::new(2.0, 2000.0));
+        laser_sprite.color = style.laser_color;
+        let _ = (rest_rot, player_pos);
     }
 }
