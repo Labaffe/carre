@@ -19,7 +19,8 @@ use crate::asteroid::Asteroid;
 use crate::boss::{BossMarker, MusicBoss};
 use crate::difficulty::Difficulty;
 use crate::enemy::{Enemy, EnemyState};
-use crate::level::level_name;
+use crate::level::{LevelConfig, level_name};
+use crate::levels::ScrollDirection;
 use crate::pause::PauseState;
 use crate::player::Player;
 use crate::state::GameState;
@@ -131,10 +132,12 @@ pub enum LevelPhaseKind {
         sound_played: bool,
         /// Le son d'intro a fini de jouer (entité IntroSound despawnée).
         sound_finished: bool,
-        start_y: f32,
-        target_y: f32,
-        /// Position Y cible, en ratio de half_h.
-        spawn_y_ratio: f32,
+        /// Position de départ (hors écran).
+        start_pos: Vec2,
+        /// Position cible (en jeu).
+        target_pos: Vec2,
+        /// Ratio pour calculer la position cible (ex: -0.5 → 50% du half-screen).
+        spawn_ratio: f32,
         initialized: bool,
     },
     /// Niveau en cours : les LevelSteps s'exécutent.
@@ -175,9 +178,10 @@ pub struct IntroConfig {
     pub duration: f32,
     /// Son joué pendant l'intro.
     pub sound: &'static str,
-    /// Position Y cible du vaisseau, en ratio de half_h.
-    /// Ex: -0.5 → -half_h * 0.5 (milieu de la moitié basse).
-    pub spawn_y_ratio: f32,
+    /// Ratio pour calculer la position cible.
+    /// Pour Down : target_y = half_h * ratio (ex: -0.5 → bas de l'écran).
+    /// Pour Left : target_x = half_w * ratio (ex: -0.5 → gauche de l'écran).
+    pub spawn_ratio: f32,
 }
 
 /// Retourne la config d'intro pour un niveau.
@@ -186,7 +190,7 @@ pub fn level_intro(level: usize) -> IntroConfig {
         _ => IntroConfig {
             duration: 5.0,
             sound: "audio/sfx/landing.ogg",
-            spawn_y_ratio: -0.5,
+            spawn_ratio: -0.5,
         },
     }
 }
@@ -206,6 +210,7 @@ fn level_phase_system(
     windows: Query<&Window>,
     level_phase: Option<ResMut<LevelPhase>>,
     intro_sound_q: Query<Entity, With<IntroSound>>,
+    config: Res<LevelConfig>,
 ) {
     let Some(mut level_phase) = level_phase else { return };
 
@@ -216,23 +221,52 @@ fn level_phase_system(
             sound,
             sound_played,
             sound_finished,
-            start_y,
-            target_y,
-            spawn_y_ratio,
+            start_pos,
+            target_pos,
+            spawn_ratio,
             initialized,
         } => {
             let window = windows.single();
+            let half_w = window.width() / 2.0;
             let half_h = window.height() / 2.0;
 
-            // Premier frame : initialiser les positions et activer le freeze
+            // Premier frame : initialiser les positions selon la direction du scroll
             if !*initialized {
-                *target_y = half_h * *spawn_y_ratio;
-                *start_y = -half_h - 150.0;
+                let (start, target) = match config.scroll_direction {
+                    ScrollDirection::Down => (
+                        Vec2::new(0.0, -half_h - 150.0),
+                        Vec2::new(0.0, half_h * *spawn_ratio),
+                    ),
+                    ScrollDirection::Up => (
+                        Vec2::new(0.0, half_h + 150.0),
+                        Vec2::new(0.0, -(half_h * *spawn_ratio)),
+                    ),
+                    ScrollDirection::Left => (
+                        Vec2::new(-half_w - 150.0, 0.0),
+                        Vec2::new(half_w * *spawn_ratio, 0.0),
+                    ),
+                    ScrollDirection::Right => (
+                        Vec2::new(half_w + 150.0, 0.0),
+                        Vec2::new(-(half_w * *spawn_ratio), 0.0),
+                    ),
+                };
+                *start_pos = start;
+                *target_pos = target;
                 *initialized = true;
                 pause.intro_active = true;
 
+                // Rotation du vaisseau selon la direction d'entrée
+                let ship_angle = match config.scroll_direction {
+                    ScrollDirection::Down => 0.0,                                    // pointe vers le haut
+                    ScrollDirection::Up => std::f32::consts::PI,                     // pointe vers le bas
+                    ScrollDirection::Left => -std::f32::consts::FRAC_PI_2,          // pointe vers la droite
+                    ScrollDirection::Right => std::f32::consts::FRAC_PI_2,          // pointe vers la gauche
+                };
+
                 if let Ok(mut transform) = player_q.get_single_mut() {
-                    transform.translation.y = *start_y;
+                    transform.translation.x = start_pos.x;
+                    transform.translation.y = start_pos.y;
+                    transform.rotation = Quat::from_rotation_z(ship_angle);
                 }
             }
 
@@ -265,13 +299,16 @@ fn level_phase_system(
             let eased = 1.0 - (1.0 - anim_t).powi(2);
 
             if let Ok(mut transform) = player_q.get_single_mut() {
-                transform.translation.y = *start_y + (*target_y - *start_y) * eased;
+                let pos = *start_pos + (*target_pos - *start_pos) * eased;
+                transform.translation.x = pos.x;
+                transform.translation.y = pos.y;
             }
 
             // Intro terminée quand l'animation ET le son sont finis
             if anim_t >= 1.0 && *sound_finished {
                 if let Ok(mut transform) = player_q.get_single_mut() {
-                    transform.translation.y = *target_y;
+                    transform.translation.x = target_pos.x;
+                    transform.translation.y = target_pos.y;
                 }
                 pause.intro_active = false;
                 level_phase.phase = LevelPhaseKind::Running;
@@ -300,6 +337,7 @@ fn skip_intro_input(
     mut player_q: Query<&mut Transform, With<Player>>,
     intro_sound_q: Query<Entity, With<IntroSound>>,
     windows: Query<&Window>,
+    config: Res<LevelConfig>,
 ) {
     if !keyboard.just_pressed(KeyCode::Enter)
         && !keyboard.just_pressed(KeyCode::Space)
@@ -316,7 +354,7 @@ fn skip_intro_input(
         return;
     }
 
-    do_skip_intro(&mut commands, level_phase, &mut pause, &mut player_q, &intro_sound_q, &windows);
+    do_skip_intro(&mut commands, level_phase, &mut pause, &mut player_q, &intro_sound_q, &windows, &config);
 }
 
 /// Skip l'intro : place le joueur à sa position cible, despawn le son, passe en Running.
@@ -327,15 +365,22 @@ pub(crate) fn do_skip_intro(
     player_q: &mut Query<&mut Transform, With<Player>>,
     intro_sound_q: &Query<Entity, With<IntroSound>>,
     windows: &Query<&Window>,
+    config: &Res<LevelConfig>,
 ) {
-    // Calculer target_y à partir du ratio si l'intro n'a pas été initialisée
-    let final_y = if let LevelPhaseKind::Intro { target_y, spawn_y_ratio, initialized, .. } = &level_phase.phase {
+    // Calculer la position cible à partir du ratio si l'intro n'a pas été initialisée
+    let final_pos = if let LevelPhaseKind::Intro { target_pos, spawn_ratio, initialized, .. } = &level_phase.phase {
         if *initialized {
-            *target_y
+            *target_pos
         } else {
             let window = windows.single();
+            let half_w = window.width() / 2.0;
             let half_h = window.height() / 2.0;
-            half_h * *spawn_y_ratio
+            match config.scroll_direction {
+                ScrollDirection::Down => Vec2::new(0.0, half_h * *spawn_ratio),
+                ScrollDirection::Up => Vec2::new(0.0, -(half_h * *spawn_ratio)),
+                ScrollDirection::Left => Vec2::new(half_w * *spawn_ratio, 0.0),
+                ScrollDirection::Right => Vec2::new(-(half_w * *spawn_ratio), 0.0),
+            }
         }
     } else {
         return;
@@ -343,7 +388,8 @@ pub(crate) fn do_skip_intro(
 
     // Placer le joueur à sa position cible
     if let Ok(mut transform) = player_q.get_single_mut() {
-        transform.translation.y = final_y;
+        transform.translation.x = final_pos.x;
+        transform.translation.y = final_pos.y;
     }
 
     // Despawn le son d'intro

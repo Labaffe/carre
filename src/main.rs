@@ -4,6 +4,7 @@ use bevy::prelude::*;
 mod state;
 mod difficulty;
 mod level;
+pub mod levels;
 pub mod game;
 
 // ─── Joueur & armes ────────────────────────────────────────────────
@@ -18,6 +19,9 @@ pub mod enemy;
 pub mod enemies;
 mod boss;
 mod green_ufo;
+mod mothership;
+mod mothership_heart;
+mod gatling;
 
 // ─── Entités & effets ──────────────────────────────────────────────
 mod asteroid;
@@ -41,7 +45,7 @@ mod debug;
 use state::GameState;
 use game::{GamePlugin, MusicOutro};
 use difficulty::DifficultyPlugin;
-use level::LevelPlugin;
+use level::{LevelConfig, LevelPlugin};
 
 use player::{Player, PlayerPlugin};
 use missile::{Missile, MissilePlugin};
@@ -79,6 +83,7 @@ fn main() {
         }))
         .insert_resource(ClearColor(Color::BLACK))
         .init_resource::<GameSettings>()
+        .init_resource::<LevelConfig>()
         .init_state::<GameState>()
         // Core
         .add_plugins((
@@ -99,6 +104,7 @@ fn main() {
             EnemyPlugin,
             BossPlugin,
             green_ufo::GreenUFOPlugin,
+            gatling::GatlingPlugin,
         ))
         // Entités & effets
         .add_plugins((
@@ -173,6 +179,8 @@ fn cleanup_playing(
     boss_music: Query<Entity, With<MusicBoss>>,
     outro_music: Query<Entity, With<MusicOutro>>,
     droppables: Query<Entity, With<Droppable>>,
+    motherships: Query<Entity, With<mothership::MothershipMarker>>,
+    lasers: Query<Entity, With<mothership::GatlingLaser>>,
 ) {
     let all_entities = players.iter()
         .chain(asteroids.iter())
@@ -185,7 +193,9 @@ fn cleanup_playing(
         .chain(music.iter())
         .chain(boss_music.iter())
         .chain(outro_music.iter())
-        .chain(droppables.iter());
+        .chain(droppables.iter())
+        .chain(motherships.iter())
+        .chain(lasers.iter());
 
     for entity in all_entities {
         if let Some(e) = commands.get_entity(entity) {
