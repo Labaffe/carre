@@ -8,6 +8,7 @@ use crate::asteroid::Asteroid;
 use crate::boss::{BossCharge, BossMarker};
 use crate::game::{IntroSound, LevelPhase, LevelPhaseKind};
 use crate::green_ufo::GreenUFOMarker;
+use crate::mothership::{GatlingMarker, Mothership, MothershipHeart, MothershipMarker, MOTHERSHIP_BOTTOM_PROFILE};
 use crate::collision::Hittable;
 use crate::difficulty::Difficulty;
 use crate::enemy::{Enemy, EnemyProjectile, EnemyState, PatternIndex, PatternTimer};
@@ -37,6 +38,7 @@ impl Plugin for DebugPlugin {
                     manage_asteroid_labels,
                     debug_mouse_coords,
                     debug_kill_player,
+                    debug_draw_gatling_positions,
                 ),
             );
     }
@@ -180,6 +182,7 @@ fn toggle_debug(
                         &mut countdown_events,
                         &mut difficulty,
                         &music_q,
+                        None,
                     );
                 }
             }
@@ -219,6 +222,8 @@ fn update_debug_ui(
             &Transform,
             Option<&BossMarker>,
             Option<&GreenUFOMarker>,
+            Option<&GatlingMarker>,
+            Option<&MothershipHeart>,
             Option<&PatternIndex>,
             Option<&PatternTimer>,
             Option<&BossCharge>,
@@ -244,11 +249,15 @@ fn update_debug_ui(
         .unwrap_or_else(|_| "N/A".to_string());
 
     let mut enemy_lines = String::new();
-    for (enemy, transform, boss, green_ufo, pat_idx, pat_timer, charge) in enemy_q.iter() {
+    for (enemy, transform, boss, green_ufo, gatling, heart, pat_idx, pat_timer, charge) in enemy_q.iter() {
         let name = if boss.is_some() {
             "Boss"
         } else if green_ufo.is_some() {
             "GreenUFO"
+        } else if gatling.is_some() {
+            "Gatling"
+        } else if heart.is_some() {
+            "MothershipHeart"
         } else {
             "Enemy"
         };
@@ -621,6 +630,7 @@ fn debug_skip_intro(
     mut player_q: Query<&mut Transform, With<Player>>,
     intro_sound_q: Query<Entity, With<IntroSound>>,
     windows: Query<&Window>,
+    config: Res<crate::level::LevelConfig>,
 ) {
     if !keyboard.just_pressed(KeyCode::F2)
         && !keyboard.just_pressed(KeyCode::F3)
@@ -640,6 +650,7 @@ fn debug_skip_intro(
         &mut player_q,
         &intro_sound_q,
         &windows,
+        &config,
     );
 }
 
@@ -678,4 +689,68 @@ fn draw_hitboxes(
     draw_hittable(&mut gizmos, &missile_q, Color::YELLOW);
     draw_hittable(&mut gizmos, &enemy_q, Color::CYAN);
     draw_hittable(&mut gizmos, &enemy_proj_q, Color::rgba(1.0, 0.5, 0.0, 1.0));
+}
+
+/// Dessine en debug la position des tourelles (croix magenta),
+/// le rectangle du mothership (jaune) et la silhouette du bord bas (rouge).
+fn debug_draw_gatling_positions(
+    debug: Res<DebugMode>,
+    mut gizmos: Gizmos,
+    gatling_q: Query<&Transform, With<GatlingMarker>>,
+    mothership_q: Query<(&Transform, &Mothership, &Sprite), With<MothershipMarker>>,
+) {
+    if !debug.0 {
+        return;
+    }
+
+    for (tf, ms, sprite) in mothership_q.iter() {
+        let size = sprite.custom_size.unwrap_or(ms.size);
+        let center = tf.translation.truncate();
+
+        // Rectangle jaune du sprite
+        gizmos.rect_2d(center, 0.0, size, Color::YELLOW);
+
+        // Silhouette du bord bas (rouge) — profil MOTHERSHIP_BOTTOM_PROFILE
+        // Convention Top : les coords normalisées sont converties en pixels
+        // puis transformées selon le bord d'entrée.
+        let ms_size_top = match ms.edge {
+            crate::mothership::EntryEdge::Top | crate::mothership::EntryEdge::Bottom => size,
+            crate::mothership::EntryEdge::Left | crate::mothership::EntryEdge::Right => Vec2::new(size.y, size.x),
+        };
+
+        let profile_points: Vec<Vec2> = MOTHERSHIP_BOTTOM_PROFILE
+            .iter()
+            .map(|&(nx, ny)| {
+                let base = Vec2::new(nx * ms_size_top.x, ny * ms_size_top.y);
+                let offset = ms.edge.transform_offset(base);
+                center + offset
+            })
+            .collect();
+
+        for pair in profile_points.windows(2) {
+            gizmos.line_2d(pair[0], pair[1], Color::RED);
+        }
+
+        // Points du profil (petits cercles rouges)
+        for &pt in &profile_points {
+            gizmos.circle_2d(pt, 8.0, Color::RED);
+        }
+    }
+
+    // Gatlings : croix magenta
+    let cross_size = 40.0;
+    for tf in gatling_q.iter() {
+        let pos = tf.translation.truncate();
+        gizmos.line_2d(
+            pos + Vec2::new(-cross_size, -cross_size),
+            pos + Vec2::new(cross_size, cross_size),
+            Color::rgba(1.0, 0.0, 1.0, 1.0),
+        );
+        gizmos.line_2d(
+            pos + Vec2::new(-cross_size, cross_size),
+            pos + Vec2::new(cross_size, -cross_size),
+            Color::rgba(1.0, 0.0, 1.0, 1.0),
+        );
+        gizmos.circle_2d(pos, cross_size, Color::rgba(1.0, 0.0, 1.0, 1.0));
+    }
 }

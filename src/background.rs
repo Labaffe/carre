@@ -5,6 +5,8 @@
 //! en même temps que la planète, simulant une orbite.
 
 use crate::difficulty::Difficulty;
+use crate::level::{LevelConfig, LevelSetupSet};
+use crate::levels::ScrollDirection;
 use crate::state::GameState;
 use bevy::prelude::*;
 
@@ -14,7 +16,7 @@ impl Plugin for BackgroundPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             OnEnter(GameState::Playing),
-            (setup_background, spawn_planet),
+            (setup_background.after(LevelSetupSet), spawn_planet),
         )
         .add_systems(
             Update,
@@ -44,18 +46,38 @@ fn setup_background(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     existing: Query<Entity, With<Background>>,
+    config: Res<LevelConfig>,
 ) {
     if !existing.is_empty() {
         return;
     }
 
-    let bg = asset_server.load("images/backgrounds/space_background_tile.png");
+    let bg = asset_server.load(config.background_tile);
+    let tile_rot = Quat::from_rotation_z(config.scroll_direction.bg_tile_rotation());
 
-    for i in 0..2 {
+    // Après rotation 90°, la tile fait BG_TILE_HEIGHT de large (1534px).
+    // Pour couvrir l'écran (~1920px) en horizontal, il faut 3 tiles centrées.
+    let tile_range: Vec<i32> = if config.scroll_direction.is_horizontal() {
+        vec![-1, 0, 1] // 3 tiles centrées autour de 0
+    } else {
+        vec![0, 1] // 2 tiles verticales
+    };
+
+    for i in tile_range {
+        let pos = if config.scroll_direction.is_horizontal() {
+            Vec3::new(BG_TILE_HEIGHT * i as f32, 0.0, -1.0)
+        } else {
+            Vec3::new(0.0, BG_TILE_HEIGHT * i as f32, -1.0)
+        };
+
         commands.spawn((
             SpriteBundle {
                 texture: bg.clone(),
-                transform: Transform::from_xyz(0.0, BG_TILE_HEIGHT * i as f32, -1.0),
+                transform: Transform {
+                    translation: pos,
+                    rotation: tile_rot,
+                    ..default()
+                },
                 ..default()
             },
             Background,
@@ -64,8 +86,8 @@ fn setup_background(
 }
 
 /// Fait défiler le background.
-/// - Avant le boss : 2 tiles, scroll vertical.
-/// - Pendant le boss : grille 3×3 qui scroll et tourne (orbite planétaire).
+/// - Avant le boss : 2 tiles, scroll dans la direction du niveau.
+/// - Pendant le boss (niveau 1) : grille qui scroll et tourne (orbite planétaire).
 fn scroll_background(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -73,6 +95,7 @@ fn scroll_background(
     windows: Query<&Window>,
     time: Res<Time>,
     mut difficulty: ResMut<Difficulty>,
+    config: Res<LevelConfig>,
 ) {
     let boss_bg_active = match difficulty.boss_music_start_time {
         Some(start) => difficulty.elapsed - start >= 3.0,
@@ -83,14 +106,11 @@ fn scroll_background(
     const BOSS_TILE_COUNT: f32 = 6.0;
 
     if boss_bg_active {
-        // ── Transition : garder les 2 tiles, ajouter 2 au-dessus + 2 en dessous ──
-        // L'image ne tile que verticalement (haut-bas), jamais en X.
-        // Sa largeur (5796 px) couvre l'écran à n'importe quel angle de rotation.
+        // ── Mode boss : scroll + rotation (uniquement pour les niveaux verticaux) ──
         if !difficulty.boss_bg_initialized {
             difficulty.boss_bg_initialized = true;
 
-            // Ajouter 4 tiles (2 au-dessus, 2 en dessous) — les 2 existantes restent
-            let bg = asset_server.load("images/backgrounds/space_background_tile.png");
+            let bg = asset_server.load(config.background_tile);
             for row in [-2_i32, -1, 2, 3] {
                 commands.spawn((
                     SpriteBundle {
@@ -104,7 +124,6 @@ fn scroll_background(
             return;
         }
 
-        // ── Scroll + rotation de la colonne autour de la planète ──
         let boss_bg_elapsed = difficulty.elapsed - difficulty.boss_music_start_time.unwrap() - 3.0;
         let angle = boss_bg_elapsed * BOSS_BG_ROTATION_SPEED;
         let rotation = Quat::from_rotation_z(angle);
@@ -113,7 +132,6 @@ fn scroll_background(
         let grid_h = BOSS_TILE_COUNT * BG_TILE_HEIGHT;
         let half_grid_h = grid_h / 2.0;
 
-        // Centre de rotation = position de la planète
         let window = windows.single();
         let half_h = window.height() / 2.0;
         let planet_x = (difficulty.elapsed * 0.3).sin() * 15.0;
@@ -126,18 +144,16 @@ fn scroll_background(
         for (idx, (_, tf)) in tiles.iter_mut().enumerate() {
             let row = idx as f32 - half_count + 0.5;
 
-            // Scroll continu en Y local + wrap vertical (seul axe de tiling)
             let raw_y = row * BG_TILE_HEIGHT - scroll_total;
             let wrapped_y = ((raw_y + half_grid_h).rem_euclid(grid_h)) - half_grid_h;
 
-            // Rotation autour du pivot (centre de la planète), pas de décalage X
             let local_pos = Vec3::new(0.0, wrapped_y, 0.0);
             let rotated = rotation.mul_vec3(local_pos);
             tf.translation = Vec3::new(pivot.x + rotated.x, pivot.y + rotated.y, -1.0);
             tf.rotation = rotation;
         }
     } else {
-        // ── Scroll vertical classique ──
+        // ── Scroll normal dans la direction du niveau ──
         let base_speed = 150.0;
         let speed = if let Some(override_speed) = difficulty.bg_speed_override {
             override_speed
@@ -145,11 +161,35 @@ fn scroll_background(
             base_speed * (1.0 + difficulty.factor * 3.0)
         };
 
-        for (_, mut transform) in query.iter_mut() {
-            transform.translation.y -= speed * time.delta_seconds();
+        let delta = speed * time.delta_seconds();
 
-            if transform.translation.y <= -BG_TILE_HEIGHT {
-                transform.translation.y += BG_TILE_HEIGHT * 2.0;
+        for (_, mut transform) in query.iter_mut() {
+            match config.scroll_direction {
+                ScrollDirection::Down => {
+                    transform.translation.y -= delta;
+                    if transform.translation.y <= -BG_TILE_HEIGHT {
+                        transform.translation.y += BG_TILE_HEIGHT * 2.0;
+                    }
+                }
+                ScrollDirection::Up => {
+                    transform.translation.y += delta;
+                    if transform.translation.y >= BG_TILE_HEIGHT {
+                        transform.translation.y -= BG_TILE_HEIGHT * 2.0;
+                    }
+                }
+                ScrollDirection::Left => {
+                    transform.translation.x -= delta;
+                    // 3 tiles centrées (-S, 0, S) : recycler à -1.5×S pour éviter les trous
+                    if transform.translation.x <= -BG_TILE_HEIGHT * 1.5 {
+                        transform.translation.x += BG_TILE_HEIGHT * 3.0;
+                    }
+                }
+                ScrollDirection::Right => {
+                    transform.translation.x += delta;
+                    if transform.translation.x >= BG_TILE_HEIGHT * 1.5 {
+                        transform.translation.x -= BG_TILE_HEIGHT * 3.0;
+                    }
+                }
             }
         }
     }

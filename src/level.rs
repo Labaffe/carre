@@ -16,9 +16,41 @@
 use std::collections::HashMap;
 
 use crate::difficulty::{BoomEvent, Difficulty, SpawnPosition};
+use crate::levels::ScrollDirection;
+use crate::mothership::{MothershipConfig, MothershipSpawnQueue, TurretConfig, TurretStyle};
 use crate::pause::not_paused;
 use crate::state::GameState;
 use bevy::prelude::*;
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Configuration visuelle du niveau en cours
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Configuration visuelle du niveau en cours.
+/// Initialisée au démarrage de l'app avec `init_resource`, mise à jour
+/// par `setup_level` avant les autres systèmes `OnEnter(Playing)`.
+#[derive(Resource, Clone)]
+pub struct LevelConfig {
+    pub player_ship: &'static str,
+    pub background_tile: &'static str,
+    pub scroll_direction: ScrollDirection,
+}
+
+impl Default for LevelConfig {
+    fn default() -> Self {
+        let def = crate::levels::level_def(1);
+        Self {
+            player_ship: def.player_ship,
+            background_tile: def.background_tile,
+            scroll_direction: def.scroll_direction,
+        }
+    }
+}
+
+/// Ensemble de systèmes qui initialisent le niveau.
+/// Les systèmes qui dépendent de `LevelConfig` doivent tourner `.after(LevelSetupSet)`.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LevelSetupSet;
 
 /// Événement permettant à n'importe quel système d'injecter des actions
 /// dans le pipeline du niveau. Les actions sont exécutées immédiatement
@@ -39,7 +71,10 @@ pub struct LevelPlugin;
 impl Plugin for LevelPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<LevelActionEvent>()
-            .add_systems(OnEnter(GameState::Playing), setup_level)
+            .add_systems(
+                OnEnter(GameState::Playing),
+                setup_level.in_set(LevelSetupSet),
+            )
             .add_systems(
                 Update,
                 (run_level, process_level_action_events)
@@ -98,6 +133,8 @@ pub enum Action {
     StartSpawning(&'static str, usize, f32, SpawnPosition),
     /// Désactive le spawn continu d'un type d'ennemi.
     StopSpawning(&'static str),
+    /// Spawn un Mothership avec une config par tourelle.
+    SpawnMothership(MothershipConfig),
 
     // ─── Environnement ──────────────────────────────────────────
     /// Démarre la décélération du fond (durée, vitesse finale).
@@ -334,6 +371,18 @@ impl Action {
                 format!("Start({}×{},{}s{})", count, name, interval, pos_str)
             }
             Action::StopSpawning(name) => format!("Stop({})", name),
+            Action::SpawnMothership(config) => {
+                let pos_str = match config.edge {
+                    SpawnPosition::Top => "↑",
+                    SpawnPosition::Bottom => "↓",
+                    SpawnPosition::Left => "←",
+                    SpawnPosition::Right => "→",
+                    SpawnPosition::At(x, y) => {
+                        return format!("Mothership(@{:.0},{:.0})", x, y);
+                    }
+                };
+                format!("Mothership({})", pos_str)
+            }
             Action::StartBgDeceleration {
                 duration,
                 final_speed,
@@ -362,15 +411,9 @@ impl Trigger {
 //  Noms des niveaux
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Noms des niveaux, indexés par numéro (1-indexed).
-const LEVEL_NAMES: &[&str] = &[
-    "Space Invader", // Niveau 1
-    "Empty",         // Niveau 2
-];
-
-/// Retourne le nom d'un niveau (1-indexed). Fallback : "Niveau N".
+/// Retourne le nom d'un niveau (1-indexed).
 pub fn level_name(level: usize) -> &'static str {
-    LEVEL_NAMES.get(level - 1).copied().unwrap_or("???")
+    crate::levels::level_name(level)
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -442,11 +485,62 @@ pub fn build_level_1() -> Vec<LevelStep> {
 // ═══════════════════════════════════════════════════════════════════════
 
 pub fn build_level_2() -> Vec<LevelStep> {
+    // Style des tourelles aim_and_shoot : sprite gatling_2, projectile vert fluo pillule, laser
+    let sniper_style = TurretStyle {
+        sprite: Some("images/gatling_2/gatling_2.png"),
+        projectile_color: Color::rgba(0.2, 1.0, 0.2, 1.0), // vert fluo
+        projectile_speed: 700.0,                           // plus rapide
+        projectile_radius: 6.0,
+        projectile_size: Vec2::new(8.0, 22.0), // forme pillule (allongée)
+        shoot_sound: "audio/reserve_de_sons/sound_7.ogg",
+        shoot_sound_volume: 0.5,
+        laser: true,
+        laser_color: Color::rgba(0.2, 1.0, 0.2, 0.15), // vert fluo semi-transparent
+    };
+
+    // Positions normalisées sur le sprite : x = gauche(-0.5)..droite(0.5), y = haut(0.5)..bas(-0.5)
+    let turrets = vec![
+        TurretConfig::styled(
+            "aim_and_shoot",
+            2.0,
+            Vec2::new(-0.47, -0.1),
+            sniper_style.clone(),
+        ), // sniper gauche
+        TurretConfig::single("full_auto", 15.0, Vec2::new(-0.3, -0.1)),
+        TurretConfig::single("full_auto", 15.0, Vec2::new(-0.15, -0.2)),
+        TurretConfig::single("full_auto", 15.0, Vec2::new(0.0, -0.3)), // centre
+        TurretConfig::single("full_auto", 15.0, Vec2::new(0.15, -0.2)),
+        TurretConfig::single("full_auto", 15.0, Vec2::new(0.3, -0.1)),
+        TurretConfig::styled("aim_and_shoot", 2.0, Vec2::new(0.47, -0.1), sniper_style), // sniper droite
+    ];
+
+    // Hearts : entre tourelles, alignés en Y, montés de ~400px
+    let hearts = vec![
+        Vec2::new(-0.385, 0.31), // entre tourelle 1 et 2 (gauche)
+        Vec2::new(-0.225, 0.31), // entre tourelle 2 et 3 (gauche)
+        Vec2::new(0.225, 0.31),  // entre tourelle 5 et 6 (droite, symétrique)
+        Vec2::new(0.385, 0.31),  // entre tourelle 6 et 7 (droite, symétrique)
+    ];
+
+    // Le 2e mothership (bottom) spawne à la mort du 1er, pas de suivant
+    let second = MothershipConfig {
+        edge: SpawnPosition::Bottom,
+        turrets: turrets.clone(),
+        hearts: hearts.clone(),
+        on_death: None,
+    };
+
     vec![
         LevelStep::at(0.0, "game_start").with(Action::Log("Niveau 2 démarré")),
-        LevelStep::at(2.0, "level_complete")
-            .with(Action::MarkLevelComplete)
-            .with(Action::Log("Niveau 2 terminé")),
+        LevelStep::at(0.6, "alarm").with(Action::PlaySound("audio/sfx/mothership_alarm.ogg")),
+        LevelStep::at(5.0, "spawn_top")
+            .with(Action::StartMusic("audio/music/mothership.ogg"))
+            .with(Action::SpawnMothership(MothershipConfig {
+                edge: SpawnPosition::Top,
+                turrets: turrets.clone(),
+                hearts,
+                on_death: Some(Box::new(second)),
+            })),
     ]
 }
 
@@ -454,7 +548,17 @@ pub fn build_level_2() -> Vec<LevelStep> {
 //  Systèmes
 // ═══════════════════════════════════════════════════════════════════════
 
-fn setup_level(mut commands: Commands, progress: Res<crate::game::GameProgress>) {
+fn setup_level(
+    mut commands: Commands,
+    progress: Res<crate::game::GameProgress>,
+    mut config: ResMut<LevelConfig>,
+) {
+    // Mettre à jour la config visuelle du niveau (immédiat via ResMut)
+    let def = crate::levels::level_def(progress.current_level);
+    config.player_ship = def.player_ship;
+    config.background_tile = def.background_tile;
+    config.scroll_direction = def.scroll_direction;
+
     let steps = match progress.current_level {
         1 => build_level_1(),
         2 => build_level_2(),
@@ -470,9 +574,9 @@ fn setup_level(mut commands: Commands, progress: Res<crate::game::GameProgress>)
         sound: intro.sound,
         sound_played: false,
         sound_finished: false,
-        start_y: 0.0,
-        target_y: 0.0,
-        spawn_y_ratio: intro.spawn_y_ratio,
+        start_pos: Vec2::ZERO,
+        target_pos: Vec2::ZERO,
+        spawn_ratio: intro.spawn_ratio,
         initialized: false,
     };
     commands.insert_resource(crate::game::LevelPhase { phase });
@@ -488,6 +592,7 @@ fn run_level(
     mut countdown_events: EventWriter<crate::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
     level_phase: Option<Res<crate::game::LevelPhase>>,
+    mut mothership_queue: ResMut<MothershipSpawnQueue>,
 ) {
     // Ne faire tourner les LevelSteps que pendant la phase Running
     let Some(ref phase) = level_phase else { return };
@@ -532,6 +637,7 @@ fn run_level(
                 &mut countdown_events,
                 &mut difficulty,
                 &music_q,
+                Some(&mut mothership_queue),
             );
         }
 
@@ -551,6 +657,7 @@ pub(crate) fn execute_action(
     countdown_events: &mut EventWriter<crate::countdown::CountdownEvent>,
     difficulty: &mut ResMut<Difficulty>,
     music_q: &Query<Entity, With<crate::MusicMain>>,
+    mothership_queue: Option<&mut ResMut<MothershipSpawnQueue>>,
 ) {
     match action {
         Action::SetDifficulty(factor) => {
@@ -598,6 +705,11 @@ pub(crate) fn execute_action(
         Action::StopSpawning(name) => {
             difficulty.active_spawners.remove(name);
         }
+        Action::SpawnMothership(config) => {
+            if let Some(queue) = mothership_queue {
+                queue.0.push(config.clone());
+            }
+        }
         Action::StartBgDeceleration {
             duration,
             final_speed,
@@ -628,6 +740,7 @@ fn process_level_action_events(
     mut boom_events: EventWriter<BoomEvent>,
     mut countdown_events: EventWriter<crate::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
+    mut mothership_queue: ResMut<MothershipSpawnQueue>,
 ) {
     for event in events.read() {
         for action in &event.0 {
@@ -640,6 +753,7 @@ fn process_level_action_events(
                 &mut countdown_events,
                 &mut difficulty,
                 &music_q,
+                Some(&mut mothership_queue),
             );
         }
     }
