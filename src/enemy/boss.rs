@@ -201,8 +201,6 @@ fn spawn_boss(
                 ..default()
             },
             Enemy {
-                health: BOSS.phases[0].health,
-                max_health: BOSS.phases[0].health,
                 state: EnemyState::Entering,
                 radius: BOSS.radius,
                 sprite_size: BOSS.sprite_size,
@@ -214,6 +212,7 @@ fn spawn_boss(
                 death_explosion_sound: BOSS.death_explosion_sound,
                 hit_flash_color: Some(Color::rgba(2.5, 2.5, 2.5, 1.0)),
             },
+            crate::physic::health::Health::new(BOSS.phases[0].health),
             BossMarker,
             BossIdleAnim {
                 timer: Timer::from_seconds(1.0 / BOSS_IDLE_FPS, TimerMode::Repeating),
@@ -464,7 +463,8 @@ fn boss_transition_start(
     mut boss_q: Query<
         (
             Entity,
-            &mut Enemy,
+            &Enemy,
+            &mut crate::physic::health::Health,
             &Transform,
             &mut PatrolMovement,
             Option<&BossCharge>,
@@ -472,18 +472,18 @@ fn boss_transition_start(
         With<BossMarker>,
     >,
 ) {
-    for (entity, mut enemy, transform, mut patrol, charge) in boss_q.iter_mut() {
+    for (entity, enemy, mut health, transform, mut patrol, charge) in boss_q.iter_mut() {
         let _next_phase = match &enemy.state {
             EnemyState::Transitioning(idx) => *idx,
             _ => continue,
         };
 
-        // Vérifier si le composant BossTransition est déjà présent (éviter de le recréer)
-        // On utilise le health == 1 comme signal du premier frame
-        if enemy.health != 1 {
+        // `enemy_phase_logic` a mis health.current à 1 juste avant d'entrer en
+        // Transitioning. On s'en sert comme signal "premier frame" :
+        if health.current != 1 {
             continue;
         }
-        enemy.health = 0; // marquer comme initialisé
+        health.current = 0; // marquer comme initialisé
 
         // Arrêter le mouvement
         patrol.enabled = false;
@@ -515,6 +515,7 @@ fn boss_transition_animate(
         (
             Entity,
             &mut Enemy,
+            &mut crate::physic::health::Health,
             &mut Sprite,
             &mut Transform,
             &mut BossTransition,
@@ -528,6 +529,7 @@ fn boss_transition_animate(
     for (
         entity,
         mut enemy,
+        mut health,
         mut sprite,
         mut transform,
         mut transition,
@@ -578,8 +580,7 @@ fn boss_transition_animate(
 
             let def = &enemy.phases[next_phase];
             enemy.state = EnemyState::Active(next_phase);
-            enemy.health = def.health;
-            enemy.max_health = def.health;
+            health.reset(def.health);
 
             // Reset pattern
             pat_idx.0 = 0;
@@ -915,8 +916,6 @@ fn debug_skip_to_boss(
             ..default()
         },
         Enemy {
-            health: BOSS.phases[0].health,
-            max_health: BOSS.phases[0].health,
             state: EnemyState::Flexing,
             radius: BOSS.radius,
             sprite_size: BOSS.sprite_size,
@@ -931,6 +930,7 @@ fn debug_skip_to_boss(
             death_explosion_sound: BOSS.death_explosion_sound,
             hit_flash_color: Some(Color::rgba(2.5, 2.5, 2.5, 1.0)),
         },
+        crate::physic::health::Health::new(BOSS.phases[0].health),
         BossMarker,
         BossIdleAnim {
             timer: Timer::from_seconds(1.0 / BOSS_IDLE_FPS, TimerMode::Repeating),

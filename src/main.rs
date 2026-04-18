@@ -51,6 +51,7 @@ use ui::countdown::CountdownPlugin;
 
 use environment::background::{Background, BackgroundPlugin, Planet};
 use physic::collision::CollisionPlugin;
+use physic::health::HealthPlugin;
 
 use debug::debug::DebugPlugin;
 use deckbuilding::card_hand::CardHandPlugin;
@@ -84,6 +85,7 @@ fn main() {
             ProjectilePlugin,
             CrosshairPlugin,
             CollisionPlugin,
+            HealthPlugin,
         ))
         // Ennemis
         .add_plugins((

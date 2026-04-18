@@ -5,7 +5,8 @@ use crate::debug::debug::DebugMode;
 use crate::enemy::asteroid::Asteroid;
 use crate::enemy::enemy::{Enemy, EnemyState};
 use crate::game_manager::state::GameState;
-use crate::player::player::{INVINCIBLE_DURATION, Invincible, Player, PlayerLives};
+use crate::physic::health::Health;
+use crate::player::player::{INVINCIBLE_DURATION, Invincible, Player};
 use crate::weapon::projectile::{Projectile, Team};
 use crate::weapon::weapon::HitboxShape;
 use bevy::prelude::*;
@@ -81,17 +82,17 @@ impl Hittable for Projectile {
 fn player_collision<T: Hittable>(
     mut commands: Commands,
     mut next_state: ResMut<NextState<GameState>>,
-    player_q: Query<(Entity, &Transform, Option<&Invincible>), With<Player>>,
+    mut player_q: Query<(Entity, &Transform, &mut Health, Option<&Invincible>), With<Player>>,
     hostile_q: Query<(Entity, &Transform, &T)>,
     debug: Res<DebugMode>,
-    mut lives: ResMut<PlayerLives>,
     asset_server: Res<AssetServer>,
 ) {
     if debug.0 {
         return;
     }
 
-    let Ok((player_entity, player_transform, invincible)) = player_q.get_single() else {
+    let Ok((player_entity, player_transform, mut health, invincible)) = player_q.get_single_mut()
+    else {
         return;
     };
 
@@ -123,7 +124,7 @@ fn player_collision<T: Hittable>(
                 }
             }
 
-            lives.lives -= 1;
+            health.take_damage(1);
 
             commands.spawn(AudioBundle {
                 source: asset_server.load("audio/sfx/hurt.ogg"),
@@ -133,7 +134,7 @@ fn player_collision<T: Hittable>(
                 },
             });
 
-            if lives.lives <= 0 {
+            if health.is_dead() {
                 if let Some(e) = commands.get_entity(player_entity) {
                     e.despawn_recursive();
                 }

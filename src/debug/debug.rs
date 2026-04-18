@@ -14,7 +14,8 @@ use crate::game_manager::game::{IntroSound, LevelPhase, LevelPhaseKind};
 use crate::level::level::{LevelRunner, Trigger};
 use crate::menu::pause::PauseState;
 use crate::physic::collision::Hittable;
-use crate::player::player::{Player, PlayerLives};
+use crate::physic::health::Health;
+use crate::player::player::Player;
 use crate::ui::score::Score;
 use crate::weapon::projectile::Projectile;
 use crate::weapon::weapon::HitboxShape;
@@ -212,13 +213,13 @@ fn update_debug_ui(
     debug: Res<DebugMode>,
     time: Res<Time>,
     difficulty: Res<Difficulty>,
-    lives: Res<PlayerLives>,
     score: Res<Score>,
     mut ui_q: Query<&mut Text, With<DebugUI>>,
-    player_q: Query<&Transform, With<Player>>,
+    player_q: Query<(&Transform, &Health), With<Player>>,
     enemy_q: Query<
         (
             &Enemy,
+            &Health,
             &Transform,
             Option<&BossMarker>,
             Option<&GreenUFOMarker>,
@@ -228,6 +229,7 @@ fn update_debug_ui(
             Option<&PatternTimer>,
             Option<&BossCharge>,
         ),
+        Without<Player>,
     >,
     asteroid_q: Query<&Asteroid>,
     projectile_q: Query<&Projectile>,
@@ -243,13 +245,20 @@ fn update_debug_ui(
     let minutes = (elapsed / 60.0) as u32;
     let seconds = (elapsed % 60.0) as u32;
 
-    let player_pos = player_q
+    let (player_pos, player_hp) = player_q
         .get_single()
-        .map(|t| format!("({:.0}, {:.0})", t.translation.x, t.translation.y))
-        .unwrap_or_else(|_| "N/A".to_string());
+        .map(|(t, h)| {
+            (
+                format!("({:.0}, {:.0})", t.translation.x, t.translation.y),
+                h.current,
+            )
+        })
+        .unwrap_or_else(|_| ("N/A".to_string(), 0));
 
     let mut enemy_lines = String::new();
-    for (enemy, transform, boss, green_ufo, gatling, heart, pat_idx, pat_timer, charge) in enemy_q.iter() {
+    for (enemy, health, transform, boss, green_ufo, gatling, heart, pat_idx, pat_timer, charge) in
+        enemy_q.iter()
+    {
         let name = if boss.is_some() {
             "Boss"
         } else if green_ufo.is_some() {
@@ -294,7 +303,7 @@ fn update_debug_ui(
         };
 
         enemy_lines.push_str(&format!(
-            "\n  {} {} | HP {}/{} | {}", name, pos, enemy.health, enemy.max_health, state_str
+            "\n  {} {} | HP {}/{} | {}", name, pos, health.current, health.max, state_str
         ));
     }
 
@@ -321,7 +330,7 @@ fn update_debug_ui(
              F4 : Win niveau (outro)\n\
              F5 : Game Over (mort)",
             fps, minutes, seconds, factor,
-            lives.lives,
+            player_hp,
             score.value(),
             player_pos,
             asteroid_count,
@@ -659,12 +668,11 @@ fn debug_kill_player(
     keyboard: Res<ButtonInput<KeyCode>>,
     state: Res<State<crate::game_manager::state::GameState>>,
     mut next_state: ResMut<NextState<crate::game_manager::state::GameState>>,
-    mut lives: ResMut<PlayerLives>,
-    player_q: Query<Entity, With<Player>>,
+    mut player_q: Query<(Entity, &mut Health), With<Player>>,
 ) {
     if keyboard.just_pressed(KeyCode::F5) && *state.get() == crate::game_manager::state::GameState::Playing {
-        lives.lives = 0;
-        for entity in player_q.iter() {
+        for (entity, mut health) in player_q.iter_mut() {
+            health.current = 0;
             if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
         }
         next_state.set(crate::game_manager::state::GameState::GameOver);

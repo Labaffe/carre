@@ -1,10 +1,16 @@
 pub mod asteroid;
+pub mod asteroid_def;
+pub mod behaviors;
 pub mod boss;
 pub mod boss_def;
 pub mod enemies;
 pub mod enemy;
 pub mod gatling;
+pub mod gatling_def;
 pub mod green_ufo;
+pub mod green_ufo_def;
 pub mod mothership;
+pub mod mothership_def;
 pub mod mothership_heart;
+pub mod mothership_heart_def;
 pub mod system;

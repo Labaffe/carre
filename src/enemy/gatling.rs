@@ -169,8 +169,6 @@ fn spawn_gatlings_oneshot(
                 ..default()
             },
             Enemy {
-                health: phase.health,
-                max_health: phase.health,
                 state: EnemyState::Entering,
                 radius: GATLING.radius,
                 sprite_size: GATLING.sprite_size,
@@ -182,6 +180,7 @@ fn spawn_gatlings_oneshot(
                 death_explosion_sound: GATLING.death_explosion_sound,
                 hit_flash_color: None,
             },
+            crate::physic::health::Health::new(phase.health),
             GatlingMarker,
             GatlingBaseEdge(EntryEdge::Top),
             GatlingStartY(pos.y),

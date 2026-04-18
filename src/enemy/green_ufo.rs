@@ -181,8 +181,6 @@ fn spawn_one_green_ufo(
             ..default()
         },
         Enemy {
-            health: phase.health,
-            max_health: phase.health,
             state: EnemyState::Active(0),
             radius: GREEN_UFO.radius,
             sprite_size: GREEN_UFO.sprite_size,
@@ -194,6 +192,7 @@ fn spawn_one_green_ufo(
             death_explosion_sound: GREEN_UFO.death_explosion_sound,
             hit_flash_color: None,
         },
+        crate::physic::health::Health::new(phase.health),
         GreenUFOMarker,
         GreenUFOAnim {
             timer: Timer::from_seconds(1.0 / GREEN_UFO_ANIM_FPS, TimerMode::Repeating),

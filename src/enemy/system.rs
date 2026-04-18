@@ -175,18 +175,9 @@ pub struct EnemyBehavior {
     pub phase_timer: Timer,
 }
 
-/// Health component for health-based transitions
-#[derive(Component)]
-pub struct Health {
-    pub current: f32,
-    pub max: f32,
-}
-
-impl Health {
-    pub fn fraction(&self) -> f32 {
-        self.current / self.max
-    }
-}
+/// Ré-export : la santé est centralisée dans `physic/health.rs` et partagée
+/// entre tous les ennemis, le joueur, les astéroïdes.
+pub use crate::physic::health::Health;
 
 /// Event for external phase triggers
 #[derive(Event)]
@@ -354,7 +345,7 @@ pub fn spawn_enemy<'a>(
     commands: &'a mut Commands,
     definition: EnemyDefinition,
     position: Vec3,
-    health: f32,
+    health: i32,
 ) -> bevy::ecs::system::EntityCommands<'a> {
     let initial_phase = definition.initial_phase.clone();
     commands.spawn((
@@ -363,7 +354,7 @@ pub fn spawn_enemy<'a>(
             current_phase: initial_phase,
             phase_timer: Timer::from_seconds(0.0, TimerMode::Once),
         },
-        Health { current: health, max: health },
+        Health::new(health),
         TransformBundle::from_transform(Transform::from_translation(position)),
     ))
 }

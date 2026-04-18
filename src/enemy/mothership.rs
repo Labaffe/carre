@@ -657,8 +657,6 @@ pub(crate) fn spawn_mothership_oneshot(
                 ..default()
             },
             Enemy {
-                health: phase.health,
-                max_health: phase.health,
                 state: EnemyState::Entering,
                 radius: GATLING.radius,
                 sprite_size: GATLING.sprite_size,
@@ -670,6 +668,7 @@ pub(crate) fn spawn_mothership_oneshot(
                 death_explosion_sound: GATLING.death_explosion_sound,
                 hit_flash_color: None,
             },
+            crate::physic::health::Health::new(phase.health),
             GatlingMarker,
             crate::enemy::gatling::GatlingBaseEdge(edge),
             MothershipLink {
@@ -742,8 +741,6 @@ pub(crate) fn spawn_mothership_oneshot(
                     ..default()
                 },
                 Enemy {
-                    health: heart_phase.health,
-                    max_health: heart_phase.health,
                     state: EnemyState::Active(0),
                     radius: MOTHERSHIP_HEART.radius,
                     sprite_size: MOTHERSHIP_HEART.sprite_size,
@@ -758,6 +755,7 @@ pub(crate) fn spawn_mothership_oneshot(
                     death_explosion_sound: MOTHERSHIP_HEART.death_explosion_sound,
                     hit_flash_color: Some(Color::YELLOW),
                 },
+                crate::physic::health::Health::new(heart_phase.health),
                 MothershipHeart,
                 MothershipLink {
                     mothership: mothership_entity,
@@ -810,7 +808,7 @@ pub(crate) fn spawn_mothership_oneshot(
 pub(crate) fn mothership_entering(
     time: Res<Time>,
     mut mothership_q: Query<(&mut Mothership, &mut Transform), With<MothershipMarker>>,
-    mut enemy_q: Query<&mut Enemy, With<GatlingMarker>>,
+    mut enemy_q: Query<(&mut Enemy, &mut crate::physic::health::Health), With<GatlingMarker>>,
 ) {
     for (mut mothership, mut transform) in mothership_q.iter_mut() {
         if mothership.state != MothershipPhase::Entering {
@@ -862,11 +860,10 @@ pub(crate) fn mothership_entering(
 
             // Activer toutes les Gatlings
             for &gatling_entity in &mothership.gatlings {
-                if let Ok(mut enemy) = enemy_q.get_mut(gatling_entity) {
+                if let Ok((mut enemy, mut health)) = enemy_q.get_mut(gatling_entity) {
                     let phase_def = &enemy.phases[0];
                     enemy.state = EnemyState::Active(0);
-                    enemy.health = phase_def.health;
-                    enemy.max_health = phase_def.health;
+                    health.reset(phase_def.health);
                 }
             }
         }

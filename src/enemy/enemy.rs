@@ -13,10 +13,12 @@
 //! 3. Écrire les systèmes spécifiques (intro, patterns de tir, mouvement custom)
 //! 4. Les systèmes génériques (dégâts, mort, flash, projectiles) fonctionnent automatiquement
 
+use crate::enemy::system::EnemyBehavior;
 use crate::fx::explosion::spawn_explosion;
+use crate::game_manager::state::GameState;
 use crate::item::item::{DropEvent, DropTable};
 use crate::menu::pause::not_paused;
-use crate::game_manager::state::GameState;
+use crate::physic::health::Health;
 use crate::ui::score::Score;
 use crate::weapon::projectile::{projectile_hits_circle, Projectile, Team};
 use bevy::prelude::*;
@@ -118,8 +120,6 @@ pub struct PhaseDef {
 /// les systèmes génériques prennent en charge dégâts, flash et mort.
 #[derive(Component)]
 pub struct Enemy {
-    pub health: i32,
-    pub max_health: i32,
     pub state: EnemyState,
     pub radius: f32,
     pub sprite_size: f32,
@@ -192,19 +192,34 @@ fn enemy_hit_flash(
 
 // ─── Transitions de phase ───────────────────────────────────────────
 
+/// Gestion des transitions de phase par seuil de PV pour les ennemis "old-style"
+/// (machine `EnemyState` classique). Les entités pilotées par `EnemyBehavior`
+/// sont ignorées — elles gèrent leurs transitions via `HealthBelow`.
 fn enemy_phase_logic(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut query: Query<(Entity, &mut Enemy, &mut PatternTimer, &Transform, Option<&DropTable>)>,
+    mut query: Query<
+        (
+            Entity,
+            &mut Enemy,
+            &mut Health,
+            &mut PatternTimer,
+            &Transform,
+            Option<&DropTable>,
+        ),
+        Without<EnemyBehavior>,
+    >,
     mut drop_events: EventWriter<DropEvent>,
 ) {
-    for (entity, mut enemy, mut pattern_timer, transform, drop_table) in query.iter_mut() {
+    for (entity, mut enemy, mut health, mut pattern_timer, transform, drop_table) in
+        query.iter_mut()
+    {
         let current_phase = match &enemy.state {
             EnemyState::Active(idx) => *idx,
             _ => continue,
         };
 
-        if enemy.health > 0 {
+        if health.current > 0 {
             continue;
         }
 
@@ -215,14 +230,13 @@ fn enemy_phase_logic(
             if current_def.has_transition {
                 // Transition animée avant la phase suivante
                 enemy.state = EnemyState::Transitioning(next_phase);
-                enemy.health = 1; // invulnérable pendant la transition, évite de re-trigger
+                health.current = 1; // invulnérable pendant la transition, évite de re-trigger
                 // Le module spécifique de l'ennemi gère l'animation et le passage en Active
             } else {
                 // Transition directe vers la phase suivante
                 let def = &enemy.phases[next_phase];
                 enemy.state = EnemyState::Active(next_phase);
-                enemy.health = def.health;
-                enemy.max_health = def.health;
+                health.reset(def.health);
                 let first_duration = def.patterns.first().map(|p| p.duration).unwrap_or(1.0);
                 pattern_timer.0 = Timer::from_seconds(first_duration, TimerMode::Once);
 
@@ -258,13 +272,16 @@ fn enemy_dying(
     mut commands: Commands,
     time: Res<Time>,
     asset_server: Res<AssetServer>,
-    mut query: Query<(
-        Entity,
-        &mut Enemy,
-        &mut Sprite,
-        &mut Transform,
-        Option<&EnemyDeathAnchor>,
-    )>,
+    mut query: Query<
+        (
+            Entity,
+            &mut Enemy,
+            &mut Sprite,
+            &mut Transform,
+            Option<&EnemyDeathAnchor>,
+        ),
+        Without<EnemyBehavior>,
+    >,
 ) {
     for (entity, mut enemy, mut sprite, mut transform, anchor) in query.iter_mut() {
         if enemy.state != EnemyState::Dying {
@@ -332,16 +349,19 @@ fn projectile_enemy_collision(
     asset_server: Res<AssetServer>,
     mut score: ResMut<Score>,
     projectile_q: Query<(Entity, &Transform, &Projectile)>,
-    mut enemy_q: Query<(Entity, &Transform, &mut Enemy)>,
+    mut enemy_q: Query<(Entity, &Transform, &Enemy, &mut Health)>,
 ) {
     let mut despawned_projectiles = std::collections::HashSet::new();
 
-    for (enemy_entity, enemy_transform, mut enemy) in enemy_q.iter_mut() {
+    for (enemy_entity, enemy_transform, enemy, mut health) in enemy_q.iter_mut() {
         // Ignorer les ennemis morts
         if matches!(enemy.state, EnemyState::Dying | EnemyState::Dead) {
             continue;
         }
 
+        // "Vulnérable" au sens du flash/son : uniquement en Active pour les
+        // ennemis old-style ; les new-style (EnemyBehavior) sont toujours
+        // vulnérables en Active(0) par convention.
         let is_vulnerable = matches!(enemy.state, EnemyState::Active(_));
 
         for (projectile_entity, projectile_transform, projectile) in projectile_q.iter() {
@@ -366,9 +386,8 @@ fn projectile_enemy_collision(
                 }
                 despawned_projectiles.insert(projectile_entity);
 
-                // Dégâts uniquement si l'ennemi est vulnérable (Active)
                 if is_vulnerable {
-                    enemy.health -= projectile.damage;
+                    health.take_damage(projectile.damage);
                     score.add(1);
 
                     if let Some(mut ent) = commands.get_entity(enemy_entity) {
