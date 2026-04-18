@@ -1,6 +1,10 @@
 use crate::tweening::component::{TweenTarget};
 use crate::tweening::easing::{Ease};
 use bevy::prelude::*;
+/* =========================
+   TWEEN CORE
+   ========================= */
+
 #[derive(Clone)]
 pub struct Tween {
     pub start: f32,
@@ -21,20 +25,24 @@ impl Tween {
         }
     }
 
+    pub fn tick(&mut self, dt: f32) {
+        self.elapsed += dt;
+    }
+
     pub fn value(&self) -> f32 {
         let t = (self.elapsed / self.duration).clamp(0.0, 1.0);
         let t = self.ease.sample(t);
         self.start + (self.end - self.start) * t
     }
 
-    pub fn tick(&mut self, dt: f32) {
-        self.elapsed += dt;
-    }
-
     pub fn finished(&self) -> bool {
         self.elapsed >= self.duration
     }
 }
+
+/* =========================
+   GENERIC SEQUENCE
+   ========================= */
 
 #[derive(Component)]
 pub struct TweenSequence<T: TweenTarget> {
