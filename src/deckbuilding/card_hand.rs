@@ -1,4 +1,4 @@
-use crate::state::GameState;
+use crate::game_manager::state::GameState;
 use bevy::prelude::*;
 use crate::deckbuilding::cards::DummyCard;
 use crate::deckbuilding::card_ui::{spawn_card_ui,CardUI};

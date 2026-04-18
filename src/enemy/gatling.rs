@@ -10,19 +10,19 @@
 //! Les types partagés (MothershipConfig, EntryEdge, composants, etc.)
 //! sont dans `mothership.rs`. Ce module ne contient que le code Gatling.
 
-use crate::enemies::GATLING;
-use crate::enemy::{Enemy, EnemyState, PatternIndex, PatternTimer};
-use crate::weapon::projectile::{spawn_projectile, ProjectileSpawn, ProjectileSprite, Team};
-use crate::weapon::weapon::HitboxShape;
-use crate::item::DropTable;
-use crate::mothership::{
+use crate::enemy::enemies::GATLING;
+use crate::enemy::enemy::{Enemy, EnemyState, PatternIndex, PatternTimer};
+use crate::enemy::mothership::{
     EntryEdge, GATLING_ANIM_INTERVAL, GATLING_SPRITE_SIZE, GatlingAimBias, GatlingFrames,
     GatlingLaser, GatlingMarker, GatlingPatternOverride, GatlingStyleComp, MOTHERSHIP_DROP_TABLE,
     MOTHERSHIP_ENTERING_DURATION, MothershipLink, MothershipSpawnQueue,
 };
-use crate::pause::not_paused;
-use crate::player::Player;
-use crate::state::GameState;
+use crate::game_manager::state::GameState;
+use crate::item::item::DropTable;
+use crate::menu::pause::not_paused;
+use crate::player::player::Player;
+use crate::weapon::projectile::{spawn_projectile, ProjectileSpawn, ProjectileSprite, Team};
+use crate::weapon::weapon::HitboxShape;
 use bevy::prelude::*;
 
 pub struct GatlingPlugin;
@@ -30,17 +30,17 @@ pub struct GatlingPlugin;
 impl Plugin for GatlingPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MothershipSpawnQueue>()
-            .add_systems(Startup, crate::mothership::preload_gatling_frames)
+            .add_systems(Startup, crate::enemy::mothership::preload_gatling_frames)
             .add_systems(
                 Update,
                 (
                     // Mothership systems (from mothership.rs)
-                    crate::mothership::spawn_mothership_oneshot,
-                    crate::mothership::mothership_entering,
-                    crate::mothership::mothership_drift,
-                    crate::mothership::mothership_sync_positions,
-                    crate::mothership::mothership_death_detection,
-                    crate::mothership::mothership_dying,
+                    crate::enemy::mothership::spawn_mothership_oneshot,
+                    crate::enemy::mothership::mothership_entering,
+                    crate::enemy::mothership::mothership_drift,
+                    crate::enemy::mothership::mothership_sync_positions,
+                    crate::enemy::mothership::mothership_death_detection,
+                    crate::enemy::mothership::mothership_dying,
                     // Gatling systems (local)
                     spawn_gatlings_oneshot,
                     gatling_standalone_entering,
@@ -138,7 +138,7 @@ pub(crate) struct GatlingBaseEdge(pub(crate) EntryEdge);
 
 fn spawn_gatlings_oneshot(
     mut commands: Commands,
-    mut difficulty: ResMut<crate::difficulty::Difficulty>,
+    mut difficulty: ResMut<crate::game_manager::difficulty::Difficulty>,
     frames: Res<GatlingFrames>,
     windows: Query<&Window>,
 ) {

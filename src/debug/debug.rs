@@ -4,20 +4,20 @@
 //! et affiche la timeline du niveau avec les liens de causalité.
 
 use crate::MusicMain;
-use crate::asteroid::Asteroid;
-use crate::boss::{BossCharge, BossMarker};
-use crate::game::{IntroSound, LevelPhase, LevelPhaseKind};
-use crate::green_ufo::GreenUFOMarker;
-use crate::mothership::{GatlingMarker, Mothership, MothershipHeart, MothershipMarker, MOTHERSHIP_BOTTOM_PROFILE};
-use crate::collision::Hittable;
-use crate::difficulty::Difficulty;
-use crate::enemy::{Enemy, EnemyState, PatternIndex, PatternTimer};
-use crate::level::{LevelRunner, Trigger};
-use crate::pause::PauseState;
-use crate::player::{Player, PlayerLives};
-use crate::score::Score;
+use crate::enemy::asteroid::Asteroid;
+use crate::enemy::boss::{BossCharge, BossMarker};
+use crate::enemy::enemy::{Enemy, EnemyState, PatternIndex, PatternTimer};
+use crate::enemy::green_ufo::GreenUFOMarker;
+use crate::enemy::mothership::{GatlingMarker, Mothership, MothershipHeart, MothershipMarker, MOTHERSHIP_BOTTOM_PROFILE};
+use crate::game_manager::difficulty::Difficulty;
+use crate::game_manager::game::{IntroSound, LevelPhase, LevelPhaseKind};
+use crate::level::level::{LevelRunner, Trigger};
+use crate::menu::pause::PauseState;
+use crate::physic::collision::Hittable;
+use crate::player::player::{Player, PlayerLives};
+use crate::ui::score::Score;
 use crate::weapon::projectile::Projectile;
-use crate::weapon::HitboxShape;
+use crate::weapon::weapon::HitboxShape;
 use bevy::prelude::*;
 
 pub struct DebugPlugin;
@@ -143,13 +143,13 @@ fn toggle_debug(
     mut ui_q: Query<&mut Visibility, (With<DebugUI>, Without<DebugLevelUI>, Without<DebugMouseUI>)>,
     mut level_ui_q: Query<&mut Visibility, (With<DebugLevelUI>, Without<DebugUI>, Without<DebugMouseUI>)>,
     mut mouse_ui_q: Query<&mut Visibility, (With<DebugMouseUI>, Without<DebugUI>, Without<DebugLevelUI>)>,
-    mut difficulty: ResMut<crate::difficulty::Difficulty>,
-    runner: Option<ResMut<crate::level::LevelRunner>>,
+    mut difficulty: ResMut<crate::game_manager::difficulty::Difficulty>,
+    runner: Option<ResMut<crate::level::level::LevelRunner>>,
     music_q: Query<Entity, With<MusicMain>>,
     asteroid_q: Query<Entity, With<Asteroid>>,
     green_ufo_q: Query<Entity, With<GreenUFOMarker>>,
-    mut boom_events: EventWriter<crate::difficulty::BoomEvent>,
-    mut countdown_events: EventWriter<crate::countdown::CountdownEvent>,
+    mut boom_events: EventWriter<crate::game_manager::difficulty::BoomEvent>,
+    mut countdown_events: EventWriter<crate::ui::countdown::CountdownEvent>,
     asset_server: Res<AssetServer>,
 ) {
     if keyboard.just_pressed(KeyCode::F2) {
@@ -174,7 +174,7 @@ fn toggle_debug(
                     if !action.should_replay_on_skip() {
                         continue;
                     }
-                    crate::level::execute_action(
+                    crate::level::level::execute_action(
                         action,
                         &mut commands,
                         &asset_server,
@@ -230,7 +230,7 @@ fn update_debug_ui(
         ),
     >,
     asteroid_q: Query<&Asteroid>,
-    missile_q: Query<&Missile>,
+    projectile_q: Query<&Projectile>,
 ) {
     if !debug.0 {
         return;
@@ -299,7 +299,7 @@ fn update_debug_ui(
     }
 
     let asteroid_count = asteroid_q.iter().count();
-    let missile_count = missile_q.iter().count();
+    let missile_count = projectile_q.iter().count();
 
     if let Ok(mut text) = ui_q.get_single_mut() {
         text.sections[0].value = format!(
@@ -334,9 +334,9 @@ fn update_debug_ui(
 fn update_debug_level_ui(
     debug: Res<DebugMode>,
     runner: Option<Res<LevelRunner>>,
-    progress: Res<crate::game::GameProgress>,
+    progress: Res<crate::game_manager::game::GameProgress>,
     mut ui_q: Query<&mut Text, With<DebugLevelUI>>,
-    level_phase: Option<Res<crate::game::LevelPhase>>,
+    level_phase: Option<Res<crate::game_manager::game::LevelPhase>>,
 ) {
     if !debug.0 {
         return;
@@ -350,21 +350,21 @@ fn update_debug_level_ui(
     let current_idx = runner.current_index();
     let elapsed = runner.elapsed;
 
-    let name = crate::level::level_name(progress.current_level);
+    let name = crate::level::level::level_name(progress.current_level);
     let mut lines = format!("--- {} (Niveau {}) ---\n", name, progress.current_level);
 
     // Afficher la phase courante du niveau
     if let Some(ref phase) = level_phase {
         let phase_str = match &phase.phase {
-            crate::game::LevelPhaseKind::Intro { elapsed, duration, sound_finished, .. } => {
+            crate::game_manager::game::LevelPhaseKind::Intro { elapsed, duration, sound_finished, .. } => {
                 format!("INTRO  {:.1}s / {:.1}s  son:{}", elapsed, duration, if *sound_finished { "fini" } else { "en cours" })
             }
-            crate::game::LevelPhaseKind::Running => "RUNNING".to_string(),
-            crate::game::LevelPhaseKind::OutroCountdown { timer } => {
+            crate::game_manager::game::LevelPhaseKind::Running => "RUNNING".to_string(),
+            crate::game_manager::game::LevelPhaseKind::OutroCountdown { timer } => {
                 let remaining = timer.duration().as_secs_f32() - timer.elapsed_secs();
                 format!("OUTRO COUNTDOWN  {:.1}s", remaining)
             }
-            crate::game::LevelPhaseKind::Outro { elapsed, .. } => {
+            crate::game_manager::game::LevelPhaseKind::Outro { elapsed, .. } => {
                 format!("OUTRO  {:.1}s", elapsed)
             }
         };
@@ -630,7 +630,7 @@ fn debug_skip_intro(
     mut player_q: Query<&mut Transform, With<Player>>,
     intro_sound_q: Query<Entity, With<IntroSound>>,
     windows: Query<&Window>,
-    config: Res<crate::level::LevelConfig>,
+    config: Res<crate::level::level::LevelConfig>,
 ) {
     if !keyboard.just_pressed(KeyCode::F2)
         && !keyboard.just_pressed(KeyCode::F3)
@@ -643,7 +643,7 @@ fn debug_skip_intro(
         return;
     }
 
-    crate::game::do_skip_intro(
+    crate::game_manager::game::do_skip_intro(
         &mut commands,
         level_phase,
         &mut pause,
@@ -657,17 +657,17 @@ fn debug_skip_intro(
 fn debug_kill_player(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
-    state: Res<State<crate::state::GameState>>,
-    mut next_state: ResMut<NextState<crate::state::GameState>>,
+    state: Res<State<crate::game_manager::state::GameState>>,
+    mut next_state: ResMut<NextState<crate::game_manager::state::GameState>>,
     mut lives: ResMut<PlayerLives>,
     player_q: Query<Entity, With<Player>>,
 ) {
-    if keyboard.just_pressed(KeyCode::F5) && *state.get() == crate::state::GameState::Playing {
+    if keyboard.just_pressed(KeyCode::F5) && *state.get() == crate::game_manager::state::GameState::Playing {
         lives.lives = 0;
         for entity in player_q.iter() {
             if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
         }
-        next_state.set(crate::state::GameState::GameOver);
+        next_state.set(crate::game_manager::state::GameState::GameOver);
     }
 }
 
@@ -714,8 +714,8 @@ fn debug_draw_gatling_positions(
         // Convention Top : les coords normalisées sont converties en pixels
         // puis transformées selon le bord d'entrée.
         let ms_size_top = match ms.edge {
-            crate::mothership::EntryEdge::Top | crate::mothership::EntryEdge::Bottom => size,
-            crate::mothership::EntryEdge::Left | crate::mothership::EntryEdge::Right => Vec2::new(size.y, size.x),
+            crate::enemy::mothership::EntryEdge::Top | crate::enemy::mothership::EntryEdge::Bottom => size,
+            crate::enemy::mothership::EntryEdge::Left | crate::enemy::mothership::EntryEdge::Right => Vec2::new(size.y, size.x),
         };
 
         let profile_points: Vec<Vec2> = MOTHERSHIP_BOTTOM_PROFILE

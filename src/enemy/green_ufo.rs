@@ -7,13 +7,13 @@
 //! Patterns : rush (fonce vers le joueur 0.4s) → idle (pause 0.2s) → repeat
 //! Son "green_ufo.ogg" au début de chaque rush.
 
-use crate::enemies::GREEN_UFO;
-use crate::enemy::{Enemy, EnemyState, PatternIndex, PatternTimer};
-use crate::explosion::{load_frames_from_folder, spawn_custom_anim};
-use crate::item::{DropTable, ItemType};
-use crate::pause::not_paused;
-use crate::player::Player;
-use crate::state::GameState;
+use crate::enemy::enemies::GREEN_UFO;
+use crate::enemy::enemy::{Enemy, EnemyState, PatternIndex, PatternTimer};
+use crate::fx::explosion::{load_frames_from_folder, spawn_custom_anim};
+use crate::game_manager::state::GameState;
+use crate::item::item::{DropTable, ItemType};
+use crate::menu::pause::not_paused;
+use crate::player::player::Player;
 use bevy::prelude::*;
 
 pub struct GreenUFOPlugin;
@@ -108,7 +108,7 @@ fn spawn_green_ufos(
     mut commands: Commands,
     time: Res<Time>,
     mut spawner: ResMut<GreenUFOSpawner>,
-    difficulty: Res<crate::difficulty::Difficulty>,
+    difficulty: Res<crate::game_manager::difficulty::Difficulty>,
     frames: Res<GreenUFOFrames>,
     windows: Query<&Window>,
 ) {
@@ -139,7 +139,7 @@ fn spawn_green_ufos(
 /// et spawne N GreenUFOs par requête.
 fn spawn_green_ufos_oneshot(
     mut commands: Commands,
-    mut difficulty: ResMut<crate::difficulty::Difficulty>,
+    mut difficulty: ResMut<crate::game_manager::difficulty::Difficulty>,
     frames: Res<GreenUFOFrames>,
     windows: Query<&Window>,
 ) {
@@ -163,7 +163,7 @@ fn spawn_one_green_ufo(
     commands: &mut Commands,
     frames: &GreenUFOFrames,
     window: &Window,
-    spawn_pos: crate::difficulty::SpawnPosition,
+    spawn_pos: crate::game_manager::difficulty::SpawnPosition,
 ) {
     let pos = spawn_pos.resolve(window, 60.0);
 

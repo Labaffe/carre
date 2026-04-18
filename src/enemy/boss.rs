@@ -10,16 +10,16 @@
 //! Les systèmes génériques (dégâts, flash, mort, projectiles) sont dans `EnemyPlugin`.
 
 use crate::MusicMain;
-use crate::asteroid::Asteroid;
-use crate::difficulty::Difficulty;
-use crate::enemies::BOSS;
-use crate::enemy::{Enemy, EnemyState, PatrolMovement, PatternIndex, PatternTimer};
-use crate::explosion::load_frames_from_folder;
-use crate::green_ufo::GreenUFOMarker;
-use crate::level::LevelRunner;
-use crate::pause::not_paused;
-use crate::player::Player;
-use crate::state::GameState;
+use crate::enemy::asteroid::Asteroid;
+use crate::enemy::enemies::BOSS;
+use crate::enemy::enemy::{Enemy, EnemyState, PatrolMovement, PatternIndex, PatternTimer};
+use crate::enemy::green_ufo::GreenUFOMarker;
+use crate::fx::explosion::load_frames_from_folder;
+use crate::game_manager::difficulty::Difficulty;
+use crate::game_manager::state::GameState;
+use crate::level::level::LevelRunner;
+use crate::menu::pause::not_paused;
+use crate::player::player::Player;
 use bevy::prelude::*;
 
 pub struct BossPlugin;
@@ -510,7 +510,7 @@ fn boss_transition_animate(
     mut commands: Commands,
     time: Res<Time>,
     asset_server: Res<AssetServer>,
-    mut difficulty: ResMut<crate::difficulty::Difficulty>,
+    mut difficulty: ResMut<crate::game_manager::difficulty::Difficulty>,
     mut boss_q: Query<
         (
             Entity,
@@ -606,7 +606,7 @@ fn boss_transition_animate(
 
             // Spawner des GreenUFOs à la fin de la transition
             // Phase 1→2 : 2 UFOs (haut + bas), Phase 2→3 : 4 UFOs (chaque côté)
-            use crate::difficulty::SpawnPosition;
+            use crate::game_manager::difficulty::SpawnPosition;
             let ufo_count = BOSS_TRANSITION_UFO_COUNT
                 .get(next_phase)
                 .copied()
@@ -839,8 +839,8 @@ fn debug_skip_to_boss(
     green_ufo_q: Query<Entity, With<GreenUFOMarker>>,
     music_q: Query<Entity, With<MusicMain>>,
     boss_music_q: Query<Entity, With<MusicBoss>>,
-    mut boom_events: EventWriter<crate::difficulty::BoomEvent>,
-    mut countdown_events: EventWriter<crate::countdown::CountdownEvent>,
+    mut boom_events: EventWriter<crate::game_manager::difficulty::BoomEvent>,
+    mut countdown_events: EventWriter<crate::ui::countdown::CountdownEvent>,
 ) {
     if !keyboard.just_pressed(KeyCode::F3) {
         return;
@@ -872,7 +872,7 @@ fn debug_skip_to_boss(
                 if !action.should_replay_on_skip() {
                     continue;
                 }
-                crate::level::execute_action(
+                crate::level::level::execute_action(
                     action,
                     &mut commands,
                     &asset_server,

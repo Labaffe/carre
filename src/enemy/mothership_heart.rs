@@ -6,4 +6,4 @@
 //!
 //! Ce module ré-exporte les types pertinents pour un accès direct.
 
-pub use crate::mothership::{MothershipHeart, MothershipLink};
+pub use crate::enemy::mothership::{MothershipHeart, MothershipLink};

@@ -6,12 +6,12 @@
 //! Les systèmes spécifiques aux Gatlings sont dans `gatling.rs`,
 //! ceux des Hearts dans `mothership_heart.rs`.
 
-use crate::difficulty::SpawnPosition;
-use crate::enemies::{GATLING, MOTHERSHIP_HEART};
-use crate::enemy::{Enemy, EnemyState, PatternIndex, PatternTimer};
-use crate::explosion::load_frames_from_folder;
-use crate::item::{DropTable, ItemType};
-use crate::level::{Action, LevelActionEvent};
+use crate::enemy::enemies::{GATLING, MOTHERSHIP_HEART};
+use crate::enemy::enemy::{Enemy, EnemyState, PatternIndex, PatternTimer};
+use crate::fx::explosion::load_frames_from_folder;
+use crate::game_manager::difficulty::SpawnPosition;
+use crate::item::item::{DropTable, ItemType};
+use crate::level::level::{Action, LevelActionEvent};
 use bevy::prelude::*;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -608,7 +608,7 @@ pub(crate) fn spawn_mothership_oneshot(
         } else {
             0.0
         };
-        let aim_bias_comp = crate::mothership::GatlingAimBias {
+        let aim_bias_comp = crate::enemy::mothership::GatlingAimBias {
             center_rad: aim_bias,
             phase_offset,
         };
@@ -671,12 +671,12 @@ pub(crate) fn spawn_mothership_oneshot(
                 hit_flash_color: None,
             },
             GatlingMarker,
-            crate::gatling::GatlingBaseEdge(edge),
+            crate::enemy::gatling::GatlingBaseEdge(edge),
             MothershipLink {
                 mothership: mothership_entity,
                 offset,
             },
-            crate::gatling::GatlingEnteringAnim {
+            crate::enemy::gatling::GatlingEnteringAnim {
                 timer: Timer::from_seconds(GATLING_ANIM_INTERVAL, TimerMode::Repeating),
                 current_frame: 0,
             },

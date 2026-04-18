@@ -6,9 +6,9 @@
 //! celui-ci est appliqué chaque frame dans `move_asteroids`, ce qui permet
 //! aux astéroïdes déjà à l'écran d'accélérer quand la difficulté augmente.
 
-use crate::difficulty::Difficulty;
-use crate::item::{DropTable, ItemType};
-use crate::state::GameState;
+use crate::game_manager::difficulty::Difficulty;
+use crate::game_manager::state::GameState;
+use crate::item::item::{DropTable, ItemType};
 use bevy::prelude::*;
 use std::time::Duration;
 

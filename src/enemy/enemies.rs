@@ -9,7 +9,7 @@
 //! Les systèmes génériques (dégâts, flash, mort, projectiles, patrol)
 //! fonctionnent automatiquement via `EnemyPlugin` dans `enemy.rs`.
 
-use crate::enemy::{PatternDef, PhaseDef};
+use crate::enemy::enemy::{PatternDef, PhaseDef};
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Définition générique d'un ennemi
