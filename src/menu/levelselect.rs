@@ -4,13 +4,13 @@
 //! construit l'écran interactif : titre, grille 2×2 de cartes de prime,
 //! et footer d'instructions. La navigation est directionnelle (ZQSD / flèches).
 
-use crate::game::{
+use crate::game_manager::game::{
     CampaignProgress, ConfirmOptionMarker, ConfirmPopup, ConfirmPopupUI, GameProgress, PlayMode,
     despawn_confirm_popup, spawn_confirm_popup,
 };
-use crate::level::level_name;
-use crate::mainmenu::MainMenuMusic;
-use crate::state::GameState;
+use crate::game_manager::state::GameState;
+use crate::level::level::level_name;
+use crate::menu::mainmenu::MainMenuMusic;
 use bevy::prelude::*;
 
 pub struct LevelSelectPlugin;
@@ -50,14 +50,13 @@ struct CardLabel(usize);
 #[derive(Component)]
 struct FooterText;
 
-
 // ─── Ressources ─────────────────────────────────────────────────────
 
 #[derive(Resource)]
 struct LevelSelectState {
     selected: usize,
-    total: usize,       // nombre de cartes affichées
-    elapsed: f32,        // pour animations
+    total: usize, // nombre de cartes affichées
+    elapsed: f32, // pour animations
 }
 
 /// Textures normal/selected pour chaque carte.
@@ -152,10 +151,12 @@ fn setup_level_select(
         "empty_prime",
         "empty_prime",
     ];
-    let normal_textures: Vec<Handle<Image>> = card_names.iter()
+    let normal_textures: Vec<Handle<Image>> = card_names
+        .iter()
         .map(|name| asset_server.load(format!("images/primes/{}.png", name)))
         .collect();
-    let selected_textures: Vec<Handle<Image>> = card_names.iter()
+    let selected_textures: Vec<Handle<Image>> = card_names
+        .iter()
         .map(|name| asset_server.load(format!("images/primes/{}_selected.png", name)))
         .collect();
 
@@ -165,44 +166,45 @@ fn setup_level_select(
         let name = level_name(level_num);
 
         // Carte
-        commands.spawn((
-            NodeBundle {
-                style: Style {
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(left),
-                    top: Val::Px(top),
-                    width: Val::Px(w),
-                    height: Val::Px(h),
-                    flex_direction: FlexDirection::Column,
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                background_color: Color::NONE.into(),
-                ..default()
-            },
-            LevelSelectUI,
-            CardBorder(i),
-        ))
-        .with_children(|slot| {
-            slot.spawn((
-                ImageBundle {
-                    image: UiImage::new(if i == first_available {
-                        selected_textures[i].clone()
-                    } else {
-                        normal_textures[i].clone()
-                    }),
+        commands
+            .spawn((
+                NodeBundle {
                     style: Style {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(left),
+                        top: Val::Px(top),
                         width: Val::Px(w),
                         height: Val::Px(h),
+                        flex_direction: FlexDirection::Column,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
                         ..default()
                     },
+                    background_color: Color::NONE.into(),
                     ..default()
                 },
                 LevelSelectUI,
-                PrimeCard { index: i },
-            ));
-        });
+                CardBorder(i),
+            ))
+            .with_children(|slot| {
+                slot.spawn((
+                    ImageBundle {
+                        image: UiImage::new(if i == first_available {
+                            selected_textures[i].clone()
+                        } else {
+                            normal_textures[i].clone()
+                        }),
+                        style: Style {
+                            width: Val::Px(w),
+                            height: Val::Px(h),
+                            ..default()
+                        },
+                        ..default()
+                    },
+                    LevelSelectUI,
+                    PrimeCard { index: i },
+                ));
+            });
 
         // Label sous la carte
         commands.spawn((
@@ -265,7 +267,6 @@ fn setup_level_select(
         elapsed: 0.0,
     });
 }
-
 
 // ─── Animation ──────────────────────────────────────────────────────
 
@@ -414,33 +415,47 @@ fn handle_level_select_input(
     }
 
     // Helper : un slot est sélectionnable s'il n'est pas complété
-    let is_available = |idx: usize| -> bool {
-        idx < total && !completed.contains(&(idx + 1))
-    };
+    let is_available = |idx: usize| -> bool { idx < total && !completed.contains(&(idx + 1)) };
 
     // Navigation grille 2×2
     //  0  1
     //  2  3
     if keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyQ) {
-        let target = if state.selected % 2 == 1 { state.selected - 1 } else { state.selected };
+        let target = if state.selected % 2 == 1 {
+            state.selected - 1
+        } else {
+            state.selected
+        };
         if target != state.selected && is_available(target) {
             state.selected = target;
         }
     }
     if keyboard.just_pressed(KeyCode::ArrowRight) || keyboard.just_pressed(KeyCode::KeyD) {
-        let target = if state.selected % 2 == 0 && state.selected + 1 < total { state.selected + 1 } else { state.selected };
+        let target = if state.selected % 2 == 0 && state.selected + 1 < total {
+            state.selected + 1
+        } else {
+            state.selected
+        };
         if target != state.selected && is_available(target) {
             state.selected = target;
         }
     }
     if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyZ) {
-        let target = if state.selected >= 2 { state.selected - 2 } else { state.selected };
+        let target = if state.selected >= 2 {
+            state.selected - 2
+        } else {
+            state.selected
+        };
         if target != state.selected && is_available(target) {
             state.selected = target;
         }
     }
     if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
-        let target = if state.selected + 2 < total { state.selected + 2 } else { state.selected };
+        let target = if state.selected + 2 < total {
+            state.selected + 2
+        } else {
+            state.selected
+        };
         if target != state.selected && is_available(target) {
             state.selected = target;
         }

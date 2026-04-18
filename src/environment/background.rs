@@ -4,10 +4,10 @@
 //! **Phase boss** (3 s après boss.ogg) : grille 3×3 qui scroll ET tourne
 //! en même temps que la planète, simulant une orbite.
 
-use crate::difficulty::Difficulty;
-use crate::level::{LevelConfig, LevelSetupSet};
-use crate::levels::ScrollDirection;
-use crate::state::GameState;
+use crate::game_manager::difficulty::Difficulty;
+use crate::game_manager::state::GameState;
+use crate::level::level::{LevelConfig, LevelSetupSet};
+use crate::level::levels::ScrollDirection;
 use bevy::prelude::*;
 
 pub struct BackgroundPlugin;

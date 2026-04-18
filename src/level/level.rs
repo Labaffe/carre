@@ -15,11 +15,11 @@
 
 use std::collections::HashMap;
 
-use crate::difficulty::{BoomEvent, Difficulty, SpawnPosition};
-use crate::levels::ScrollDirection;
-use crate::mothership::{MothershipConfig, MothershipSpawnQueue, TurretConfig, TurretStyle};
-use crate::pause::not_paused;
-use crate::state::GameState;
+use crate::enemy::mothership::{MothershipConfig, MothershipSpawnQueue, TurretConfig, TurretStyle};
+use crate::game_manager::difficulty::{BoomEvent, Difficulty, SpawnPosition};
+use crate::game_manager::state::GameState;
+use crate::level::levels::ScrollDirection;
+use crate::menu::pause::not_paused;
 use bevy::prelude::*;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -38,7 +38,7 @@ pub struct LevelConfig {
 
 impl Default for LevelConfig {
     fn default() -> Self {
-        let def = crate::levels::level_def(1);
+        let def = crate::level::levels::level_def(1);
         Self {
             player_ship: def.player_ship,
             background_tile: def.background_tile,
@@ -413,7 +413,7 @@ impl Trigger {
 
 /// Retourne le nom d'un niveau (1-indexed).
 pub fn level_name(level: usize) -> &'static str {
-    crate::levels::level_name(level)
+    crate::level::levels::level_name(level)
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -550,11 +550,11 @@ pub fn build_level_2() -> Vec<LevelStep> {
 
 fn setup_level(
     mut commands: Commands,
-    progress: Res<crate::game::GameProgress>,
+    progress: Res<crate::game_manager::game::GameProgress>,
     mut config: ResMut<LevelConfig>,
 ) {
     // Mettre à jour la config visuelle du niveau (immédiat via ResMut)
-    let def = crate::levels::level_def(progress.current_level);
+    let def = crate::level::levels::level_def(progress.current_level);
     config.player_ship = def.player_ship;
     config.background_tile = def.background_tile;
     config.scroll_direction = def.scroll_direction;
@@ -567,8 +567,8 @@ fn setup_level(
     commands.insert_resource(LevelRunner::new(steps));
 
     // Créer la LevelPhase : tous les niveaux commencent par une intro
-    let intro = crate::game::level_intro(progress.current_level);
-    let phase = crate::game::LevelPhaseKind::Intro {
+    let intro = crate::game_manager::game::level_intro(progress.current_level);
+    let phase = crate::game_manager::game::LevelPhaseKind::Intro {
         elapsed: 0.0,
         duration: intro.duration,
         sound: intro.sound,
@@ -579,7 +579,7 @@ fn setup_level(
         spawn_ratio: intro.spawn_ratio,
         initialized: false,
     };
-    commands.insert_resource(crate::game::LevelPhase { phase });
+    commands.insert_resource(crate::game_manager::game::LevelPhase { phase });
 }
 
 fn run_level(
@@ -589,14 +589,17 @@ fn run_level(
     runner: Option<ResMut<LevelRunner>>,
     mut difficulty: ResMut<Difficulty>,
     mut boom_events: EventWriter<BoomEvent>,
-    mut countdown_events: EventWriter<crate::countdown::CountdownEvent>,
+    mut countdown_events: EventWriter<crate::ui::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
-    level_phase: Option<Res<crate::game::LevelPhase>>,
+    level_phase: Option<Res<crate::game_manager::game::LevelPhase>>,
     mut mothership_queue: ResMut<MothershipSpawnQueue>,
 ) {
     // Ne faire tourner les LevelSteps que pendant la phase Running
     let Some(ref phase) = level_phase else { return };
-    if !matches!(phase.phase, crate::game::LevelPhaseKind::Running) {
+    if !matches!(
+        phase.phase,
+        crate::game_manager::game::LevelPhaseKind::Running
+    ) {
         return;
     }
     let Some(mut runner) = runner else { return };
@@ -654,7 +657,7 @@ pub(crate) fn execute_action(
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
     boom_events: &mut EventWriter<BoomEvent>,
-    countdown_events: &mut EventWriter<crate::countdown::CountdownEvent>,
+    countdown_events: &mut EventWriter<crate::ui::countdown::CountdownEvent>,
     difficulty: &mut ResMut<Difficulty>,
     music_q: &Query<Entity, With<crate::MusicMain>>,
     mothership_queue: Option<&mut ResMut<MothershipSpawnQueue>>,
@@ -689,7 +692,7 @@ pub(crate) fn execute_action(
             }
         }
         Action::StartCountdown => {
-            countdown_events.send(crate::countdown::CountdownEvent);
+            countdown_events.send(crate::ui::countdown::CountdownEvent);
         }
         Action::SendBoom => {
             boom_events.send(BoomEvent);
@@ -738,7 +741,7 @@ fn process_level_action_events(
     mut events: EventReader<LevelActionEvent>,
     mut difficulty: ResMut<Difficulty>,
     mut boom_events: EventWriter<BoomEvent>,
-    mut countdown_events: EventWriter<crate::countdown::CountdownEvent>,
+    mut countdown_events: EventWriter<crate::ui::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
     mut mothership_queue: ResMut<MothershipSpawnQueue>,
 ) {

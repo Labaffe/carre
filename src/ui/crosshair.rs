@@ -1,6 +1,6 @@
-use crate::difficulty::Difficulty;
-use crate::pause::PauseState;
-use crate::state::GameState;
+use crate::game_manager::difficulty::Difficulty;
+use crate::game_manager::state::GameState;
+use crate::menu::pause::PauseState;
 use bevy::prelude::*;
 
 fn not_paused(pause: Res<PauseState>) -> bool {
@@ -59,10 +59,10 @@ fn spawn_crosshair(mut commands: Commands, mut windows: Query<&mut Window>) {
 
     // Données : (offset_x, offset_y, width, height)
     let arms: [(f32, f32, f32, f32); 4] = [
-        (0.0, arm_offset, ARM_THICKNESS, ARM_LENGTH),   // haut
-        (0.0, -arm_offset, ARM_THICKNESS, ARM_LENGTH),  // bas
-        (-arm_offset, 0.0, ARM_LENGTH, ARM_THICKNESS),  // gauche
-        (arm_offset, 0.0, ARM_LENGTH, ARM_THICKNESS),   // droite
+        (0.0, arm_offset, ARM_THICKNESS, ARM_LENGTH),  // haut
+        (0.0, -arm_offset, ARM_THICKNESS, ARM_LENGTH), // bas
+        (-arm_offset, 0.0, ARM_LENGTH, ARM_THICKNESS), // gauche
+        (arm_offset, 0.0, ARM_LENGTH, ARM_THICKNESS),  // droite
     ];
 
     let parent = commands
@@ -197,7 +197,8 @@ fn crosshair_animate(
 ) {
     for (mut transform, mut anim) in query.iter_mut() {
         anim.elapsed += time.delta_seconds();
-        let scale = 1.0 + (anim.elapsed * PULSE_SPEED * std::f32::consts::TAU).sin() * PULSE_AMPLITUDE;
+        let scale =
+            1.0 + (anim.elapsed * PULSE_SPEED * std::f32::consts::TAU).sin() * PULSE_AMPLITUDE;
         transform.scale = Vec3::splat(scale);
     }
 }

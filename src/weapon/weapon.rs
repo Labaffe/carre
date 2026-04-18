@@ -11,10 +11,10 @@
 //! Pour ajouter une arme : créer un `const WeaponDef` et l'assigner dans `update_player_weapon`.
 //! Le joueur passe automatiquement de Standard Missile à Red Projectile après 10 secondes.
 
+use crate::game_manager::difficulty::Difficulty;
+use crate::game_manager::state::GameState;
+use crate::player::player::Player;
 use bevy::prelude::*;
-use crate::difficulty::Difficulty;
-use crate::player::Player;
-use crate::state::GameState;
 
 pub struct WeaponPlugin;
 
@@ -83,29 +83,36 @@ pub const STANDARD_MISSILE: WeaponDef = WeaponDef {
 pub const RED_PROJECTILE: WeaponDef = WeaponDef {
     name: "Red Projectile",
     texture_path: "images/projectiles/red_projectile.png",
-    hitbox: HitboxShape::Rect { half_length: 32.0, half_width: 4.0 },
+    hitbox: HitboxShape::Rect {
+        half_length: 32.0,
+        half_width: 4.0,
+    },
     speed: 1100.0,
     fire_rate: 0.15,
-    pattern: &[                 // éventail fusil à pompe
-        ShotAngle(0.0),         //   central
-        ShotAngle(0.18),        //   gauche (~10°)
-        ShotAngle(-0.18),       //   droite (~10°)
+    pattern: &[
+        // éventail fusil à pompe
+        ShotAngle(0.0),   //   central
+        ShotAngle(0.18),  //   gauche (~10°)
+        ShotAngle(-0.18), //   droite (~10°)
     ],
-    death_folder: None,         // pas d'animation de mort pour l'instant
+    death_folder: None, // pas d'animation de mort pour l'instant
 };
 
 pub const BLUE_PROJECTILE: WeaponDef = WeaponDef {
     name: "Blue Projectiles",
     texture_path: "images/projectiles/blue_projectile.png",
-    hitbox: HitboxShape::Rect { half_length: 32.0, half_width: 4.0 },
+    hitbox: HitboxShape::Rect {
+        half_length: 32.0,
+        half_width: 4.0,
+    },
     speed: 3300.0, // vitesse triplée par rapport à Red Projectile
     fire_rate: 0.15,
     pattern: &[
-        ShotAngle(0.0),         //   central
-        ShotAngle(0.12),        //   légèrement gauche
-        ShotAngle(-0.12),       //   légèrement droite
-        ShotAngle(0.24),        //   gauche (~14°)
-        ShotAngle(-0.24),       //   droite (~14°)
+        ShotAngle(0.0),   //   central
+        ShotAngle(0.12),  //   légèrement gauche
+        ShotAngle(-0.12), //   légèrement droite
+        ShotAngle(0.24),  //   gauche (~14°)
+        ShotAngle(-0.24), //   droite (~14°)
     ],
     death_folder: None,
 };
@@ -120,17 +127,16 @@ pub struct Weapon {
 
 impl Default for Weapon {
     fn default() -> Self {
-        Self { def: STANDARD_MISSILE }
+        Self {
+            def: STANDARD_MISSILE,
+        }
     }
 }
 
 // ─── Système ─────────────────────────────────────────────────────────
 
 /// Met à jour l'arme du joueur selon la phase.
-fn update_player_weapon(
-    difficulty: Res<Difficulty>,
-    mut query: Query<&mut Weapon, With<Player>>,
-) {
+fn update_player_weapon(difficulty: Res<Difficulty>, mut query: Query<&mut Weapon, With<Player>>) {
     let boss_rotation_active = match difficulty.boss_music_start_time {
         Some(start) => difficulty.elapsed >= start + 3.0,
         None => false,
@@ -139,7 +145,10 @@ fn update_player_weapon(
     for mut weapon in query.iter_mut() {
         if boss_rotation_active && weapon.def.name != BLUE_PROJECTILE.name {
             weapon.def = BLUE_PROJECTILE;
-        } else if !boss_rotation_active && difficulty.elapsed >= 10.0 && weapon.def.name != RED_PROJECTILE.name {
+        } else if !boss_rotation_active
+            && difficulty.elapsed >= 10.0
+            && weapon.def.name != RED_PROJECTILE.name
+        {
             weapon.def = RED_PROJECTILE;
         }
     }

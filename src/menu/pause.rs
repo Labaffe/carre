@@ -4,13 +4,13 @@
 //! Un overlay s'affiche avec les options "Reprendre" et "Quitter".
 //! Le temps de jeu est gelé tant que la pause est active.
 
-use crate::game::{
+use crate::MusicMain;
+use crate::enemy::boss::MusicBoss;
+use crate::game_manager::game::{
     CampaignProgress, ConfirmOptionMarker, ConfirmPopup, ConfirmPopupUI, IntroSound, PlayMode,
     despawn_confirm_popup, spawn_confirm_popup,
 };
-use crate::state::GameState;
-use crate::MusicMain;
-use crate::boss::MusicBoss;
+use crate::game_manager::state::GameState;
 use bevy::app::AppExit;
 use bevy::prelude::*;
 
@@ -21,11 +21,7 @@ impl Plugin for PausePlugin {
         app.init_resource::<PauseState>()
             .add_systems(
                 Update,
-                (
-                    handle_pause_input,
-                    sync_intro_sound_pause,
-                )
-                    .run_if(in_state(GameState::Playing)),
+                (handle_pause_input, sync_intro_sound_pause).run_if(in_state(GameState::Playing)),
             )
             .add_systems(OnExit(GameState::Playing), cleanup_pause);
     }
@@ -252,7 +248,9 @@ fn unpause(
     pause.paused = false;
     time.unpause();
     for entity in pause_ui_q.iter() {
-        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
 }
 
@@ -363,9 +361,13 @@ fn cleanup_pause(
     }
     commands.remove_resource::<ConfirmPopup>();
     for entity in pause_ui_q.iter() {
-        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
     for entity in confirm_ui_q.iter() {
-        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
 }

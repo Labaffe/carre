@@ -9,9 +9,9 @@
 
 use std::collections::HashMap;
 
-use crate::countdown::CountdownEvent;
-use crate::pause::not_paused;
-use crate::state::GameState;
+use crate::game_manager::state::GameState;
+use crate::menu::pause::not_paused;
+use crate::ui::countdown::CountdownEvent;
 use bevy::prelude::*;
 
 /// Position de spawn d'un ennemi.
@@ -193,8 +193,8 @@ fn update_difficulty(
         let decel_elapsed = difficulty.elapsed - decel_start;
         let t = (decel_elapsed / difficulty.bg_decel_duration).clamp(0.0, 1.0);
         let bg_speed_at_stop = 150.0 * (1.0 + 8.0 * 3.0);
-        let current_speed = bg_speed_at_stop
-            + (difficulty.bg_decel_final_speed - bg_speed_at_stop) * t;
+        let current_speed =
+            bg_speed_at_stop + (difficulty.bg_decel_final_speed - bg_speed_at_stop) * t;
         difficulty.bg_speed_override = Some(current_speed);
     }
 }

@@ -6,8 +6,8 @@
 //! - Sous-menu Paramètres : réglage du volume global.
 
 use crate::GameSettings;
-use crate::game::{CampaignProgress, PlayMode};
-use crate::state::GameState;
+use crate::game_manager::game::{CampaignProgress, PlayMode};
+use crate::game_manager::state::GameState;
 use bevy::app::AppExit;
 use bevy::prelude::*;
 
@@ -64,7 +64,6 @@ enum MenuAction {
 /// Marqueur pour les éléments du sous-menu Paramètres.
 #[derive(Component)]
 struct SettingsUI;
-
 
 /// Texte affichant la valeur du volume.
 #[derive(Component)]
@@ -323,11 +322,11 @@ fn animate_main_menu(
         (&mut BackgroundColor, &mut Style),
         (With<MainMenuLogo>, Without<MainMenuRoot>),
     >,
-    mut container_q: Query<
-        &mut Style,
-        (With<MenuOptionsContainer>, Without<MainMenuLogo>),
+    mut container_q: Query<&mut Style, (With<MenuOptionsContainer>, Without<MainMenuLogo>)>,
+    mut text_q: Query<
+        (&mut Text, &MenuOption, &mut Style),
+        (Without<MainMenuLogo>, Without<MenuOptionsContainer>),
     >,
-    mut text_q: Query<(&mut Text, &MenuOption, &mut Style), (Without<MainMenuLogo>, Without<MenuOptionsContainer>)>,
     mut tile_q: Query<&mut Sprite, With<MainMenuTile>>,
     mut volume_text_q: Query<&mut Text, (With<VolumeText>, Without<MenuOption>)>,
     settings: Res<GameSettings>,
@@ -519,7 +518,9 @@ fn handle_settings_view(
         anim.selected = 1; // Reselect "Paramètres"
         // Despawn le sous-menu
         for entity in settings_ui_q.iter() {
-            if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+            if let Some(e) = commands.get_entity(entity) {
+                e.despawn_recursive();
+            }
         }
     }
 }
@@ -594,7 +595,9 @@ fn spawn_settings_ui(
 
 fn cleanup_main_menu(mut commands: Commands, query: Query<Entity, With<MainMenuUI>>) {
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
     commands.remove_resource::<MainMenuAnim>();
 }

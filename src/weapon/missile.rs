@@ -4,27 +4,33 @@
 //! Supporte les hitbox circulaires (Standard Missile) et rectangulaires orientées (Red Projectile).
 //! Un HashSet empêche les doubles despawn quand plusieurs missiles touchent la même cible en une frame.
 
-use crate::asteroid::{Asteroid, HitFlash};
-use crate::crosshair::Crosshair;
-use crate::difficulty::Difficulty;
-use crate::explosion::{spawn_explosion, spawn_projectile_death};
-use crate::item::{DropEvent, DropTable};
-use crate::player::Player;
-use crate::weapon::{HitboxShape, Weapon};
-use crate::score::Score;
+use crate::enemy::asteroid::{Asteroid, HitFlash};
+use crate::fx::explosion::{spawn_explosion, spawn_projectile_death};
+use crate::game_manager::difficulty::Difficulty;
+use crate::item::item::{DropEvent, DropTable};
+use crate::player::player::Player;
+use crate::ui::crosshair::Crosshair;
+use crate::ui::score::Score;
+use crate::weapon::weapon::{HitboxShape, Weapon};
 use bevy::prelude::*;
 
 pub struct MissilePlugin;
 
 impl Plugin for MissilePlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(FireRateTimer(Timer::from_seconds(0.2, TimerMode::Repeating)))
-            .add_systems(OnEnter(crate::state::GameState::Playing), reset_fire_rate)
-            .add_systems(
-                Update,
-                (shoot, move_missiles, missile_asteroid_collision)
-                    .run_if(in_state(crate::state::GameState::Playing)),
-            );
+        app.insert_resource(FireRateTimer(Timer::from_seconds(
+            0.2,
+            TimerMode::Repeating,
+        )))
+        .add_systems(
+            OnEnter(crate::game_manager::state::GameState::Playing),
+            reset_fire_rate,
+        )
+        .add_systems(
+            Update,
+            (shoot, move_missiles, missile_asteroid_collision)
+                .run_if(in_state(crate::game_manager::state::GameState::Playing)),
+        );
     }
 }
 
@@ -79,15 +85,19 @@ pub(crate) fn missile_hits_circle(
     circle_radius: f32,
 ) -> bool {
     match hitbox {
-        HitboxShape::Circle(r) => {
-            missile_pos.distance(circle_pos) < *r + circle_radius
-        }
-        HitboxShape::Rect { half_length, half_width } => {
+        HitboxShape::Circle(r) => missile_pos.distance(circle_pos) < *r + circle_radius,
+        HitboxShape::Rect {
+            half_length,
+            half_width,
+        } => {
             let angle = missile_rot.to_euler(EulerRot::ZYX).0;
             obb_circle_collision(
-                missile_pos, angle,
-                *half_length, *half_width,
-                circle_pos, circle_radius,
+                missile_pos,
+                angle,
+                *half_length,
+                *half_width,
+                circle_pos,
+                circle_radius,
             )
         }
     }
@@ -123,7 +133,9 @@ fn shoot(
     };
 
     // Adapter la cadence de tir à l'arme actuelle
-    fire_timer.0.set_duration(std::time::Duration::from_secs_f32(weapon.def.fire_rate));
+    fire_timer
+        .0
+        .set_duration(std::time::Duration::from_secs_f32(weapon.def.fire_rate));
     fire_timer.0.tick(time.delta());
     if !fire_timer.0.just_finished() {
         return;
@@ -187,7 +199,8 @@ fn missile_asteroid_collision(
         if despawned_missiles.contains(&missile_entity) {
             continue;
         }
-        for (asteroid_entity, asteroid_transform, mut asteroid, drop_table) in asteroid_q.iter_mut() {
+        for (asteroid_entity, asteroid_transform, mut asteroid, drop_table) in asteroid_q.iter_mut()
+        {
             if despawned_asteroids.contains(&asteroid_entity) {
                 continue;
             }
@@ -241,7 +254,9 @@ fn missile_asteroid_collision(
                         despawned_asteroids.insert(asteroid_entity);
                     }
                 } else if !despawned_asteroids.contains(&asteroid_entity) {
-                    commands.entity(asteroid_entity).insert(HitFlash(Timer::from_seconds(0.06, TimerMode::Once)));
+                    commands
+                        .entity(asteroid_entity)
+                        .insert(HitFlash(Timer::from_seconds(0.06, TimerMode::Once)));
                     commands.spawn(AudioBundle {
                         source: asset_server.load("audio/sfx/asteroid_hit.ogg"),
                         settings: PlaybackSettings::DESPAWN,

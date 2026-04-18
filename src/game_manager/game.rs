@@ -15,16 +15,16 @@
 
 use std::collections::HashSet;
 
-use crate::asteroid::Asteroid;
-use crate::boss::{BossMarker, MusicBoss};
-use crate::difficulty::Difficulty;
-use crate::enemy::{Enemy, EnemyState};
-use crate::level::{LevelConfig, level_name};
-use crate::levels::ScrollDirection;
-use crate::pause::PauseState;
-use crate::player::Player;
-use crate::state::GameState;
 use crate::MusicMain;
+use crate::enemy::asteroid::Asteroid;
+use crate::enemy::boss::{BossMarker, MusicBoss};
+use crate::enemy::enemy::{Enemy, EnemyState};
+use crate::game_manager::difficulty::Difficulty;
+use crate::game_manager::state::GameState;
+use crate::level::level::{LevelConfig, level_name};
+use crate::level::levels::ScrollDirection;
+use crate::menu::pause::PauseState;
+use crate::player::player::Player;
 use bevy::prelude::*;
 
 pub struct GamePlugin;
@@ -46,10 +46,7 @@ impl Plugin for GamePlugin {
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(OnExit(GameState::Playing), cleanup_playing)
-            .add_systems(
-                OnEnter(GameState::LevelTransition),
-                auto_start_next_level,
-            )
+            .add_systems(OnEnter(GameState::LevelTransition), auto_start_next_level)
             .add_systems(OnEnter(GameState::Credits), setup_credits)
             .add_systems(OnExit(GameState::Credits), cleanup_credits)
             .add_systems(
@@ -212,7 +209,9 @@ fn level_phase_system(
     intro_sound_q: Query<Entity, With<IntroSound>>,
     config: Res<LevelConfig>,
 ) {
-    let Some(mut level_phase) = level_phase else { return };
+    let Some(mut level_phase) = level_phase else {
+        return;
+    };
 
     match &mut level_phase.phase {
         LevelPhaseKind::Intro {
@@ -257,10 +256,10 @@ fn level_phase_system(
 
                 // Rotation du vaisseau selon la direction d'entrée
                 let ship_angle = match config.scroll_direction {
-                    ScrollDirection::Down => 0.0,                                    // pointe vers le haut
-                    ScrollDirection::Up => std::f32::consts::PI,                     // pointe vers le bas
-                    ScrollDirection::Left => -std::f32::consts::FRAC_PI_2,          // pointe vers la droite
-                    ScrollDirection::Right => std::f32::consts::FRAC_PI_2,          // pointe vers la gauche
+                    ScrollDirection::Down => 0.0,                // pointe vers le haut
+                    ScrollDirection::Up => std::f32::consts::PI, // pointe vers le bas
+                    ScrollDirection::Left => -std::f32::consts::FRAC_PI_2, // pointe vers la droite
+                    ScrollDirection::Right => std::f32::consts::FRAC_PI_2, // pointe vers la gauche
                 };
 
                 if let Ok(mut transform) = player_q.get_single_mut() {
@@ -346,7 +345,9 @@ fn skip_intro_input(
         return;
     }
 
-    let Some(ref mut level_phase) = level_phase else { return };
+    let Some(ref mut level_phase) = level_phase else {
+        return;
+    };
     if !matches!(level_phase.phase, LevelPhaseKind::Intro { .. }) {
         return;
     }
@@ -354,7 +355,15 @@ fn skip_intro_input(
         return;
     }
 
-    do_skip_intro(&mut commands, level_phase, &mut pause, &mut player_q, &intro_sound_q, &windows, &config);
+    do_skip_intro(
+        &mut commands,
+        level_phase,
+        &mut pause,
+        &mut player_q,
+        &intro_sound_q,
+        &windows,
+        &config,
+    );
 }
 
 /// Skip l'intro : place le joueur à sa position cible, despawn le son, passe en Running.
@@ -368,7 +377,13 @@ pub(crate) fn do_skip_intro(
     config: &Res<LevelConfig>,
 ) {
     // Calculer la position cible à partir du ratio si l'intro n'a pas été initialisée
-    let final_pos = if let LevelPhaseKind::Intro { target_pos, spawn_ratio, initialized, .. } = &level_phase.phase {
+    let final_pos = if let LevelPhaseKind::Intro {
+        target_pos,
+        spawn_ratio,
+        initialized,
+        ..
+    } = &level_phase.phase
+    {
         if *initialized {
             *target_pos
         } else {
@@ -410,7 +425,7 @@ pub(crate) fn do_skip_intro(
 fn detect_boss_death(
     mut difficulty: ResMut<Difficulty>,
     boss_q: Query<&Enemy, With<BossMarker>>,
-    mut level_events: EventWriter<crate::level::LevelActionEvent>,
+    mut level_events: EventWriter<crate::level::level::LevelActionEvent>,
 ) {
     // Marquer qu'on a vu un boss vivant (évite la race condition avec Commands différées).
     if !difficulty.boss_seen_alive && !boss_q.is_empty() {
@@ -420,8 +435,8 @@ fn detect_boss_death(
     // Le boss a été vu vivant, toutes les entités boss ont disparu (fin d'anim de mort),
     // et le niveau n'est pas encore marqué comme terminé.
     if difficulty.boss_seen_alive && boss_q.is_empty() && !difficulty.level_complete {
-        level_events.send(crate::level::LevelActionEvent(vec![
-            crate::level::Action::MarkLevelComplete,
+        level_events.send(crate::level::level::LevelActionEvent(vec![
+            crate::level::level::Action::MarkLevelComplete,
         ]));
     }
 }
@@ -438,7 +453,9 @@ fn detect_level_complete(
     progress: Res<GameProgress>,
     mut level_phase: Option<ResMut<LevelPhase>>,
 ) {
-    let Some(ref mut level_phase) = level_phase else { return };
+    let Some(ref mut level_phase) = level_phase else {
+        return;
+    };
 
     match &level_phase.phase {
         LevelPhaseKind::Running => {
@@ -514,8 +531,16 @@ fn level_outro_animate(
     level_phase: Option<ResMut<LevelPhase>>,
     asset_server: Res<AssetServer>,
 ) {
-    let Some(mut level_phase) = level_phase else { return };
-    let LevelPhaseKind::Outro { elapsed, music_spawned } = &mut level_phase.phase else { return };
+    let Some(mut level_phase) = level_phase else {
+        return;
+    };
+    let LevelPhaseKind::Outro {
+        elapsed,
+        music_spawned,
+    } = &mut level_phase.phase
+    else {
+        return;
+    };
 
     *elapsed += time.delta_seconds();
 
@@ -543,8 +568,12 @@ fn level_outro_input(
     mut campaign: Option<ResMut<CampaignProgress>>,
     music_q: Query<Entity, With<MusicOutro>>,
 ) {
-    let Some(ref level_phase) = level_phase else { return };
-    let LevelPhaseKind::Outro { elapsed, .. } = &level_phase.phase else { return };
+    let Some(ref level_phase) = level_phase else {
+        return;
+    };
+    let LevelPhaseKind::Outro { elapsed, .. } = &level_phase.phase else {
+        return;
+    };
 
     if *elapsed < OUTRO_INPUT_DELAY {
         return;
@@ -603,7 +632,9 @@ fn debug_skip_to_outro(
     if !keyboard.just_pressed(KeyCode::F4) {
         return;
     }
-    let Some(ref mut level_phase) = level_phase else { return };
+    let Some(ref mut level_phase) = level_phase else {
+        return;
+    };
     if matches!(level_phase.phase, LevelPhaseKind::Outro { .. }) {
         return;
     }
@@ -647,7 +678,11 @@ fn debug_skip_to_outro(
 
 // ─── UI de l'outro ──────────────────────────────────────────────────
 
-fn spawn_outro_ui(commands: &mut Commands, asset_server: &Res<AssetServer>, progress: &Res<GameProgress>) {
+fn spawn_outro_ui(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    progress: &Res<GameProgress>,
+) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     let name = level_name(progress.current_level);
 

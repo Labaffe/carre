@@ -4,8 +4,8 @@
 //! Chaque étape pop avec un effet de scale (zoom-in + overshoot) puis fade-out.
 //! Envoyez un `CountdownEvent` pour déclencher un countdown de 3 secondes.
 
-use crate::difficulty::BoomEvent;
-use crate::state::GameState;
+use crate::game_manager::difficulty::BoomEvent;
+use crate::game_manager::state::GameState;
 use bevy::prelude::*;
 
 pub struct CountdownPlugin;
@@ -77,7 +77,9 @@ fn start_countdown(
 
     // Nettoyer un countdown précédent
     for entity in existing_q.iter() {
-        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
 
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
@@ -150,7 +152,9 @@ fn update_countdown(
         state.timer += time.delta_seconds();
         if state.timer >= COUNTDOWN_DURATION + GO_LINGER {
             for entity in ui_q.iter() {
-                if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+                if let Some(e) = commands.get_entity(entity) {
+                    e.despawn_recursive();
+                }
             }
             commands.remove_resource::<CountdownState>();
         }
@@ -234,7 +238,9 @@ fn animate_countdown_text(
 
 fn cleanup_countdown(mut commands: Commands, query: Query<Entity, With<CountdownUI>>) {
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
     commands.remove_resource::<CountdownState>();
 }

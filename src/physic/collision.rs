@@ -1,13 +1,13 @@
 //! Collision joueur ↔ entités hostiles (astéroïdes, ennemis, projectiles ennemis).
 //! Tout objet implémentant le trait `Hittable` peut blesser le joueur au contact.
 
-use crate::asteroid::Asteroid;
-use crate::debug::DebugMode;
-use crate::enemy::{Enemy, EnemyProjectile, EnemyState};
-use crate::missile::Missile;
-use crate::player::{Invincible, Player, PlayerLives, INVINCIBLE_DURATION};
-use crate::state::GameState;
-use crate::weapon::HitboxShape;
+use crate::debug::debug::DebugMode;
+use crate::enemy::asteroid::Asteroid;
+use crate::enemy::enemy::{Enemy, EnemyProjectile, EnemyState};
+use crate::game_manager::state::GameState;
+use crate::player::player::{INVINCIBLE_DURATION, Invincible, Player, PlayerLives};
+use crate::weapon::missile::Missile;
+use crate::weapon::weapon::HitboxShape;
 use bevy::prelude::*;
 use std::time::Duration;
 
@@ -34,9 +34,13 @@ pub const PLAYER_RADIUS: f32 = 45.0;
 pub trait Hittable: Component {
     fn hitbox_shape(&self) -> HitboxShape;
     /// Si true, l'entité hostile est despawnée au contact avec le joueur.
-    fn despawn_on_hit(&self) -> bool { true }
+    fn despawn_on_hit(&self) -> bool {
+        true
+    }
     /// Si false, la collision est ignorée (ex: ennemi en animation d'entrée).
-    fn is_dangerous(&self) -> bool { true }
+    fn is_dangerous(&self) -> bool {
+        true
+    }
 }
 
 impl Hittable for Player {
@@ -55,7 +59,9 @@ impl Hittable for Enemy {
     fn hitbox_shape(&self) -> HitboxShape {
         HitboxShape::Circle(self.radius)
     }
-    fn despawn_on_hit(&self) -> bool { false }
+    fn despawn_on_hit(&self) -> bool {
+        false
+    }
     fn is_dangerous(&self) -> bool {
         matches!(self.state, EnemyState::Active(_))
     }
@@ -105,9 +111,10 @@ fn player_collision<T: Hittable>(
 
         let combined_radius = match hittable.hitbox_shape() {
             HitboxShape::Circle(r) => PLAYER_RADIUS + r,
-            HitboxShape::Rect { half_length, half_width } => {
-                PLAYER_RADIUS + half_length.max(half_width)
-            }
+            HitboxShape::Rect {
+                half_length,
+                half_width,
+            } => PLAYER_RADIUS + half_length.max(half_width),
         };
 
         if distance < combined_radius {
@@ -128,15 +135,15 @@ fn player_collision<T: Hittable>(
             });
 
             if lives.lives <= 0 {
-                if let Some(e) = commands.get_entity(player_entity) { e.despawn_recursive(); }
+                if let Some(e) = commands.get_entity(player_entity) {
+                    e.despawn_recursive();
+                }
                 next_state.set(GameState::GameOver);
             } else {
-                commands.entity(player_entity).insert(
-                    Invincible(Timer::new(
-                        Duration::from_secs_f32(INVINCIBLE_DURATION),
-                        TimerMode::Once,
-                    )),
-                );
+                commands.entity(player_entity).insert(Invincible(Timer::new(
+                    Duration::from_secs_f32(INVINCIBLE_DURATION),
+                    TimerMode::Once,
+                )));
             }
             return;
         }

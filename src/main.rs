@@ -1,75 +1,57 @@
 use bevy::prelude::*;
 
-// ─── Core ──────────────────────────────────────────────────────────
-mod state;
-mod difficulty;
-mod level;
-pub mod levels;
-pub mod game;
-
-// ─── Joueur & armes ────────────────────────────────────────────────
-mod player;
-mod missile;
-mod weapon;
-mod crosshair;
-mod collision;
-
-// ─── Ennemis ───────────────────────────────────────────────────────
-pub mod enemy;
-pub mod enemies;
-mod boss;
-mod green_ufo;
-mod mothership;
-mod mothership_heart;
-mod gatling;
-
-// ─── Entités & effets ──────────────────────────────────────────────
-mod asteroid;
-mod explosion;
-pub mod item;
-
-// ─── UI & écrans ───────────────────────────────────────────────────
-mod mainmenu;
-mod levelselect;
-mod gameover;
-pub mod pause;
-mod countdown;
-mod score;
-mod deckbuilding;
-mod tweening;
-// ─── Rendu & debug ─────────────────────────────────────────────────
-mod background;
+// ─── Modules par feature ──────────────────────────────────────────
 mod debug;
+mod deckbuilding;
+mod enemy;
+mod environment;
+mod fx;
+mod game_manager;
+mod item;
+mod level;
+mod menu;
+mod physic;
+mod player;
+mod tweening;
+mod ui;
+mod weapon;
 
 // ─── Imports ───────────────────────────────────────────────────────
-use state::GameState;
-use game::{GamePlugin, MusicOutro};
-use difficulty::DifficultyPlugin;
-use level::{LevelConfig, LevelPlugin};
+use game_manager::state::GameState;
+use game_manager::game::{GamePlugin, MusicOutro};
+use game_manager::difficulty::DifficultyPlugin;
 
-use player::{Player, PlayerPlugin};
-use missile::{Missile, MissilePlugin};
-use weapon::WeaponPlugin;
-use crosshair::CrosshairPlugin;
-use collision::CollisionPlugin;
+use level::level::{LevelConfig, LevelPlugin};
 
-use enemy::{Enemy, EnemyPlugin, EnemyProjectile};
-use boss::{BossPlugin, MusicBoss};
+use player::player::{Player, PlayerPlugin};
+use weapon::weapon::WeaponPlugin;
+use weapon::missile::{Missile, MissilePlugin};
 
-use asteroid::{Asteroid, AsteroidPlugin};
-use explosion::{Explosion, ExplosionPlugin};
-use item::{Droppable, ItemPlugin};
+use enemy::enemy::{Enemy, EnemyPlugin, EnemyProjectile};
+use enemy::boss::{BossPlugin, MusicBoss};
+use enemy::asteroid::{Asteroid, AsteroidPlugin};
+use enemy::green_ufo::GreenUFOPlugin;
+use enemy::gatling::GatlingPlugin;
+use enemy::mothership::{GatlingLaser, MothershipMarker};
 
-use mainmenu::MainMenuPlugin;
-use gameover::GameOverPlugin;
-use pause::PausePlugin;
-use countdown::CountdownPlugin;
-use score::ScorePlugin;
+use fx::explosion::{Explosion, ExplosionPlugin};
+use item::item::{Droppable, ItemPlugin};
 
-use background::{Background, BackgroundPlugin, Planet};
-use debug::DebugPlugin;
+use menu::mainmenu::MainMenuPlugin;
+use menu::pause::PausePlugin;
+use menu::gameover::GameOverPlugin;
+use menu::levelselect::LevelSelectPlugin;
 
+use ui::crosshair::CrosshairPlugin;
+use ui::score::ScorePlugin;
+use ui::countdown::CountdownPlugin;
+
+use environment::background::{Background, BackgroundPlugin, Planet};
+use physic::collision::CollisionPlugin;
+
+use debug::debug::DebugPlugin;
 use deckbuilding::card_hand::CardHandPlugin;
+use tweening::plugin::UiTweenPlugin;
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -103,8 +85,8 @@ fn main() {
         .add_plugins((
             EnemyPlugin,
             BossPlugin,
-            green_ufo::GreenUFOPlugin,
-            gatling::GatlingPlugin,
+            GreenUFOPlugin,
+            GatlingPlugin,
         ))
         // Entités & effets
         .add_plugins((
@@ -115,13 +97,13 @@ fn main() {
         // UI & écrans
         .add_plugins((
             MainMenuPlugin,
-            levelselect::LevelSelectPlugin,
+            LevelSelectPlugin,
             GameOverPlugin,
             PausePlugin,
             CardHandPlugin,
             CountdownPlugin,
             ScorePlugin,
-            tweening::plugin::UiTweenPlugin,
+            UiTweenPlugin,
         ))
         // Rendu & debug
         .add_plugins((
@@ -179,8 +161,8 @@ fn cleanup_playing(
     boss_music: Query<Entity, With<MusicBoss>>,
     outro_music: Query<Entity, With<MusicOutro>>,
     droppables: Query<Entity, With<Droppable>>,
-    motherships: Query<Entity, With<mothership::MothershipMarker>>,
-    lasers: Query<Entity, With<mothership::GatlingLaser>>,
+    motherships: Query<Entity, With<MothershipMarker>>,
+    lasers: Query<Entity, With<GatlingLaser>>,
 ) {
     let all_entities = players.iter()
         .chain(asteroids.iter())

@@ -1,14 +1,21 @@
-use crate::state::GameState;
+use crate::game_manager::state::GameState;
 use bevy::{prelude::*, scene::ron::value};
 
 pub struct ScorePlugin;
 
 impl Plugin for ScorePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Score>().init_resource::<Level>()
+        app.init_resource::<Score>()
+            .init_resource::<Level>()
             .add_systems(OnEnter(GameState::Playing), setup_score_ui)
             .add_systems(OnExit(GameState::Playing), cleanup_score_ui)
-            .add_systems(Update, (score_update.run_if(in_state(GameState::Playing)),level_update.run_if(in_state(GameState::Playing))));
+            .add_systems(
+                Update,
+                (
+                    score_update.run_if(in_state(GameState::Playing)),
+                    level_update.run_if(in_state(GameState::Playing)),
+                ),
+            );
     }
 }
 
@@ -55,19 +62,14 @@ impl Default for Score {
 }
 #[derive(Resource)]
 pub struct Level {
-    value:usize
+    value: usize,
 }
 
-const LEVELS:[i32;4] = [
-    50,
-    100,
-    150,
-    200
-    ];
+const LEVELS: [i32; 4] = [50, 100, 150, 200];
 
 impl Default for Level {
     fn default() -> Self {
-        Self{value:0}
+        Self { value: 0 }
     }
 }
 fn setup_score_ui(
@@ -124,7 +126,9 @@ fn setup_score_ui(
 
 fn cleanup_score_ui(mut commands: Commands, query: Query<Entity, With<ScoreUI>>) {
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
 }
 
@@ -151,9 +155,9 @@ fn level_update(
     time: Res<Time>,
     mut text_q: Query<(&mut Text, &mut Transform), With<LevelText>>,
     mut level: ResMut<Level>,
-    score: Res<Score>
+    score: Res<Score>,
 ) {
-    let levelup = score.value > LEVELS[level.value] && LEVELS.len()>level.value+1;
+    let levelup = score.value > LEVELS[level.value] && LEVELS.len() > level.value + 1;
     if levelup {
         level.value += 1;
         commands.spawn(AudioBundle {
@@ -164,12 +168,11 @@ fn level_update(
     // texte : opacité 0 → 1, zoom 0.3 → 1.0
     for (mut text, mut transform) in text_q.iter_mut() {
         for section in text.sections.iter_mut() {
-            section.value = (level.value+1).to_string();
+            section.value = (level.value + 1).to_string();
         }
         if levelup {
             transform.scale = Vec3::splat(1.0);
-        }
-        else {
+        } else {
             transform.scale = Vec3::splat(0.3);
         }
     }

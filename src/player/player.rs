@@ -4,13 +4,13 @@
 //! Phase 2 (10s+)   : animation phase_2/ (20 frames), vitesse 400, Red Projectile.
 //! Phase 3 (boss rotation) : animation phase_3/ (9 frames), vitesse 800, Blue Projectiles.
 
-use crate::crosshair::Crosshair;
-use crate::difficulty::{BoomEvent, Difficulty};
-use crate::explosion::load_frames_from_folder;
-use crate::level::{LevelConfig, LevelSetupSet};
-use crate::pause::not_paused;
-use crate::state::GameState;
-use crate::weapon::Weapon;
+use crate::fx::explosion::load_frames_from_folder;
+use crate::game_manager::difficulty::{BoomEvent, Difficulty};
+use crate::game_manager::state::GameState;
+use crate::level::level::{LevelConfig, LevelSetupSet};
+use crate::menu::pause::not_paused;
+use crate::ui::crosshair::Crosshair;
+use crate::weapon::weapon::Weapon;
 use bevy::prelude::*;
 
 // ─── Système de vies ──────────────────────────────────────────────
@@ -60,8 +60,7 @@ impl Plugin for PlayerPlugin {
             .add_systems(Startup, preload_ship_textures)
             .add_systems(
                 OnEnter(GameState::Playing),
-                (setup_player, setup_lives_ui, update_ship_phase1_texture)
-                    .after(LevelSetupSet),
+                (setup_player, setup_lives_ui, update_ship_phase1_texture).after(LevelSetupSet),
             )
             .add_systems(OnExit(GameState::Playing), cleanup_lives_ui)
             .add_systems(
@@ -143,7 +142,12 @@ fn setup_player(
 ) {
     let window = windows.single();
     let half_h = window.height() / 2.0;
-    spawn_player(&mut commands, &asset_server, -half_h * 0.5, config.player_ship);
+    spawn_player(
+        &mut commands,
+        &asset_server,
+        -half_h * 0.5,
+        config.player_ship,
+    );
 }
 
 pub fn spawn_player(
@@ -454,6 +458,8 @@ fn update_lives_ui(lives: Res<PlayerLives>, mut icons: Query<(&LifeIcon, &mut Vi
 
 fn cleanup_lives_ui(mut commands: Commands, query: Query<Entity, With<LivesUI>>) {
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
 }

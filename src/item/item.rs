@@ -7,14 +7,14 @@
 //! Le joueur peut accumuler des bombes et les déclencher avec Espace.
 //! La bombe inflige des dégâts à tous les astéroïdes et ennemis à l'écran.
 
-use crate::asteroid::Asteroid;
-use crate::collision::PLAYER_RADIUS;
-use crate::enemy::{Enemy, EnemyState};
-use crate::explosion::load_frames_from_folder;
-use crate::pause::not_paused;
-use crate::player::Player;
-use crate::score::Score;
-use crate::state::GameState;
+use crate::enemy::asteroid::Asteroid;
+use crate::enemy::enemy::{Enemy, EnemyState};
+use crate::fx::explosion::load_frames_from_folder;
+use crate::game_manager::state::GameState;
+use crate::menu::pause::not_paused;
+use crate::physic::collision::PLAYER_RADIUS;
+use crate::player::player::Player;
+use crate::ui::score::Score;
 use bevy::prelude::*;
 
 pub struct ItemPlugin;
@@ -255,7 +255,9 @@ fn setup_bomb_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 fn cleanup_bomb_ui(mut commands: Commands, query: Query<Entity, With<BombUI>>) {
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        if let Some(e) = commands.get_entity(entity) {
+            e.despawn_recursive();
+        }
     }
 }
 
@@ -355,7 +357,7 @@ fn bomb_apply_damage(
     mut asteroids: Query<(Entity, &Transform, &mut Asteroid, Option<&DropTable>)>,
     mut enemies: Query<&mut Enemy>,
     mut drop_events: EventWriter<DropEvent>,
-    difficulty: Res<crate::difficulty::Difficulty>,
+    difficulty: Res<crate::game_manager::difficulty::Difficulty>,
 ) {
     if bomb_events.read().next().is_none() {
         return;
@@ -367,7 +369,7 @@ fn bomb_apply_damage(
     for (entity, transform, mut asteroid, drop_table) in asteroids.iter_mut() {
         asteroid.health -= BOMB_DAMAGE_ASTEROID;
         if asteroid.health <= 0 {
-            crate::explosion::spawn_explosion(
+            crate::fx::explosion::spawn_explosion(
                 &mut commands,
                 &asset_server,
                 transform.translation,
@@ -408,7 +410,9 @@ fn bomb_screen_flash(
         sprite.color = Color::rgba(1.0, 1.0, 1.0, 1.0 - t);
 
         if flash.0.finished() {
-            if let Some(mut e) = commands.get_entity(entity) { e.despawn(); }
+            if let Some(mut e) = commands.get_entity(entity) {
+                e.despawn();
+            }
         }
     }
 }
