@@ -30,10 +30,12 @@ use weapon::projectile::{Projectile, ProjectilePlugin};
 
 use enemy::enemy::{Enemy, EnemyPlugin};
 use enemy::boss::{BossPlugin, MusicBoss};
+use enemy::boss_def::BossV2Plugin;
 use enemy::asteroid::{Asteroid, AsteroidPlugin};
 use enemy::green_ufo::GreenUFOPlugin;
 use enemy::gatling::GatlingPlugin;
 use enemy::mothership::{GatlingLaser, MothershipMarker};
+use enemy::system::BehaviorPlugin;
 
 use fx::explosion::{Explosion, ExplosionPlugin};
 use item::item::{Droppable, ItemPlugin};
@@ -89,6 +91,8 @@ fn main() {
             BossPlugin,
             GreenUFOPlugin,
             GatlingPlugin,
+            BehaviorPlugin,
+            BossV2Plugin,
         ))
         // Entités & effets
         .add_plugins((

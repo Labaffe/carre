@@ -15,11 +15,14 @@ use bevy::prelude::*;
 
 use crate::enemy::boss::{BossCharge, BossMarker, MusicBoss};
 use crate::enemy::enemies::BOSS;
-use crate::enemy::enemy::{Enemy, EnemyState};
+use crate::enemy::enemy::{Enemy, EnemyState, PatternDef, PhaseDef};
 use crate::enemy::system::{
-    b, seq, Behavior, EnemyBehavior, EnemyDefinition, Noop, Phase, PhaseId, Transition,
+    b, seq, Behavior, EnemyBehavior, EnemyDefinition, Health, Noop, Phase, PhaseId, Transition,
     TransitionTrigger,
 };
+use crate::game_manager::difficulty::Difficulty;
+use crate::game_manager::state::GameState;
+use crate::menu::pause::not_paused;
 use crate::player::player::Player;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -503,16 +506,32 @@ impl Behavior for DespawnSelf {
 //  Spawn dans la scène
 // ═══════════════════════════════════════════════════════════════════════
 
+// Single-phase "fake" Enemy pour le boss v2 — gros pool qui ne peut pas
+// atteindre 0 avant que la vraie Health (gérée par EnemyBehavior) le fasse.
+// Évite que `enemy_phase_logic` / `enemy_dying` s'en mêlent.
+const BOSS_V2_ENEMY_BUFFER: i32 = 1_000_000;
+const BOSS_V2_TOTAL_HP: f32 = 300.0;
+
+static BOSS_V2_FAKE_PHASES: [PhaseDef; 1] = [PhaseDef {
+    health: BOSS_V2_ENEMY_BUFFER,
+    enter_sound: None,
+    patterns: &[PatternDef {
+        name: "idle",
+        duration: 999.0,
+    }],
+    has_transition: false,
+}];
+
 /// Spawne un boss "v2" piloté par la nouvelle machine à état `EnemyBehavior`.
 ///
-/// On conserve quand même le composant `Enemy` pour que les collisions
-/// joueur↔boss et projectile↔boss continuent de fonctionner (gérées par
-/// `enemy::enemy` et `physic::collision`). L'ancien boss.rs n'intervient
-/// PAS sur cette entité car elle n'est pas marquée `BossMarker` (sauf si
-/// on le souhaite explicitement — mettre `with_marker = true`).
+/// - `Enemy` est conservé **avec un pool de 1M PV** pour que les collisions
+///   joueur↔boss et projectile↔boss fonctionnent via `physic/collision.rs` et
+///   `enemy::enemy::projectile_enemy_collision`. Ce pool est assez gros pour
+///   que `Enemy.health` n'atteigne jamais 0 avant que `Health.current` (vrai
+///   pool boss, géré par EnemyBehavior) ne soit déjà < 1.
+/// - `BossMarker` absent pour ne pas réveiller l'ancien `boss.rs`. Si tu veux
+///   l'animation idle de boss.rs, passe-la en Behavior dans `boss_def.rs`.
 pub fn spawn_boss_v2(commands: &mut Commands, asset_server: &AssetServer, position: Vec3) {
-    use crate::enemy::system::{EnemyBehavior as Eb, Health};
-
     let definition = boss_definition();
     let initial_phase = definition.initial_phase.clone();
 
@@ -531,30 +550,103 @@ pub fn spawn_boss_v2(commands: &mut Commands, asset_server: &AssetServer, positi
             },
             ..default()
         },
-        Eb {
+        EnemyBehavior {
             definition,
             current_phase: initial_phase,
             phase_timer: Timer::from_seconds(0.0, TimerMode::Once),
         },
         Health {
-            current: (BOSS.phases[0].health * BOSS.phases.len() as i32) as f32,
-            max: (BOSS.phases[0].health * BOSS.phases.len() as i32) as f32,
+            current: BOSS_V2_TOTAL_HP,
+            max: BOSS_V2_TOTAL_HP,
         },
-        // Le composant Enemy est conservé pour compatibilité collisions :
         Enemy {
-            health: BOSS.phases[0].health,
-            max_health: BOSS.phases[0].health,
+            health: BOSS_V2_ENEMY_BUFFER,
+            max_health: BOSS_V2_ENEMY_BUFFER,
             state: EnemyState::Active(0),
             radius: BOSS.radius,
             sprite_size: BOSS.sprite_size,
             anim_timer: Timer::from_seconds(0.01, TimerMode::Once),
-            phases: BOSS.phases,
+            phases: &BOSS_V2_FAKE_PHASES,
             death_duration: BOSS.death_duration,
             death_shake_max: BOSS.death_shake_max,
             hit_sound: BOSS.hit_sound,
             death_explosion_sound: BOSS.death_explosion_sound,
             hit_flash_color: None,
         },
-        BossMarker,
+        BossV2Marker,
     ));
+}
+
+/// Marqueur pour les boss v2 (distinct de BossMarker pour ne pas être
+/// ciblé par les systèmes de l'ancien boss.rs).
+#[derive(Component)]
+pub struct BossV2Marker;
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Systèmes de liaison & Plugin
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Copie la différence entre Enemy.max_health et Enemy.health (= dégâts encaissés
+/// via les projectiles) dans Health.current. Permet aux transitions `HealthBelow`
+/// de déclencher sur les vrais PV du boss.
+fn sync_enemy_damage_to_health(
+    mut q: Query<(&mut Enemy, &mut Health), With<BossV2Marker>>,
+) {
+    for (mut enemy, mut health) in q.iter_mut() {
+        let damage_taken = (enemy.max_health - enemy.health) as f32;
+        health.current = (health.max - damage_taken).max(0.0);
+        // Clamp Enemy.health pour éviter qu'il descende à 0 et réveille les
+        // anciens systèmes (enemy_phase_logic / enemy_dying).
+        if enemy.health < 1 {
+            enemy.health = 1;
+        }
+    }
+}
+
+/// Consomme les `spawn_requests` avec le nom `"boss_v2"` et instancie le boss.
+fn spawn_boss_v2_oneshot(
+    mut commands: Commands,
+    mut difficulty: ResMut<Difficulty>,
+    asset_server: Res<AssetServer>,
+    windows: Query<&Window>,
+) {
+    let Some(idx) = difficulty
+        .spawn_requests
+        .iter()
+        .position(|(n, _, _)| *n == "boss_v2")
+    else {
+        return;
+    };
+    let (_name, count, spawn_pos) = difficulty.spawn_requests.remove(idx);
+    let window = windows.single();
+
+    for i in 0..count {
+        let base = spawn_pos.resolve(window, 60.0);
+        let offset_x = if count > 1 {
+            (i as f32 - (count - 1) as f32 / 2.0) * 120.0
+        } else {
+            0.0
+        };
+        spawn_boss_v2(
+            &mut commands,
+            &asset_server,
+            Vec3::new(base.x + offset_x, base.y, 0.5),
+        );
+    }
+}
+
+/// Plugin qui regroupe la synchronisation de vie + le spawn via `spawn_requests`.
+/// Doit être ajouté **en plus** du `BehaviorPlugin` (qui fournit la machine à
+/// états et l'exécution des behaviors).
+pub struct BossV2Plugin;
+
+impl Plugin for BossV2Plugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            Update,
+            (spawn_boss_v2_oneshot, sync_enemy_damage_to_health)
+                .run_if(in_state(GameState::Playing))
+                .run_if(not_paused),
+        );
+    }
 }

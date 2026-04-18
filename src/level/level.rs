@@ -470,7 +470,11 @@ pub fn build_level_1() -> Vec<LevelStep> {
             }),
         LevelStep::at(28.0, "planet_appear").with(Action::ShowPlanet),
         LevelStep::at(35.8, "boss_spawn")
-            .with(Action::SpawnEnemy("boss", 1, SpawnPosition::At(0.0, 50.0)))
+            .with(Action::SpawnEnemy(
+                "boss_v2",
+                1,
+                SpawnPosition::At(0.0, 50.0),
+            ))
             .with(Action::StopMainMusic)
             .with(Action::Log("Boss 1 spawné !")),
         // ─── Le boss gère sa propre séquence interne ──────────
