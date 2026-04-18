@@ -25,9 +25,10 @@ use level::level::{LevelConfig, LevelPlugin};
 
 use player::player::{Player, PlayerPlugin};
 use weapon::weapon::WeaponPlugin;
-use weapon::missile::{Missile, MissilePlugin};
+use weapon::player_fire::PlayerFirePlugin;
+use weapon::projectile::{Projectile, ProjectilePlugin};
 
-use enemy::enemy::{Enemy, EnemyPlugin, EnemyProjectile};
+use enemy::enemy::{Enemy, EnemyPlugin};
 use enemy::boss::{BossPlugin, MusicBoss};
 use enemy::asteroid::{Asteroid, AsteroidPlugin};
 use enemy::green_ufo::GreenUFOPlugin;
@@ -76,8 +77,9 @@ fn main() {
         // Joueur & armes
         .add_plugins((
             PlayerPlugin,
-            MissilePlugin,
+            PlayerFirePlugin,
             WeaponPlugin,
+            ProjectilePlugin,
             CrosshairPlugin,
             CollisionPlugin,
         ))
@@ -151,12 +153,11 @@ fn cleanup_playing(
     mut commands: Commands,
     players: Query<Entity, With<Player>>,
     asteroids: Query<Entity, With<Asteroid>>,
-    missiles: Query<Entity, With<Missile>>,
+    projectiles: Query<Entity, With<Projectile>>,
     explosions: Query<Entity, With<Explosion>>,
     backgrounds: Query<Entity, With<Background>>,
     planets: Query<Entity, With<Planet>>,
     enemies: Query<Entity, With<Enemy>>,
-    enemy_projectiles: Query<Entity, With<EnemyProjectile>>,
     music: Query<Entity, With<MusicMain>>,
     boss_music: Query<Entity, With<MusicBoss>>,
     outro_music: Query<Entity, With<MusicOutro>>,
@@ -166,12 +167,11 @@ fn cleanup_playing(
 ) {
     let all_entities = players.iter()
         .chain(asteroids.iter())
-        .chain(missiles.iter())
+        .chain(projectiles.iter())
         .chain(explosions.iter())
         .chain(backgrounds.iter())
         .chain(planets.iter())
         .chain(enemies.iter())
-        .chain(enemy_projectiles.iter())
         .chain(music.iter())
         .chain(boss_music.iter())
         .chain(outro_music.iter())

@@ -11,7 +11,9 @@
 //! sont dans `mothership.rs`. Ce module ne contient que le code Gatling.
 
 use crate::enemies::GATLING;
-use crate::enemy::{Enemy, EnemyProjectile, EnemyState, PatternIndex, PatternTimer};
+use crate::enemy::{Enemy, EnemyState, PatternIndex, PatternTimer};
+use crate::weapon::projectile::{spawn_projectile, ProjectileSpawn, ProjectileSprite, Team};
+use crate::weapon::weapon::HitboxShape;
 use crate::item::DropTable;
 use crate::mothership::{
     EntryEdge, GATLING_ANIM_INTERVAL, GATLING_SPRITE_SIZE, GatlingAimBias, GatlingFrames,
@@ -568,32 +570,23 @@ fn spawn_gatling_projectile(
 
     let cannon_tip = transform.translation.truncate() + shoot_dir * GATLING_SPRITE_SIZE;
 
-    // Rotation du projectile dans la direction de tir
-    let proj_angle = shoot_dir.y.atan2(shoot_dir.x) - std::f32::consts::FRAC_PI_2;
-
-    commands.spawn((
-        SpriteBundle {
-            sprite: Sprite {
+    spawn_projectile(
+        commands,
+        asset_server,
+        ProjectileSpawn {
+            position: Vec3::new(cannon_tip.x, cannon_tip.y, 0.6),
+            direction: shoot_dir,
+            speed: style.projectile_speed,
+            hitbox: HitboxShape::Circle(style.projectile_radius),
+            team: Team::Enemy,
+            damage: 1,
+            sprite: ProjectileSprite::Colored {
                 color: style.projectile_color,
-                custom_size: Some(style.projectile_size),
-                ..default()
+                size: style.projectile_size,
             },
-            transform: Transform {
-                translation: Vec3::new(cannon_tip.x, cannon_tip.y, 0.6),
-                rotation: Quat::from_rotation_z(proj_angle),
-                ..default()
-            },
-            ..default()
+            death_folder: None,
         },
-        EnemyProjectile {
-            velocity: Vec3::new(
-                shoot_dir.x * style.projectile_speed,
-                shoot_dir.y * style.projectile_speed,
-                0.0,
-            ),
-            radius: style.projectile_radius,
-        },
-    ));
+    );
 
     commands.spawn(AudioBundle {
         source: asset_server.load(style.shoot_sound),

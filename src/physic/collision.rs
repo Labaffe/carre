@@ -3,10 +3,10 @@
 
 use crate::debug::debug::DebugMode;
 use crate::enemy::asteroid::Asteroid;
-use crate::enemy::enemy::{Enemy, EnemyProjectile, EnemyState};
+use crate::enemy::enemy::{Enemy, EnemyState};
 use crate::game_manager::state::GameState;
 use crate::player::player::{INVINCIBLE_DURATION, Invincible, Player, PlayerLives};
-use crate::weapon::missile::Missile;
+use crate::weapon::projectile::{Projectile, Team};
 use crate::weapon::weapon::HitboxShape;
 use bevy::prelude::*;
 use std::time::Duration;
@@ -20,7 +20,7 @@ impl Plugin for CollisionPlugin {
             (
                 player_collision::<Asteroid>,
                 player_collision::<Enemy>,
-                player_collision::<EnemyProjectile>,
+                player_collision::<Projectile>,
             )
                 .run_if(in_state(GameState::Playing)),
         );
@@ -67,15 +67,14 @@ impl Hittable for Enemy {
     }
 }
 
-impl Hittable for EnemyProjectile {
-    fn hitbox_shape(&self) -> HitboxShape {
-        HitboxShape::Circle(self.radius)
-    }
-}
-
-impl Hittable for Missile {
+/// Un `Projectile` ne blesse le joueur que si son `team` est `Enemy`.
+/// Les projectiles du joueur sont ignorés par ce système de collision joueur.
+impl Hittable for Projectile {
     fn hitbox_shape(&self) -> HitboxShape {
         self.hitbox.clone()
+    }
+    fn is_dangerous(&self) -> bool {
+        self.team == Team::Enemy
     }
 }
 

@@ -11,12 +11,12 @@ use crate::green_ufo::GreenUFOMarker;
 use crate::mothership::{GatlingMarker, Mothership, MothershipHeart, MothershipMarker, MOTHERSHIP_BOTTOM_PROFILE};
 use crate::collision::Hittable;
 use crate::difficulty::Difficulty;
-use crate::enemy::{Enemy, EnemyProjectile, EnemyState, PatternIndex, PatternTimer};
+use crate::enemy::{Enemy, EnemyState, PatternIndex, PatternTimer};
 use crate::level::{LevelRunner, Trigger};
-use crate::missile::Missile;
 use crate::pause::PauseState;
 use crate::player::{Player, PlayerLives};
 use crate::score::Score;
+use crate::weapon::projectile::Projectile;
 use crate::weapon::HitboxShape;
 use bevy::prelude::*;
 
@@ -676,9 +676,8 @@ fn draw_hitboxes(
     mut gizmos: Gizmos,
     player_q: Query<(&Transform, &Player)>,
     asteroid_q: Query<(&Transform, &Asteroid)>,
-    missile_q: Query<(&Transform, &Missile)>,
+    projectile_q: Query<(&Transform, &Projectile)>,
     enemy_q: Query<(&Transform, &Enemy)>,
-    enemy_proj_q: Query<(&Transform, &EnemyProjectile)>,
 ) {
     if !debug.0 {
         return;
@@ -686,9 +685,10 @@ fn draw_hitboxes(
 
     draw_hittable(&mut gizmos, &player_q, Color::GREEN);
     draw_hittable(&mut gizmos, &asteroid_q, Color::RED);
-    draw_hittable(&mut gizmos, &missile_q, Color::YELLOW);
     draw_hittable(&mut gizmos, &enemy_q, Color::CYAN);
-    draw_hittable(&mut gizmos, &enemy_proj_q, Color::rgba(1.0, 0.5, 0.0, 1.0));
+    // Projectiles : jaune pour le joueur, orange pour les ennemis (la couleur
+    // est uniforme ici — si besoin on peut séparer selon projectile.team).
+    draw_hittable(&mut gizmos, &projectile_q, Color::YELLOW);
 }
 
 /// Dessine en debug la position des tourelles (croix magenta),

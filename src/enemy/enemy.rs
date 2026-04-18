@@ -13,12 +13,12 @@
 //! 3. Écrire les systèmes spécifiques (intro, patterns de tir, mouvement custom)
 //! 4. Les systèmes génériques (dégâts, mort, flash, projectiles) fonctionnent automatiquement
 
-use crate::explosion::spawn_explosion;
-use crate::item::{DropEvent, DropTable};
-use crate::missile::{Missile, missile_hits_circle};
-use crate::pause::not_paused;
-use crate::state::GameState;
-use crate::score::Score;
+use crate::fx::explosion::spawn_explosion;
+use crate::item::item::{DropEvent, DropTable};
+use crate::menu::pause::not_paused;
+use crate::game_manager::state::GameState;
+use crate::ui::score::Score;
+use crate::weapon::projectile::{projectile_hits_circle, Projectile, Team};
 use bevy::prelude::*;
 pub struct EnemyPlugin;
 
@@ -30,9 +30,7 @@ impl Plugin for EnemyPlugin {
                 enemy_hit_flash,
                 enemy_phase_logic,
                 enemy_dying,
-                move_enemy_projectiles,
-                cleanup_enemy_projectiles_offscreen,
-                missile_enemy_collision,
+                projectile_enemy_collision,
                 patrol_movement,
             )
                 .run_if(in_state(GameState::Playing))
@@ -143,13 +141,6 @@ pub struct EnemyHitFlash(pub Timer);
 /// Position de base pendant l'animation de mort (avant le shake).
 #[derive(Component)]
 pub struct EnemyDeathAnchor(pub Vec3);
-
-/// Projectile tiré par un ennemi.
-#[derive(Component)]
-pub struct EnemyProjectile {
-    pub velocity: Vec3,
-    pub radius: f32,
-}
 
 /// Cadence des patterns de tir.
 #[derive(Component)]
@@ -334,16 +325,16 @@ fn enemy_dying(
     }
 }
 
-// ─── Collision missiles joueur → ennemi ─────────────────────────────
+// ─── Collision projectiles joueur → ennemi ──────────────────────────
 
-fn missile_enemy_collision(
+fn projectile_enemy_collision(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut score: ResMut<Score>,
-    missile_q: Query<(Entity, &Transform, &Missile)>,
+    projectile_q: Query<(Entity, &Transform, &Projectile)>,
     mut enemy_q: Query<(Entity, &Transform, &mut Enemy)>,
 ) {
-    let mut despawned_missiles = std::collections::HashSet::new();
+    let mut despawned_projectiles = std::collections::HashSet::new();
 
     for (enemy_entity, enemy_transform, mut enemy) in enemy_q.iter_mut() {
         // Ignorer les ennemis morts
@@ -353,27 +344,31 @@ fn missile_enemy_collision(
 
         let is_vulnerable = matches!(enemy.state, EnemyState::Active(_));
 
-        for (missile_entity, missile_transform, missile) in missile_q.iter() {
-            if despawned_missiles.contains(&missile_entity) {
+        for (projectile_entity, projectile_transform, projectile) in projectile_q.iter() {
+            // Seuls les projectiles du joueur blessent les ennemis
+            if projectile.team != Team::Player {
                 continue;
             }
-            let hit = missile_hits_circle(
-                missile_transform.translation.truncate(),
-                missile_transform.rotation,
-                &missile.hitbox,
+            if despawned_projectiles.contains(&projectile_entity) {
+                continue;
+            }
+            let hit = projectile_hits_circle(
+                projectile_transform.translation.truncate(),
+                projectile_transform.rotation,
+                &projectile.hitbox,
                 enemy_transform.translation.truncate(),
                 enemy.radius,
             );
             if hit {
-                // Le missile est toujours détruit au contact
-                if let Some(mut e) = commands.get_entity(missile_entity) {
+                // Le projectile est toujours détruit au contact
+                if let Some(mut e) = commands.get_entity(projectile_entity) {
                     e.despawn();
                 }
-                despawned_missiles.insert(missile_entity);
+                despawned_projectiles.insert(projectile_entity);
 
                 // Dégâts uniquement si l'ennemi est vulnérable (Active)
                 if is_vulnerable {
-                    enemy.health -= 1;
+                    enemy.health -= projectile.damage;
                     score.add(1);
 
                     if let Some(mut ent) = commands.get_entity(enemy_entity) {
@@ -389,38 +384,14 @@ fn missile_enemy_collision(
                     });
                 }
 
-                break; // Ce missile est consommé, passer au suivant
+                break; // Ce projectile est consommé, passer au suivant
             }
         }
     }
 }
 
-// ─── Déplacement des projectiles ennemis ────────────────────────────
-
-fn move_enemy_projectiles(
-    mut query: Query<(&mut Transform, &EnemyProjectile)>,
-    time: Res<Time>,
-) {
-    for (mut transform, proj) in query.iter_mut() {
-        transform.translation += proj.velocity * time.delta_seconds();
-    }
-}
-
-// ─── Nettoyage des projectiles hors écran ───────────────────────────
-
-fn cleanup_enemy_projectiles_offscreen(
-    mut commands: Commands,
-    query: Query<(Entity, &Transform), With<EnemyProjectile>>,
-) {
-    for (entity, transform) in query.iter() {
-        let p = transform.translation;
-        if p.x.abs() > 1200.0 || p.y.abs() > 900.0 {
-            if let Some(mut e) = commands.get_entity(entity) {
-                e.despawn();
-            }
-        }
-    }
-}
+// ─── (Le mouvement et le cleanup offscreen des projectiles sont gérés
+//      par `ProjectilePlugin` dans weapon/projectile.rs)
 
 // ─── Mouvement patrol sinusoïdal ────────────────────────────────────
 

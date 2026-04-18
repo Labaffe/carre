@@ -1,35 +1,35 @@
-//! Système de missiles : tir, mouvement, collision avec les astéroïdes.
+//! Tir du joueur : lit l'input, cadence le tir, spawn des `Projectile { Team::Player }`
+//! selon la `WeaponDef` équipée, et gère la collision projectile-astéroïde.
 //!
-//! Le pattern de tir et la hitbox sont définis par la `WeaponDef` équipée sur le joueur.
-//! Supporte les hitbox circulaires (Standard Missile) et rectangulaires orientées (Red Projectile).
-//! Un HashSet empêche les doubles despawn quand plusieurs missiles touchent la même cible en une frame.
+//! Le mouvement et le despawn offscreen sont pris en charge par `ProjectilePlugin`.
+//! La collision projectile-ennemi est gérée dans `enemy::enemy::projectile_enemy_collision`.
 
 use crate::enemy::asteroid::{Asteroid, HitFlash};
 use crate::fx::explosion::{spawn_explosion, spawn_projectile_death};
 use crate::game_manager::difficulty::Difficulty;
+use crate::game_manager::state::GameState;
 use crate::item::item::{DropEvent, DropTable};
 use crate::player::player::Player;
 use crate::ui::crosshair::Crosshair;
 use crate::ui::score::Score;
-use crate::weapon::weapon::{HitboxShape, Weapon};
+use crate::weapon::projectile::{
+    projectile_hits_circle, spawn_projectile, Projectile, ProjectileSpawn, ProjectileSprite, Team,
+};
+use crate::weapon::weapon::Weapon;
 use bevy::prelude::*;
 
-pub struct MissilePlugin;
+pub struct PlayerFirePlugin;
 
-impl Plugin for MissilePlugin {
+impl Plugin for PlayerFirePlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(FireRateTimer(Timer::from_seconds(
             0.2,
             TimerMode::Repeating,
         )))
-        .add_systems(
-            OnEnter(crate::game_manager::state::GameState::Playing),
-            reset_fire_rate,
-        )
+        .add_systems(OnEnter(GameState::Playing), reset_fire_rate)
         .add_systems(
             Update,
-            (shoot, move_missiles, missile_asteroid_collision)
-                .run_if(in_state(crate::game_manager::state::GameState::Playing)),
+            (shoot, projectile_asteroid_collision).run_if(in_state(GameState::Playing)),
         );
     }
 }
@@ -39,68 +39,6 @@ struct FireRateTimer(Timer);
 
 fn reset_fire_rate(mut timer: ResMut<FireRateTimer>) {
     timer.0.reset();
-}
-
-// ─── Composant Missile ───────────────────────────────────────────────
-
-#[derive(Component)]
-pub struct Missile {
-    velocity: Vec3,
-    pub hitbox: HitboxShape,
-    /// Dossier optionnel de frames de mort du projectile.
-    pub death_folder: Option<&'static str>,
-}
-
-// ─── Collision OBB vs Cercle ─────────────────────────────────────────
-
-/// Test de collision rectangle orienté (OBB) vs cercle.
-/// Projette le centre du cercle dans le repère local du rectangle,
-/// puis trouve le point le plus proche sur le rectangle.
-fn obb_circle_collision(
-    rect_pos: Vec2,
-    rect_angle: f32,
-    half_length: f32,
-    half_width: f32,
-    circle_pos: Vec2,
-    circle_radius: f32,
-) -> bool {
-    let delta = circle_pos - rect_pos;
-    let cos = rect_angle.cos();
-    let sin = rect_angle.sin();
-    let local_x = delta.dot(Vec2::new(cos, sin));
-    let local_y = delta.dot(Vec2::new(-sin, cos));
-
-    let cx = local_x.clamp(-half_width, half_width);
-    let cy = local_y.clamp(-half_length, half_length);
-
-    (local_x - cx).powi(2) + (local_y - cy).powi(2) <= circle_radius * circle_radius
-}
-
-/// Teste la collision entre un missile (hitbox variable) et un cercle (astéroïde).
-pub(crate) fn missile_hits_circle(
-    missile_pos: Vec2,
-    missile_rot: Quat,
-    hitbox: &HitboxShape,
-    circle_pos: Vec2,
-    circle_radius: f32,
-) -> bool {
-    match hitbox {
-        HitboxShape::Circle(r) => missile_pos.distance(circle_pos) < *r + circle_radius,
-        HitboxShape::Rect {
-            half_length,
-            half_width,
-        } => {
-            let angle = missile_rot.to_euler(EulerRot::ZYX).0;
-            obb_circle_collision(
-                missile_pos,
-                angle,
-                *half_length,
-                *half_width,
-                circle_pos,
-                circle_radius,
-            )
-        }
-    }
 }
 
 // ─── Tir ─────────────────────────────────────────────────────────────
@@ -155,24 +93,24 @@ fn shoot(
     // Spawn un projectile par angle dans le pattern
     for shot in def.pattern.iter() {
         let dir = rotate_direction(base_dir, shot.0);
-        let angle = dir.y.atan2(dir.x) - std::f32::consts::FRAC_PI_2;
 
-        commands.spawn((
-            SpriteBundle {
-                texture: asset_server.load(def.texture_path),
-                transform: Transform {
-                    translation: origin,
-                    rotation: Quat::from_rotation_z(angle),
-                    ..default()
-                },
-                ..default()
-            },
-            Missile {
-                velocity: dir.extend(0.0) * def.speed,
+        spawn_projectile(
+            &mut commands,
+            &asset_server,
+            ProjectileSpawn {
+                position: origin,
+                direction: dir,
+                speed: def.speed,
                 hitbox: def.hitbox.clone(),
+                team: Team::Player,
+                damage: 1,
+                sprite: ProjectileSprite::Texture {
+                    path: def.texture_path,
+                    size: None,
+                },
                 death_folder: def.death_folder,
             },
-        ));
+        );
     }
 
     commands.spawn(AudioBundle {
@@ -181,34 +119,39 @@ fn shoot(
     });
 }
 
-// ─── Collision ───────────────────────────────────────────────────────
+// ─── Collision projectile joueur → astéroïde ────────────────────────
 
-fn missile_asteroid_collision(
+fn projectile_asteroid_collision(
     mut commands: Commands,
-    missile_q: Query<(Entity, &Transform, &Missile)>,
+    projectile_q: Query<(Entity, &Transform, &Projectile)>,
     mut asteroid_q: Query<(Entity, &Transform, &mut Asteroid, Option<&DropTable>)>,
     asset_server: Res<AssetServer>,
     mut score: ResMut<Score>,
     difficulty: Res<Difficulty>,
     mut drop_events: EventWriter<DropEvent>,
 ) {
-    let mut despawned_missiles = std::collections::HashSet::new();
+    let mut despawned_projectiles = std::collections::HashSet::new();
     let mut despawned_asteroids = std::collections::HashSet::new();
 
-    for (missile_entity, missile_transform, missile) in missile_q.iter() {
-        if despawned_missiles.contains(&missile_entity) {
+    for (projectile_entity, projectile_transform, projectile) in projectile_q.iter() {
+        // Seuls les projectiles du joueur touchent les astéroïdes
+        if projectile.team != Team::Player {
             continue;
         }
-        for (asteroid_entity, asteroid_transform, mut asteroid, drop_table) in asteroid_q.iter_mut()
+        if despawned_projectiles.contains(&projectile_entity) {
+            continue;
+        }
+        for (asteroid_entity, asteroid_transform, mut asteroid, drop_table) in
+            asteroid_q.iter_mut()
         {
             if despawned_asteroids.contains(&asteroid_entity) {
                 continue;
             }
 
-            let hit = missile_hits_circle(
-                missile_transform.translation.truncate(),
-                missile_transform.rotation,
-                &missile.hitbox,
+            let hit = projectile_hits_circle(
+                projectile_transform.translation.truncate(),
+                projectile_transform.rotation,
+                &projectile.hitbox,
                 asteroid_transform.translation.truncate(),
                 asteroid.radius,
             );
@@ -217,14 +160,14 @@ fn missile_asteroid_collision(
                 spawn_projectile_death(
                     &mut commands,
                     &asset_server,
-                    missile_transform.translation,
-                    missile.death_folder,
+                    projectile_transform.translation,
+                    projectile.death_folder,
                 );
-                if let Some(mut e) = commands.get_entity(missile_entity) {
+                if let Some(mut e) = commands.get_entity(projectile_entity) {
                     e.despawn();
                 }
-                despawned_missiles.insert(missile_entity);
-                asteroid.health -= 1;
+                despawned_projectiles.insert(projectile_entity);
+                asteroid.health -= projectile.damage;
                 score.add(1);
 
                 if asteroid.health <= 0 {
@@ -263,26 +206,6 @@ fn missile_asteroid_collision(
                     });
                 }
                 break;
-            }
-        }
-    }
-}
-
-// ─── Mouvement ───────────────────────────────────────────────────────
-
-/// Déplace les missiles et les supprime quand ils sortent de l'écran.
-fn move_missiles(
-    mut commands: Commands,
-    mut query: Query<(Entity, &mut Transform, &Missile)>,
-    time: Res<Time>,
-) {
-    for (entity, mut transform, missile) in query.iter_mut() {
-        transform.translation += missile.velocity * time.delta_seconds();
-
-        let p = transform.translation;
-        if p.x.abs() > 1200.0 || p.y.abs() > 900.0 {
-            if let Some(mut e) = commands.get_entity(entity) {
-                e.despawn();
             }
         }
     }
