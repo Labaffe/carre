@@ -13,7 +13,7 @@ use crate::enemy::behaviors::{
 use crate::enemy::enemies::GREEN_UFO;
 use crate::enemy::enemy::{Enemy, EnemyHitFlash};
 use crate::enemy::system::{
-    b, seq, EnemyDefinition, Noop, Phase, PhaseId, Transition, TransitionTrigger,
+    b, par, EnemyDefinition, Noop, Phase, PhaseId, Transition, TransitionTrigger,
 };
 use crate::fx::explosion::{load_frames_from_folder, spawn_custom_anim};
 use crate::game_manager::difficulty::Difficulty;
@@ -62,7 +62,7 @@ pub fn green_ufo_definition() -> EnemyDefinition {
         phases: vec![
             Phase::new(
                 PhaseId("rush"),
-                seq(vec![
+                par(vec![
                     b(RushMove { speed: RUSH_SPEED }),
                     b(DespawnIfOffscreen { margin: 100.0 }),
                 ]),
@@ -79,7 +79,7 @@ pub fn green_ufo_definition() -> EnemyDefinition {
                     },
                 ],
             )
-            .with_on_enter(seq(vec![
+            .with_on_enter(par(vec![
                 b(SetRushDirection),
                 b(PlaySound {
                     path: "audio/sfx/green_ufo.ogg",

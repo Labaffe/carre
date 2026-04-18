@@ -33,7 +33,7 @@ use crate::enemy::behaviors::{DespawnSelf, PlaySound};
 use crate::enemy::enemies::BOSS;
 use crate::enemy::enemy::Enemy;
 use crate::enemy::system::{
-    b, seq, Behavior, EnemyDefinition, Noop, Phase, PhaseId, Transition, TransitionTrigger,
+    b, par, Behavior, EnemyDefinition, Noop, Phase, PhaseId, Transition, TransitionTrigger,
 };
 use crate::game_manager::difficulty::{Difficulty, SpawnPosition};
 use crate::game_manager::state::GameState;
@@ -156,7 +156,7 @@ pub fn boss_definition() -> EnemyDefinition {
                     priority: 0,
                 }],
             )
-            .with_on_enter(seq(vec![
+            .with_on_enter(par(vec![
                 b(SpawnUfoWave {
                     count: TRANSITION_UFO_COUNT_1,
                 }),
@@ -198,7 +198,7 @@ pub fn boss_definition() -> EnemyDefinition {
                     priority: 0,
                 }],
             )
-            .with_on_enter(seq(vec![
+            .with_on_enter(par(vec![
                 b(SpawnUfoWave {
                     count: TRANSITION_UFO_COUNT_2,
                 }),
