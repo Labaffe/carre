@@ -8,6 +8,12 @@ Je propose :
 
 Oui tout à fait. Le joueur gagne des ShipLevel en parcourant des GameLevel dans l'ordre qu'il souhaite.
 
+### TODO refacto
+- Crossair migré en UI
+- Sequences des behavior avec durée
+- Behavior appelle le World (c'est mal)
+- Créer un système correcte pour les menus (pause, mainmenu, gameover) pour que les entites, les sons et les commandes du joueur soient gérées au meme endroit)
+
 ### TODO
 [X] Améliorer la visibilité du viseur
 [x] (ship)Level up par palier
