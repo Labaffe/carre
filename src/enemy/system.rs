@@ -39,34 +39,56 @@ impl BehaviorBox {
 // ============================================================================
 
 /// Exécute les behaviors l'un après l'autre chaque frame.
-pub struct Sequence(pub Vec<BehaviorBox>);
+pub struct Parallel(pub Vec<BehaviorBox>);
 
-impl Behavior for Sequence {
+impl Behavior for Parallel {
     fn execute(&self, entity: Entity, world: &mut World) {
         for behavior in &self.0 {
             behavior.0.execute(entity, world);
         }
     }
     fn name(&self) -> &'static str {
+        "Parallel"
+    }
+}
+pub struct Sequence {
+    pub timed_behaviors:Vec<(BehaviorBox,f32)>,
+    pub current_index:i32
+}
+
+impl Behavior for Sequence {
+    fn execute(&self, entity: Entity, world: &mut World) {
+        for (behavior,duration) in &self.timed_behaviors {
+            //todo : get time and execute relevant behavior depending on their duration
+        }
+    }
+    fn name(&self) -> &'static str {
         "Sequence"
     }
 }
-
 /// Choisit un behavior au hasard à chaque frame.
-pub struct RandomChoice(pub Vec<BehaviorBox>);
-
+pub struct RandomChoice{
+    pub behaviors: Vec<BehaviorBox>,
+    pub choice: usize,
+}
+impl RandomChoice {
+    fn sample(&mut self) {
+        self.choice = fastrand::usize(0..self.behaviors.len());
+    }
+}
 impl Behavior for RandomChoice {
     fn execute(&self, entity: Entity, world: &mut World) {
-        if self.0.is_empty() {
+        if self.behaviors.is_empty() {
             return;
         }
-        let idx = fastrand::usize(0..self.0.len());
-        self.0[idx].0.execute(entity, world);
+        self.behaviors[self.choice].0.execute(entity, world);
     }
+    
     fn name(&self) -> &'static str {
         "RandomChoice"
     }
 }
+
 
 /// Choix pondéré.
 pub struct WeightedChoice(pub Vec<(f32, BehaviorBox)>);
@@ -299,12 +321,14 @@ pub fn b<B: Behavior>(behavior: B) -> BehaviorBox {
     BehaviorBox::new(behavior)
 }
 
-pub fn seq(behaviors: Vec<BehaviorBox>) -> BehaviorBox {
-    BehaviorBox::new(Sequence(behaviors))
+pub fn par(behaviors: Vec<BehaviorBox>) -> BehaviorBox {
+    BehaviorBox::new(Parallel(behaviors))
 }
 
 pub fn random(behaviors: Vec<BehaviorBox>) -> BehaviorBox {
-    BehaviorBox::new(RandomChoice(behaviors))
+    let mut r_choice =RandomChoice {behaviors,choice:0};
+    r_choice.sample();
+    BehaviorBox::new(r_choice)
 }
 
 pub struct Noop;
