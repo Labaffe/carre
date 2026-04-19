@@ -74,7 +74,7 @@ fn animate_hand(
             TweenSequence::<StyleLeft>::new(
                 Tween::new(from_x, from_x,  (i as f32) * 0.1, Ease::OutQuad)
             ).then(
-                Tween::new(target_x, target_x-50.0, 3.5, Ease::OutQuad)
+                Tween::new(target_x, target_x-200.0, 5.0, Ease::Linear)
             ).then(
                 Tween::new(from_x, target_x, 0.5, Ease::OutQuad)
             )
