@@ -55,7 +55,7 @@ use physic::collision::CollisionPlugin;
 use physic::health::HealthPlugin;
 
 use debug::debug::DebugPlugin;
-use deckbuilding::card_hand::CardHandPlugin;
+use deckbuilding::{CardHandPlugin,CardPlayedPlugin};
 use tweening::plugin::UiTweenPlugin;
 
 use movement::MovementPlugin;
@@ -117,6 +117,7 @@ fn main() {
             GameOverPlugin,
             PausePlugin,
             CardHandPlugin,
+            CardPlayedPlugin,
             CountdownPlugin,
             ScorePlugin,
             UiTweenPlugin,
