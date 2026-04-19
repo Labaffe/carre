@@ -1,29 +1,35 @@
-use crate::deckbuilding::cards::Card;
+use crate::deckbuilding::cards::{Card,CardType};
 use bevy::prelude::*;
 
 #[derive(Component)]
 pub struct CardUI {
     pub index:i32,
     pub selectable:bool,
-    pub played:bool
+    pub played:bool,
+    pub card:Card
 }
 #[derive(Component)]
-struct CardName;
+pub struct HandCard {}
 #[derive(Component)]
-struct CardRequirement;
+pub struct DeckCard {}
 #[derive(Component)]
-struct CardType;
+pub struct PlayedCard {}
 #[derive(Component)]
-struct Description;
+pub struct DiscardCard {}
 
 
-pub fn spawn_card_ui<T: Card>(
+pub fn spawn_card_ui(
     mut commands: Commands,
     asset_server: AssetServer,
-    card: T,
+    card: Card,
     index: i32,
 ) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
+    let color = match card.card_type {
+        CardType::Primary => {Color::rgb(0.4, 0.1, 0.1)},
+        CardType::Secondary => {Color::rgb(0.1, 0.4, 0.1)},
+        CardType::Passive => {Color::rgb(0.1, 0.1, 0.4)}
+    };
     commands
         .spawn((
             NodeBundle {
@@ -40,17 +46,18 @@ pub fn spawn_card_ui<T: Card>(
                     ..default()
                 },
                 z_index: ZIndex::Global(11),
-                background_color: Color::rgb(0.1, 0.1, 0.1).into(),
+                background_color: color.into(),
                 //transform: Transform::from_translation(Vec3::new(1000.0, 300.0, 0.0)),
                 ..default()
             },
-            CardUI {index,selectable:false,played:false},
+            CardUI{index,selectable:false,played:false,card:card.clone()},
             Interaction::default(), 
+            HandCard {}
         ))
         .with_children(|parent| {
             // Title (top)
             parent.spawn(TextBundle::from_section(
-                card.name(),
+                card.name,
                 TextStyle {
                     font: font.clone(),
                     font_size: 24.0,
@@ -60,7 +67,7 @@ pub fn spawn_card_ui<T: Card>(
 
             // Spacer / description
             parent.spawn(TextBundle::from_section(
-                card.description(),
+                card.description,
                 TextStyle {
                     font: font.clone(),
                     font_size: 16.0,
@@ -80,7 +87,7 @@ pub fn spawn_card_ui<T: Card>(
             })
             .with_children(|row| {
                 row.spawn(TextBundle::from_section(
-                    card.card_type().to_string(),
+                    card.card_type.to_string(),
                     TextStyle {
                         font: font.clone(),
                         font_size: 16.0,
@@ -89,7 +96,7 @@ pub fn spawn_card_ui<T: Card>(
                 ));
 
                 row.spawn(TextBundle::from_section(
-                    card.requirement().to_string(),
+                    card.requirement.to_string(),
                     TextStyle {
                         font,
                         font_size: 16.0,

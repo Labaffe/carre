@@ -2,31 +2,47 @@ use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CardType{
-    MainWeapon,
+    Primary,
+    Secondary,
     Passive
 }
 impl CardType {
     pub fn to_string(&self)->String {
         match self {
-            CardType::MainWeapon => "MainWeapon".to_string(),
+            CardType::Primary => "Primary".to_string(),
+            CardType::Secondary => "Secondary".to_string(),
             CardType::Passive => "Passive".to_string()
         }
     }
 }
-pub trait Card {
-    fn card_type(&self)->CardType;
-    fn name(&self)->String;
-    fn requirement(&self)->i32;
-    fn description(&self)->String;
-    fn fmt(&self,f: &mut fmt::Formatter<'_>)->fmt::Result{
-        write!(f,"{} - ({}) \n  {} : {}",self.name(),self.requirement(),self.card_type().to_string() ,self.description())
-    }
-}
 
-pub struct DummyCard;
-impl Card for DummyCard {
-    fn card_type(&self)->CardType { CardType::Passive }
-    fn name(&self)->String { "Dummy card".to_string() }
-    fn requirement(&self)->i32 { 1 }
-    fn description(&self)->String { "Ceci est une carte inutile. ".to_string() }
+#[derive(Clone)]
+pub struct Card {
+    pub card_type:CardType,
+    pub name:String,
+    pub requirement:i32,
+    pub description:String,
+}
+impl Card {
+    pub fn new()->Card {
+        Card {
+            card_type: {
+                let i = fastrand::usize(..3);
+                if i == 0 { 
+                    CardType::Passive 
+                }
+                else {
+                    if i == 1 {
+                        CardType::Primary 
+                    }
+                    else {
+                        CardType::Secondary 
+                    }
+                }
+            },
+            name: { "Dummy card".to_string() },
+            requirement: { 1 },
+            description: { "Ceci est une carte inutile. ".to_string() }
+        }
+    }
 }

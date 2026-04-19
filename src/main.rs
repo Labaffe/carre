@@ -51,7 +51,7 @@ use environment::background::{Background, BackgroundPlugin, Planet};
 use physic::collision::CollisionPlugin;
 
 use debug::debug::DebugPlugin;
-use deckbuilding::card_hand::CardHandPlugin;
+use deckbuilding::{CardHandPlugin,CardPlayedPlugin};
 use tweening::plugin::UiTweenPlugin;
 fn main() {
     App::new()
@@ -103,6 +103,7 @@ fn main() {
             GameOverPlugin,
             PausePlugin,
             CardHandPlugin,
+            CardPlayedPlugin,
             CountdownPlugin,
             ScorePlugin,
             UiTweenPlugin,
