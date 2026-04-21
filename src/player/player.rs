@@ -9,14 +9,16 @@ use crate::game_manager::difficulty::{BoomEvent, Difficulty};
 use crate::game_manager::state::GameState;
 use crate::level::level::{LevelConfig, LevelSetupSet};
 use crate::menu::pause::not_paused;
+use crate::physic::health::Health;
 use crate::ui::crosshair::Crosshair;
 use crate::weapon::weapon::Weapon;
 use bevy::prelude::*;
 
 // ─── Système de vies ──────────────────────────────────────────────
 
-/// Nombre de vies au départ.
-const PLAYER_MAX_LIVES: i32 = 3;
+/// Nombre de vies au départ. Le joueur a un composant `Health` avec ce nombre
+/// de PV maximum (un hit = 1 PV).
+pub const PLAYER_MAX_LIVES: i32 = 3;
 /// Durée d'invincibilité après un hit (secondes).
 pub const INVINCIBLE_DURATION: f32 = 2.0;
 /// Fréquence de clignotement pendant l'invincibilité (Hz).
@@ -25,20 +27,6 @@ const INVINCIBLE_BLINK_RATE: f32 = 3.0;
 const LAST_LIFE_BLINK_RATE: f32 = 3.0;
 /// Bonus de vitesse quand il reste 1 vie (multiplicateur).
 const LAST_LIFE_SPEED_MULT: f32 = 1.25;
-
-/// Nombre de vies restantes.
-#[derive(Resource)]
-pub struct PlayerLives {
-    pub lives: i32,
-}
-
-impl Default for PlayerLives {
-    fn default() -> Self {
-        Self {
-            lives: PLAYER_MAX_LIVES,
-        }
-    }
-}
 
 /// Invincibilité temporaire après un hit.
 #[derive(Component)]
@@ -56,8 +44,7 @@ pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<PlayerLives>()
-            .add_systems(Startup, preload_ship_textures)
+        app.add_systems(Startup, preload_ship_textures)
             .add_systems(
                 OnEnter(GameState::Playing),
                 (setup_player, setup_lives_ui, update_ship_phase1_texture).after(LevelSetupSet),
@@ -167,6 +154,7 @@ pub fn spawn_player(
             ..default()
         },
         Player,
+        Health::new(PLAYER_MAX_LIVES),
         Weapon::default(),
         ShipPhase {
             phase: PlayerPhase::Phase1,
@@ -376,25 +364,24 @@ fn update_invincibility(
 // ─── Dernière vie : clignotement continu + boost vitesse ──────────
 
 fn last_life_blink(
-    lives: Res<PlayerLives>,
     difficulty: Res<Difficulty>,
-    mut query: Query<(&mut Sprite, &mut ShipPhase, Option<&Invincible>), With<Player>>,
+    mut query: Query<(&Health, &mut Sprite, &mut ShipPhase, Option<&Invincible>), With<Player>>,
 ) {
-    for (mut sprite, mut ship, invincible) in query.iter_mut() {
+    for (health, mut sprite, mut ship, invincible) in query.iter_mut() {
         // Boost de vitesse à 1 vie
         let base_speed = match ship.phase {
             PlayerPhase::Phase1 => PHASE_1_SPEED,
             PlayerPhase::Phase2 => PHASE_2_SPEED,
             PlayerPhase::Phase3 => PHASE_3_SPEED,
         };
-        if lives.lives == 1 {
+        if health.current == 1 {
             ship.speed = base_speed * LAST_LIFE_SPEED_MULT;
         } else {
             ship.speed = base_speed;
         }
 
         // Clignotement dernière vie (style boss touché) — skip si déjà en invincibilité
-        if lives.lives == 1 && invincible.is_none() {
+        if health.current == 1 && invincible.is_none() {
             let t = (difficulty.elapsed * LAST_LIFE_BLINK_RATE * std::f32::consts::TAU).sin();
             let v = 1.0 + (t * 0.5 + 0.5) * 2.0; // pulse entre 1.0 et 3.0
             sprite.color = Color::rgba(v, v, v, 1.0);
@@ -407,11 +394,8 @@ fn last_life_blink(
 fn setup_lives_ui(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut lives: ResMut<PlayerLives>,
     config: Res<LevelConfig>,
 ) {
-    *lives = PlayerLives::default();
-
     let texture = asset_server.load(config.player_ship);
 
     commands
@@ -446,9 +430,13 @@ fn setup_lives_ui(
         });
 }
 
-fn update_lives_ui(lives: Res<PlayerLives>, mut icons: Query<(&LifeIcon, &mut Visibility)>) {
+fn update_lives_ui(
+    player_q: Query<&Health, With<Player>>,
+    mut icons: Query<(&LifeIcon, &mut Visibility)>,
+) {
+    let current_lives = player_q.get_single().map(|h| h.current).unwrap_or(0);
     for (icon, mut vis) in icons.iter_mut() {
-        if icon.0 < lives.lives {
+        if icon.0 < current_lives {
             *vis = Visibility::Visible;
         } else {
             *vis = Visibility::Hidden;

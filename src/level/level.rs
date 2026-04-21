@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use crate::enemy::mothership::{MothershipConfig, MothershipSpawnQueue, TurretConfig, TurretStyle};
+// Mothership temporairement retiré — sera réécrit proprement plus tard.
 use crate::game_manager::difficulty::{BoomEvent, Difficulty, SpawnPosition};
 use crate::game_manager::state::GameState;
 use crate::level::levels::ScrollDirection;
@@ -133,8 +133,6 @@ pub enum Action {
     StartSpawning(&'static str, usize, f32, SpawnPosition),
     /// Désactive le spawn continu d'un type d'ennemi.
     StopSpawning(&'static str),
-    /// Spawn un Mothership avec une config par tourelle.
-    SpawnMothership(MothershipConfig),
 
     // ─── Environnement ──────────────────────────────────────────
     /// Démarre la décélération du fond (durée, vitesse finale).
@@ -371,18 +369,6 @@ impl Action {
                 format!("Start({}×{},{}s{})", count, name, interval, pos_str)
             }
             Action::StopSpawning(name) => format!("Stop({})", name),
-            Action::SpawnMothership(config) => {
-                let pos_str = match config.edge {
-                    SpawnPosition::Top => "↑",
-                    SpawnPosition::Bottom => "↓",
-                    SpawnPosition::Left => "←",
-                    SpawnPosition::Right => "→",
-                    SpawnPosition::At(x, y) => {
-                        return format!("Mothership(@{:.0},{:.0})", x, y);
-                    }
-                };
-                format!("Mothership({})", pos_str)
-            }
             Action::StartBgDeceleration {
                 duration,
                 final_speed,
@@ -470,7 +456,11 @@ pub fn build_level_1() -> Vec<LevelStep> {
             }),
         LevelStep::at(28.0, "planet_appear").with(Action::ShowPlanet),
         LevelStep::at(35.8, "boss_spawn")
-            .with(Action::SpawnEnemy("boss", 1, SpawnPosition::At(0.0, 50.0)))
+            .with(Action::SpawnEnemy(
+                "boss_v2",
+                1,
+                SpawnPosition::At(0.0, 50.0),
+            ))
             .with(Action::StopMainMusic)
             .with(Action::Log("Boss 1 spawné !")),
         // ─── Le boss gère sa propre séquence interne ──────────
@@ -485,62 +475,12 @@ pub fn build_level_1() -> Vec<LevelStep> {
 // ═══════════════════════════════════════════════════════════════════════
 
 pub fn build_level_2() -> Vec<LevelStep> {
-    // Style des tourelles aim_and_shoot : sprite gatling_2, projectile vert fluo pillule, laser
-    let sniper_style = TurretStyle {
-        sprite: Some("images/gatling_2/gatling_2.png"),
-        projectile_color: Color::rgba(0.2, 1.0, 0.2, 1.0), // vert fluo
-        projectile_speed: 700.0,                           // plus rapide
-        projectile_radius: 6.0,
-        projectile_size: Vec2::new(8.0, 22.0), // forme pillule (allongée)
-        shoot_sound: "audio/reserve_de_sons/sound_7.ogg",
-        shoot_sound_volume: 0.5,
-        laser: true,
-        laser_color: Color::rgba(0.2, 1.0, 0.2, 0.15), // vert fluo semi-transparent
-    };
-
-    // Positions normalisées sur le sprite : x = gauche(-0.5)..droite(0.5), y = haut(0.5)..bas(-0.5)
-    let turrets = vec![
-        TurretConfig::styled(
-            "aim_and_shoot",
-            2.0,
-            Vec2::new(-0.47, -0.1),
-            sniper_style.clone(),
-        ), // sniper gauche
-        TurretConfig::single("full_auto", 15.0, Vec2::new(-0.3, -0.1)),
-        TurretConfig::single("full_auto", 15.0, Vec2::new(-0.15, -0.2)),
-        TurretConfig::single("full_auto", 15.0, Vec2::new(0.0, -0.3)), // centre
-        TurretConfig::single("full_auto", 15.0, Vec2::new(0.15, -0.2)),
-        TurretConfig::single("full_auto", 15.0, Vec2::new(0.3, -0.1)),
-        TurretConfig::styled("aim_and_shoot", 2.0, Vec2::new(0.47, -0.1), sniper_style), // sniper droite
-    ];
-
-    // Hearts : entre tourelles, alignés en Y, montés de ~400px
-    let hearts = vec![
-        Vec2::new(-0.385, 0.31), // entre tourelle 1 et 2 (gauche)
-        Vec2::new(-0.225, 0.31), // entre tourelle 2 et 3 (gauche)
-        Vec2::new(0.225, 0.31),  // entre tourelle 5 et 6 (droite, symétrique)
-        Vec2::new(0.385, 0.31),  // entre tourelle 6 et 7 (droite, symétrique)
-    ];
-
-    // Le 2e mothership (bottom) spawne à la mort du 1er, pas de suivant
-    let second = MothershipConfig {
-        edge: SpawnPosition::Bottom,
-        turrets: turrets.clone(),
-        hearts: hearts.clone(),
-        on_death: None,
-    };
-
+    // Le niveau 2 est désactivé le temps de la réécriture du Mothership.
+    // Stub vide — il termine immédiatement.
     vec![
-        LevelStep::at(0.0, "game_start").with(Action::Log("Niveau 2 démarré")),
-        LevelStep::at(0.6, "alarm").with(Action::PlaySound("audio/sfx/mothership_alarm.ogg")),
-        LevelStep::at(5.0, "spawn_top")
-            .with(Action::StartMusic("audio/music/mothership.ogg"))
-            .with(Action::SpawnMothership(MothershipConfig {
-                edge: SpawnPosition::Top,
-                turrets: turrets.clone(),
-                hearts,
-                on_death: Some(Box::new(second)),
-            })),
+        LevelStep::at(0.0, "game_start")
+            .with(Action::Log("Niveau 2 désactivé (en cours de réécriture)")),
+        LevelStep::at(1.0, "level_complete").with(Action::MarkLevelComplete),
     ]
 }
 
@@ -592,7 +532,6 @@ fn run_level(
     mut countdown_events: EventWriter<crate::ui::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
     level_phase: Option<Res<crate::game_manager::game::LevelPhase>>,
-    mut mothership_queue: ResMut<MothershipSpawnQueue>,
 ) {
     // Ne faire tourner les LevelSteps que pendant la phase Running
     let Some(ref phase) = level_phase else { return };
@@ -640,7 +579,6 @@ fn run_level(
                 &mut countdown_events,
                 &mut difficulty,
                 &music_q,
-                Some(&mut mothership_queue),
             );
         }
 
@@ -660,7 +598,6 @@ pub(crate) fn execute_action(
     countdown_events: &mut EventWriter<crate::ui::countdown::CountdownEvent>,
     difficulty: &mut ResMut<Difficulty>,
     music_q: &Query<Entity, With<crate::MusicMain>>,
-    mothership_queue: Option<&mut ResMut<MothershipSpawnQueue>>,
 ) {
     match action {
         Action::SetDifficulty(factor) => {
@@ -708,11 +645,6 @@ pub(crate) fn execute_action(
         Action::StopSpawning(name) => {
             difficulty.active_spawners.remove(name);
         }
-        Action::SpawnMothership(config) => {
-            if let Some(queue) = mothership_queue {
-                queue.0.push(config.clone());
-            }
-        }
         Action::StartBgDeceleration {
             duration,
             final_speed,
@@ -743,7 +675,6 @@ fn process_level_action_events(
     mut boom_events: EventWriter<BoomEvent>,
     mut countdown_events: EventWriter<crate::ui::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
-    mut mothership_queue: ResMut<MothershipSpawnQueue>,
 ) {
     for event in events.read() {
         for action in &event.0 {
@@ -756,7 +687,6 @@ fn process_level_action_events(
                 &mut countdown_events,
                 &mut difficulty,
                 &music_q,
-                Some(&mut mothership_queue),
             );
         }
     }

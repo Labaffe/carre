@@ -1,20 +1,30 @@
+//! Framework data-driven pour les ennemis : `Phase`, `Transition`, `Behavior`.
+//!
+//! **Attention** : le composant `Enemy` (dans `enemy/enemy.rs`) porte désormais
+//! le state (`definition`, `current_phase`, `phase_timer`). Ce module ne fournit
+//! que les TYPES du framework et les SYSTÈMES qui pilotent les transitions.
+
 use bevy::prelude::*;
-use rand::seq::SliceRandom;
 use std::time::Duration;
-use rand::distributions::WeightedIndex;
-use rand::prelude::*;
+
+use crate::physic::health::Health;
+
+// Ré-export pour que les modules qui importent `crate::enemy::system::Health`
+// continuent de compiler.
+pub use crate::physic::health::Health as HealthAlias;
+
 // ============================================================================
 // BEHAVIOR PRIMITIVES
 // ============================================================================
 
-/// A behavior is just a trait object that can execute each frame.
-/// Behaviors are stateless and reusable across enemies.
+/// Un `Behavior` est un trait object qui peut s'exécuter chaque frame.
+/// Les behaviors sont sans état — tout l'état est dans le `World` (composants).
 pub trait Behavior: Send + Sync + 'static {
     fn execute(&self, entity: Entity, world: &mut World);
     fn name(&self) -> &'static str;
 }
 
-/// Wrapper for type-erased behaviors
+/// Wrapper type-erased, clonable à coût constant (Arc).
 #[derive(Clone)]
 pub struct BehaviorBox(pub std::sync::Arc<dyn Behavior>);
 
@@ -25,94 +35,137 @@ impl BehaviorBox {
 }
 
 // ============================================================================
-// BEHAVIOR COMBINATORS (the composable part)
+// BEHAVIOR COMBINATORS
 // ============================================================================
 
-/// Execute behaviors in sequence
-pub struct Sequence(pub Vec<BehaviorBox>);
+/// Exécute les behaviors l'un après l'autre chaque frame.
+pub struct Parallel(pub Vec<BehaviorBox>);
 
-impl Behavior for Sequence {
+impl Behavior for Parallel {
     fn execute(&self, entity: Entity, world: &mut World) {
         for behavior in &self.0 {
             behavior.0.execute(entity, world);
         }
     }
-    fn name(&self) -> &'static str { "Sequence" }
+    fn name(&self) -> &'static str {
+        "Parallel"
+    }
+}
+pub struct Sequence {
+    pub timed_behaviors:Vec<(BehaviorBox,f32)>,
+    pub current_index:i32
 }
 
-/// Pick one behavior at random
-pub struct RandomChoice(pub Vec<BehaviorBox>);
-
-impl Behavior for RandomChoice {
+impl Behavior for Sequence {
     fn execute(&self, entity: Entity, world: &mut World) {
-        if let Some(behavior) = self.0.choose(&mut rand::thread_rng()) {
-            behavior.0.execute(entity, world);
+        for (behavior,duration) in &self.timed_behaviors {
+            //todo : get time and execute relevant behavior depending on their duration
         }
     }
-    fn name(&self) -> &'static str { "RandomChoice" }
+    fn name(&self) -> &'static str {
+        "Sequence"
+    }
+}
+/// Choisit un behavior au hasard à chaque frame.
+pub struct RandomChoice{
+    pub behaviors: Vec<BehaviorBox>,
+    pub choice: usize,
+}
+impl RandomChoice {
+    fn sample(&mut self) {
+        self.choice = fastrand::usize(0..self.behaviors.len());
+    }
+}
+impl Behavior for RandomChoice {
+    fn execute(&self, entity: Entity, world: &mut World) {
+        if self.behaviors.is_empty() {
+            return;
+        }
+        self.behaviors[self.choice].0.execute(entity, world);
+    }
+    
+    fn name(&self) -> &'static str {
+        "RandomChoice"
+    }
 }
 
-/// Weighted random selection
+
+/// Choix pondéré.
 pub struct WeightedChoice(pub Vec<(f32, BehaviorBox)>);
 
 impl Behavior for WeightedChoice {
     fn execute(&self, entity: Entity, world: &mut World) {
-        
-        
-        let weights: Vec<f32> = self.0.iter().map(|(w, _)| *w).collect();
-        if let Ok(dist) = WeightedIndex::new(&weights) {
-            let idx = dist.sample(&mut rand::thread_rng());
-            self.0[idx].1.0.execute(entity, world);
+        let total: f32 = self.0.iter().map(|(w, _)| w.max(0.0)).sum();
+        if total <= 0.0 {
+            return;
+        }
+        let mut pick = fastrand::f32() * total;
+        for (weight, behavior) in &self.0 {
+            pick -= weight.max(0.0);
+            if pick <= 0.0 {
+                behavior.0.execute(entity, world);
+                return;
+            }
         }
     }
-    fn name(&self) -> &'static str { "WeightedChoice" }
-}
-
-/// Conditional behavior
-pub struct Conditional<F: Fn(Entity, &World) -> bool + Send + Sync + 'static> {
-    pub condition: F,
-    pub then_do: BehaviorBox,
-    pub else_do: Option<BehaviorBox>,
-}
-
-impl<F: Fn(Entity, &World) -> bool + Send + Sync + 'static> Behavior for Conditional<F> {
-    fn execute(&self, entity: Entity, world: &mut World) {
-        if (self.condition)(entity, world) {
-            self.then_do.0.execute(entity, world);
-        } else if let Some(ref else_behavior) = self.else_do {
-            else_behavior.0.execute(entity, world);
-        }
+    fn name(&self) -> &'static str {
+        "WeightedChoice"
     }
-    fn name(&self) -> &'static str { "Conditional" }
 }
+
 // ============================================================================
 // PHASES
 // ============================================================================
 
-/// Identifies a phase by name (could also use an enum per enemy type)
+/// Identifiant de phase (chaîne statique — bon compromis debug/performance).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PhaseId(pub &'static str);
 
-/// A phase defines what behavior runs and when to transition out
+/// Une phase = un behavior per-frame + des transitions sortantes.
 #[derive(Clone)]
 pub struct Phase {
     pub id: PhaseId,
+    /// Behavior one-shot exécuté quand on entre dans cette phase.
+    pub on_enter: Option<BehaviorBox>,
+    /// Behavior exécuté à chaque frame tant que l'entité est dans cette phase.
     pub behavior: BehaviorBox,
+    /// Transitions possibles vers d'autres phases.
     pub transitions: Vec<Transition>,
+    /// Si `true`, l'ennemi est invulnérable aux projectiles pendant cette phase.
+    /// Utilisé pour `entering`, `transitioning`, `dying`, `dead`.
+    pub invulnerable: bool,
 }
 
-/// Transition triggers
+impl Phase {
+    /// Phase vulnérable, sans on_enter.
+    pub fn new(id: PhaseId, behavior: BehaviorBox, transitions: Vec<Transition>) -> Self {
+        Self {
+            id,
+            on_enter: None,
+            behavior,
+            transitions,
+            invulnerable: false,
+        }
+    }
+
+    pub fn with_on_enter(mut self, on_enter: BehaviorBox) -> Self {
+        self.on_enter = Some(on_enter);
+        self
+    }
+
+    /// Marque la phase comme invulnérable (projectiles traversent sans dégâts).
+    pub fn invulnerable(mut self) -> Self {
+        self.invulnerable = true;
+        self
+    }
+}
+
 #[derive(Clone)]
 pub enum TransitionTrigger {
-    /// After a duration
     Timer(Duration),
-    /// When health falls below threshold (0.0 - 1.0)
     HealthBelow(f32),
-    /// When health falls above threshold (for healing scenarios)
     HealthAbove(f32),
-    /// External event by name
     Event(&'static str),
-    /// Custom predicate
     Custom(std::sync::Arc<dyn Fn(Entity, &World) -> bool + Send + Sync>),
 }
 
@@ -120,15 +173,15 @@ pub enum TransitionTrigger {
 pub struct Transition {
     pub trigger: TransitionTrigger,
     pub target_phase: PhaseId,
-    /// Optional priority if multiple transitions could fire
     pub priority: i32,
 }
 
 // ============================================================================
-// ENEMY DEFINITION (the declarative part)
+// ENEMY DEFINITION
 // ============================================================================
 
-/// An enemy archetype is fully defined by its phases
+/// Définition déclarative d'un archétype d'ennemi : phase initiale + liste
+/// de phases. Attachée à chaque entité via `Enemy.definition`.
 #[derive(Clone)]
 pub struct EnemyDefinition {
     pub name: &'static str,
@@ -143,274 +196,157 @@ impl EnemyDefinition {
 }
 
 // ============================================================================
-// RUNTIME COMPONENTS
+// EVENTS
 // ============================================================================
 
-/// Attached to each enemy entity
-#[derive(Component)]
-pub struct EnemyBehavior {
-    pub definition: EnemyDefinition,
-    pub current_phase: PhaseId,
-    pub phase_timer: Timer,
-}
-
-/// Health component for health-based transitions
-#[derive(Component)]
-pub struct Health {
-    pub current: f32,
-    pub max: f32,
-}
-
-impl Health {
-    pub fn fraction(&self) -> f32 {
-        self.current / self.max
-    }
-}
-
-/// Event for external phase triggers
+/// Event déclencheur de phase, ciblé sur une entité spécifique.
 #[derive(Event)]
 pub struct PhaseEvent {
     pub entity: Entity,
     pub event_name: &'static str,
 }
 
-/// Global events that affect all enemies
+/// Event déclencheur de phase, global (toutes les entités écoutent).
 #[derive(Event)]
 pub struct GlobalPhaseEvent {
     pub event_name: &'static str,
 }
+
 // ============================================================================
 // SYSTEMS
 // ============================================================================
 
-pub fn phase_transition_system(
-    mut enemies: Query<(Entity, &mut EnemyBehavior, Option<&Health>)>,
-    time: Res<Time>,
-    mut phase_events: EventReader<PhaseEvent>,
-    mut global_events: EventReader<GlobalPhaseEvent>,
-    world: &World,
-) {
-    // Collect events
-    let targeted_events: Vec<_> = phase_events.read().collect();
-    let global_event_names: Vec<_> = global_events.read().map(|e| e.event_name).collect();
+// Import concret du composant Enemy (défini dans enemy.rs) — chemin absolu
+// pour éviter une circularité de déclarations en tête de fichier.
+use crate::enemy::enemy::Enemy;
 
-    for (entity, mut enemy, health) in enemies.iter_mut() {
-        enemy.phase_timer.tick(time.delta());
+/// Tick le phase_timer, évalue les transitions et déclenche l'`on_enter`
+/// des phases cibles.
+pub fn phase_transition_system(world: &mut World) {
+    let dt = world.resource::<Time>().delta();
 
-        let Some(current_phase) = enemy.definition.get_phase(&enemy.current_phase).cloned() 
-            else { continue };
+    let targeted: Vec<(Entity, &'static str)> = world
+        .resource_mut::<Events<PhaseEvent>>()
+        .drain()
+        .map(|e| (e.entity, e.event_name))
+        .collect();
+    let globals: Vec<&'static str> = world
+        .resource_mut::<Events<GlobalPhaseEvent>>()
+        .drain()
+        .map(|e| e.event_name)
+        .collect();
 
-        // Check transitions in priority order
-        let mut transitions = current_phase.transitions.clone();
-        transitions.sort_by_key(|t| -t.priority);
+    let mut transitions_to_apply: Vec<(Entity, PhaseId)> = Vec::new();
 
-        for transition in transitions {
-            let should_transition = match &transition.trigger {
-                TransitionTrigger::Timer(duration) => {
-                    enemy.phase_timer.elapsed() >= *duration
-                }
-                TransitionTrigger::HealthBelow(threshold) => {
-                    health.map_or(false, |h| h.fraction() < *threshold)
-                }
-                TransitionTrigger::HealthAbove(threshold) => {
-                    health.map_or(false, |h| h.fraction() > *threshold)
-                }
-                TransitionTrigger::Event(name) => {
-                    targeted_events.iter().any(|e| e.entity == entity && e.event_name == *name)
-                        || global_event_names.contains(name)
-                }
-                TransitionTrigger::Custom(predicate) => {
-                    predicate(entity, world)
-                }
+    {
+        let mut query = world.query::<(Entity, &mut Enemy, Option<&Health>)>();
+        for (entity, mut enemy, health) in query.iter_mut(world) {
+            enemy.phase_timer.tick(dt);
+
+            let Some(current_phase) = enemy.definition.get_phase(&enemy.current_phase).cloned()
+            else {
+                continue;
             };
 
-            if should_transition {
-                enemy.current_phase = transition.target_phase.clone();
-                enemy.phase_timer.reset();
-                break;
+            let mut transitions = current_phase.transitions.clone();
+            transitions.sort_by_key(|t| -t.priority);
+
+            for transition in transitions {
+                let should_transition = match &transition.trigger {
+                    TransitionTrigger::Timer(duration) => {
+                        enemy.phase_timer.elapsed() >= *duration
+                    }
+                    TransitionTrigger::HealthBelow(threshold) => {
+                        health.map_or(false, |h| h.fraction() < *threshold)
+                    }
+                    TransitionTrigger::HealthAbove(threshold) => {
+                        health.map_or(false, |h| h.fraction() > *threshold)
+                    }
+                    TransitionTrigger::Event(name) => {
+                        targeted.iter().any(|(e, n)| *e == entity && n == name)
+                            || globals.contains(name)
+                    }
+                    TransitionTrigger::Custom(_) => false, // non évalué ici
+                };
+
+                if should_transition {
+                    enemy.current_phase = transition.target_phase.clone();
+                    enemy.phase_timer.reset();
+                    transitions_to_apply.push((entity, transition.target_phase.clone()));
+                    break;
+                }
             }
+        }
+    }
+
+    // Exécuter les on_enter des phases nouvellement entrées
+    for (entity, phase_id) in transitions_to_apply {
+        let on_enter = {
+            let enemy = world.get::<Enemy>(entity);
+            enemy.and_then(|e| {
+                e.definition
+                    .get_phase(&phase_id)
+                    .and_then(|p| p.on_enter.clone())
+            })
+        };
+        if let Some(behavior) = on_enter {
+            behavior.0.execute(entity, world);
         }
     }
 }
 
+/// Exécute le behavior de la phase courante pour chaque ennemi.
 pub fn behavior_execution_system(world: &mut World) {
-    // Collect entities and their current behaviors first
     let to_execute: Vec<(Entity, BehaviorBox)> = world
-        .query::<(Entity, &EnemyBehavior)>()
+        .query::<(Entity, &Enemy)>()
         .iter(world)
         .filter_map(|(entity, enemy)| {
-            enemy.definition
+            enemy
+                .definition
                 .get_phase(&enemy.current_phase)
                 .map(|phase| (entity, phase.behavior.clone()))
         })
         .collect();
 
-    // Execute behaviors with mutable world access
     for (entity, behavior) in to_execute {
         behavior.0.execute(entity, world);
     }
 }
-// ============================================================================
-// CONCRETE BEHAVIORS (your game-specific actions)
-// ============================================================================
-
-pub struct MoveTowardPlayer { pub speed: f32 }
-pub struct CirclePlayer { pub radius: f32, pub speed: f32 }
-pub struct ShootAtPlayer { pub projectile_speed: f32 }
-pub struct SprayBullets { pub count: u32, pub spread: f32 }
-pub struct Dash { pub distance: f32 }
-pub struct Teleport;
-pub struct SpawnMinions { pub count: u32 }
-pub struct Enrage; // Could buff stats, change visuals, etc.
-
-// Implement Behavior for each...
-impl Behavior for MoveTowardPlayer {
-    fn execute(&self, entity: Entity, world: &mut World) {
-        // Your movement logic here
-    }
-    fn name(&self) -> &'static str { "MoveTowardPlayer" }
-}
-
-// ... (similar impls for others)
 
 // ============================================================================
-// ENEMY DEFINITIONS (the declarative DSL)
+// HELPERS DSL
 // ============================================================================
 
-/// Helper macros/functions for cleaner definitions
-fn seq(behaviors: Vec<BehaviorBox>) -> BehaviorBox {
-    BehaviorBox::new(Sequence(behaviors))
-}
-
-fn random(behaviors: Vec<BehaviorBox>) -> BehaviorBox {
-    BehaviorBox::new(RandomChoice(behaviors))
-}
-
-fn b<B: Behavior>(behavior: B) -> BehaviorBox {
+pub fn b<B: Behavior>(behavior: B) -> BehaviorBox {
     BehaviorBox::new(behavior)
 }
 
-pub fn skeleton_warrior() -> EnemyDefinition {
-    EnemyDefinition {
-        name: "Skeleton Warrior",
-        initial_phase: PhaseId("aggressive"),
-        phases: vec![
-            Phase {
-                id: PhaseId("aggressive"),
-                behavior: seq(vec![
-                    b(MoveTowardPlayer { speed: 100.0 }),
-                    b(ShootAtPlayer { projectile_speed: 200.0 }),
-                ]),
-                transitions: vec![
-                    Transition {
-                        trigger: TransitionTrigger::HealthBelow(0.3),
-                        target_phase: PhaseId("desperate"),
-                        priority: 10,
-                    },
-                ],
-            },
-            Phase {
-                id: PhaseId("desperate"),
-                behavior: random(vec![
-                    b(Dash { distance: 150.0 }),
-                    b(SprayBullets { count: 8, spread: 45.0 }),
-                ]),
-                transitions: vec![
-                    Transition {
-                        trigger: TransitionTrigger::HealthAbove(0.5),
-                        target_phase: PhaseId("aggressive"),
-                        priority: 0,
-                    },
-                ],
-            },
-        ],
+pub fn par(behaviors: Vec<BehaviorBox>) -> BehaviorBox {
+    BehaviorBox::new(Parallel(behaviors))
+}
+
+pub fn random(behaviors: Vec<BehaviorBox>) -> BehaviorBox {
+    let mut r_choice =RandomChoice {behaviors,choice:0};
+    r_choice.sample();
+    BehaviorBox::new(r_choice)
+}
+
+pub struct Noop;
+impl Behavior for Noop {
+    fn execute(&self, _entity: Entity, _world: &mut World) {}
+    fn name(&self) -> &'static str {
+        "Noop"
     }
 }
 
-pub fn boss_demon() -> EnemyDefinition {
-    EnemyDefinition {
-        name: "Demon Boss",
-        initial_phase: PhaseId("phase1"),
-        phases: vec![
-            Phase {
-                id: PhaseId("phase1"),
-                behavior: seq(vec![
-                    b(CirclePlayer { radius: 200.0, speed: 50.0 }),
-                    random(vec![
-                        b(ShootAtPlayer { projectile_speed: 150.0 }),
-                        b(SpawnMinions { count: 2 }),
-                    ]),
-                ]),
-                transitions: vec![
-                    Transition {
-                        trigger: TransitionTrigger::HealthBelow(0.66),
-                        target_phase: PhaseId("phase2"),
-                        priority: 10,
-                    },
-                    Transition {
-                        trigger: TransitionTrigger::Timer(Duration::from_secs(30)),
-                        target_phase: PhaseId("enraged"),
-                        priority: 5,
-                    },
-                ],
-            },
-            Phase {
-                id: PhaseId("phase2"),
-                behavior: seq(vec![
-                    b(Teleport),
-                    b(SprayBullets { count: 16, spread: 360.0 }),
-                ]),
-                transitions: vec![
-                    Transition {
-                        trigger: TransitionTrigger::HealthBelow(0.33),
-                        target_phase: PhaseId("phase3"),
-                        priority: 10,
-                    },
-                ],
-            },
-            Phase {
-                id: PhaseId("phase3"),
-                behavior: seq(vec![
-                    b(Enrage),
-                    b(Dash { distance: 300.0 }),
-                    b(SprayBullets { count: 24, spread: 360.0 }),
-                    b(SpawnMinions { count: 4 }),
-                ]),
-                transitions: vec![
-                    // No transitions - fight to the death
-                ],
-            },
-            Phase {
-                id: PhaseId("enraged"),
-                // Reuses phase3 behavior but accessible via timer
-                behavior: seq(vec![
-                    b(Enrage),
-                    b(Dash { distance: 300.0 }),
-                    b(SprayBullets { count: 24, spread: 360.0 }),
-                ]),
-                transitions: vec![
-                    Transition {
-                        trigger: TransitionTrigger::HealthBelow(0.33),
-                        target_phase: PhaseId("phase3"),
-                        priority: 10,
-                    },
-                ],
-            },
-        ],
+// ============================================================================
+// PLUGIN (framework events uniquement ; les systèmes sont branchés par EnemyPlugin)
+// ============================================================================
+
+pub struct BehaviorFrameworkPlugin;
+
+impl Plugin for BehaviorFrameworkPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_event::<PhaseEvent>().add_event::<GlobalPhaseEvent>();
     }
 }
-pub fn spawn_enemy(commands: &mut Commands, definition: EnemyDefinition, position: Vec3) {
-    let initial_phase = definition.initial_phase.clone();
-    
-    commands.spawn((
-        EnemyBehavior {
-            definition,
-            current_phase: initial_phase,
-            phase_timer: Timer::from_seconds(0.0, TimerMode::Once),
-        },
-        Health { current: 100.0, max: 100.0 },
-        Transform::from_translation(position),
-        // ... other components
-    ));
-}
-

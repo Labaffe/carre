@@ -1,8 +1,7 @@
 pub mod asteroid;
+pub mod behaviors;
 pub mod boss;
 pub mod enemies;
 pub mod enemy;
-pub mod gatling;
 pub mod green_ufo;
-pub mod mothership;
-pub mod mothership_heart;
+pub mod system;

@@ -8,11 +8,12 @@
 //! La bombe inflige des dégâts à tous les astéroïdes et ennemis à l'écran.
 
 use crate::enemy::asteroid::Asteroid;
-use crate::enemy::enemy::{Enemy, EnemyState};
+use crate::enemy::enemy::Enemy;
 use crate::fx::explosion::load_frames_from_folder;
 use crate::game_manager::state::GameState;
 use crate::menu::pause::not_paused;
 use crate::physic::collision::PLAYER_RADIUS;
+use crate::physic::health::Health;
 use crate::player::player::Player;
 use crate::ui::score::Score;
 use bevy::prelude::*;
@@ -354,8 +355,8 @@ fn bomb_apply_damage(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut bomb_events: EventReader<BombEvent>,
-    mut asteroids: Query<(Entity, &Transform, &mut Asteroid, Option<&DropTable>)>,
-    mut enemies: Query<&mut Enemy>,
+    mut asteroids: Query<(Entity, &Transform, &Asteroid, &mut Health, Option<&DropTable>)>,
+    mut enemies: Query<(&Enemy, &mut Health), Without<Asteroid>>,
     mut drop_events: EventWriter<DropEvent>,
     difficulty: Res<crate::game_manager::difficulty::Difficulty>,
 ) {
@@ -366,9 +367,9 @@ fn bomb_apply_damage(
     bomb_events.read().for_each(drop);
 
     // Dégâts à tous les astéroïdes — les tuer directement avec explosion
-    for (entity, transform, mut asteroid, drop_table) in asteroids.iter_mut() {
-        asteroid.health -= BOMB_DAMAGE_ASTEROID;
-        if asteroid.health <= 0 {
+    for (entity, transform, asteroid, mut health, drop_table) in asteroids.iter_mut() {
+        health.take_damage(BOMB_DAMAGE_ASTEROID);
+        if health.is_dead() {
             crate::fx::explosion::spawn_explosion(
                 &mut commands,
                 &asset_server,
@@ -391,9 +392,9 @@ fn bomb_apply_damage(
     }
 
     // Dégâts à tous les ennemis actifs (le framework enemy gère la mort automatiquement)
-    for mut enemy in enemies.iter_mut() {
-        if matches!(enemy.state, EnemyState::Active(_)) {
-            enemy.health -= BOMB_DAMAGE_ENEMY;
+    for (enemy, mut health) in enemies.iter_mut() {
+        if enemy.is_vulnerable() {
+            health.take_damage(BOMB_DAMAGE_ENEMY);
         }
     }
 }

@@ -9,6 +9,7 @@
 use crate::game_manager::difficulty::Difficulty;
 use crate::game_manager::state::GameState;
 use crate::item::item::{DropTable, ItemType};
+use crate::physic::health::Health;
 use bevy::prelude::*;
 use std::time::Duration;
 
@@ -36,7 +37,6 @@ impl Plugin for AsteroidPlugin {
 pub struct Asteroid {
     pub base_velocity: Vec3,
     pub radius: f32,
-    pub health: i32,
     pub size: Vec2,
     /// Index de la texture (0-16), utilisé pour trouver le dossier d'animation de mort.
     pub texture_index: usize,
@@ -159,10 +159,10 @@ fn spawn_asteroids(
         Asteroid {
             base_velocity,
             radius,
-            health,
             size,
             texture_index,
         },
+        Health::new(health),
         DropTable {
             drops: &ASTEROID_DROP_TABLE,
         },

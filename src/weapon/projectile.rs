@@ -48,6 +48,7 @@ pub struct Projectile {
 }
 
 /// Apparence visuelle d'un projectile.
+#[derive(Clone)]
 pub enum ProjectileSprite {
     /// Sprite à partir d'une texture (PNG).
     Texture {
@@ -85,7 +86,7 @@ pub struct ProjectileSpawn {
 /// du sprite pointe dans la direction de déplacement (convention pilule verticale).
 pub fn spawn_projectile(
     commands: &mut Commands,
-    asset_server: &Res<AssetServer>,
+    asset_server: &AssetServer,
     spec: ProjectileSpawn,
 ) -> Entity {
     let dir = spec.direction.normalize_or_zero();

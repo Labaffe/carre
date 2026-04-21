@@ -6,15 +6,15 @@
 use crate::MusicMain;
 use crate::enemy::asteroid::Asteroid;
 use crate::enemy::boss::{BossCharge, BossMarker};
-use crate::enemy::enemy::{Enemy, EnemyState, PatternIndex, PatternTimer};
+use crate::enemy::enemy::Enemy;
 use crate::enemy::green_ufo::GreenUFOMarker;
-use crate::enemy::mothership::{GatlingMarker, Mothership, MothershipHeart, MothershipMarker, MOTHERSHIP_BOTTOM_PROFILE};
 use crate::game_manager::difficulty::Difficulty;
 use crate::game_manager::game::{IntroSound, LevelPhase, LevelPhaseKind};
 use crate::level::level::{LevelRunner, Trigger};
 use crate::menu::pause::PauseState;
 use crate::physic::collision::Hittable;
-use crate::player::player::{Player, PlayerLives};
+use crate::physic::health::Health;
+use crate::player::player::Player;
 use crate::ui::score::Score;
 use crate::weapon::projectile::Projectile;
 use crate::weapon::weapon::HitboxShape;
@@ -38,7 +38,6 @@ impl Plugin for DebugPlugin {
                     manage_asteroid_labels,
                     debug_mouse_coords,
                     debug_kill_player,
-                    debug_draw_gatling_positions,
                 ),
             );
     }
@@ -182,7 +181,6 @@ fn toggle_debug(
                         &mut countdown_events,
                         &mut difficulty,
                         &music_q,
-                        None,
                     );
                 }
             }
@@ -212,22 +210,19 @@ fn update_debug_ui(
     debug: Res<DebugMode>,
     time: Res<Time>,
     difficulty: Res<Difficulty>,
-    lives: Res<PlayerLives>,
     score: Res<Score>,
     mut ui_q: Query<&mut Text, With<DebugUI>>,
-    player_q: Query<&Transform, With<Player>>,
+    player_q: Query<(&Transform, &Health), With<Player>>,
     enemy_q: Query<
         (
             &Enemy,
+            &Health,
             &Transform,
             Option<&BossMarker>,
             Option<&GreenUFOMarker>,
-            Option<&GatlingMarker>,
-            Option<&MothershipHeart>,
-            Option<&PatternIndex>,
-            Option<&PatternTimer>,
             Option<&BossCharge>,
         ),
+        Without<Player>,
     >,
     asteroid_q: Query<&Asteroid>,
     projectile_q: Query<&Projectile>,
@@ -243,58 +238,35 @@ fn update_debug_ui(
     let minutes = (elapsed / 60.0) as u32;
     let seconds = (elapsed % 60.0) as u32;
 
-    let player_pos = player_q
+    let (player_pos, player_hp) = player_q
         .get_single()
-        .map(|t| format!("({:.0}, {:.0})", t.translation.x, t.translation.y))
-        .unwrap_or_else(|_| "N/A".to_string());
+        .map(|(t, h)| {
+            (
+                format!("({:.0}, {:.0})", t.translation.x, t.translation.y),
+                h.current,
+            )
+        })
+        .unwrap_or_else(|_| ("N/A".to_string(), 0));
 
     let mut enemy_lines = String::new();
-    for (enemy, transform, boss, green_ufo, gatling, heart, pat_idx, pat_timer, charge) in enemy_q.iter() {
+    for (enemy, health, transform, boss, green_ufo, charge) in enemy_q.iter() {
         let name = if boss.is_some() {
             "Boss"
         } else if green_ufo.is_some() {
             "GreenUFO"
-        } else if gatling.is_some() {
-            "Gatling"
-        } else if heart.is_some() {
-            "MothershipHeart"
         } else {
-            "Enemy"
+            enemy.definition.name
         };
-        let pos = format!("({:.0}, {:.0})", transform.translation.x, transform.translation.y);
-
-        let state_str = match &enemy.state {
-            EnemyState::Entering => "Entering".to_string(),
-            EnemyState::Flexing => "Flexing".to_string(),
-            EnemyState::Idle => "Idle".to_string(),
-            EnemyState::Active(idx) => {
-                let phase = &enemy.phases[*idx];
-                let pattern_info = if let Some(pi) = pat_idx {
-                    let p_idx = pi.0 % phase.patterns.len();
-                    let p = &phase.patterns[p_idx];
-                    if charge.is_some() {
-                        format!(">> {} (charging)", p.name)
-                    } else {
-                        let remaining = pat_timer
-                            .map(|t| t.0.duration().as_secs_f32() - t.0.elapsed_secs())
-                            .unwrap_or(0.0);
-                        format!("{} ({:.1}s)", p.name, remaining)
-                    }
-                } else {
-                    "?".to_string()
-                };
-                format!("Active(phase {}) | {}", idx, pattern_info)
-            }
-            EnemyState::Transitioning(idx) => format!("Transitioning → phase {}", idx),
-            EnemyState::Dying => {
-                let remaining = enemy.anim_timer.duration().as_secs_f32() - enemy.anim_timer.elapsed_secs();
-                format!("Dying ({:.1}s)", remaining)
-            }
-            EnemyState::Dead => "Dead".to_string(),
-        };
-
+        let pos = format!(
+            "({:.0}, {:.0})",
+            transform.translation.x, transform.translation.y
+        );
+        let phase_str = enemy.current_phase.0;
+        let charging = if charge.is_some() { " [charging]" } else { "" };
+        let timer = enemy.phase_timer.elapsed().as_secs_f32();
         enemy_lines.push_str(&format!(
-            "\n  {} {} | HP {}/{} | {}", name, pos, enemy.health, enemy.max_health, state_str
+            "\n  {} {} | HP {}/{} | phase={} ({:.1}s){}",
+            name, pos, health.current, health.max, phase_str, timer, charging
         ));
     }
 
@@ -321,7 +293,7 @@ fn update_debug_ui(
              F4 : Win niveau (outro)\n\
              F5 : Game Over (mort)",
             fps, minutes, seconds, factor,
-            lives.lives,
+            player_hp,
             score.value(),
             player_pos,
             asteroid_count,
@@ -659,12 +631,11 @@ fn debug_kill_player(
     keyboard: Res<ButtonInput<KeyCode>>,
     state: Res<State<crate::game_manager::state::GameState>>,
     mut next_state: ResMut<NextState<crate::game_manager::state::GameState>>,
-    mut lives: ResMut<PlayerLives>,
-    player_q: Query<Entity, With<Player>>,
+    mut player_q: Query<(Entity, &mut Health), With<Player>>,
 ) {
     if keyboard.just_pressed(KeyCode::F5) && *state.get() == crate::game_manager::state::GameState::Playing {
-        lives.lives = 0;
-        for entity in player_q.iter() {
+        for (entity, mut health) in player_q.iter_mut() {
+            health.current = 0;
             if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
         }
         next_state.set(crate::game_manager::state::GameState::GameOver);
@@ -691,66 +662,6 @@ fn draw_hitboxes(
     draw_hittable(&mut gizmos, &projectile_q, Color::YELLOW);
 }
 
-/// Dessine en debug la position des tourelles (croix magenta),
-/// le rectangle du mothership (jaune) et la silhouette du bord bas (rouge).
-fn debug_draw_gatling_positions(
-    debug: Res<DebugMode>,
-    mut gizmos: Gizmos,
-    gatling_q: Query<&Transform, With<GatlingMarker>>,
-    mothership_q: Query<(&Transform, &Mothership, &Sprite), With<MothershipMarker>>,
-) {
-    if !debug.0 {
-        return;
-    }
-
-    for (tf, ms, sprite) in mothership_q.iter() {
-        let size = sprite.custom_size.unwrap_or(ms.size);
-        let center = tf.translation.truncate();
-
-        // Rectangle jaune du sprite
-        gizmos.rect_2d(center, 0.0, size, Color::YELLOW);
-
-        // Silhouette du bord bas (rouge) — profil MOTHERSHIP_BOTTOM_PROFILE
-        // Convention Top : les coords normalisées sont converties en pixels
-        // puis transformées selon le bord d'entrée.
-        let ms_size_top = match ms.edge {
-            crate::enemy::mothership::EntryEdge::Top | crate::enemy::mothership::EntryEdge::Bottom => size,
-            crate::enemy::mothership::EntryEdge::Left | crate::enemy::mothership::EntryEdge::Right => Vec2::new(size.y, size.x),
-        };
-
-        let profile_points: Vec<Vec2> = MOTHERSHIP_BOTTOM_PROFILE
-            .iter()
-            .map(|&(nx, ny)| {
-                let base = Vec2::new(nx * ms_size_top.x, ny * ms_size_top.y);
-                let offset = ms.edge.transform_offset(base);
-                center + offset
-            })
-            .collect();
-
-        for pair in profile_points.windows(2) {
-            gizmos.line_2d(pair[0], pair[1], Color::RED);
-        }
-
-        // Points du profil (petits cercles rouges)
-        for &pt in &profile_points {
-            gizmos.circle_2d(pt, 8.0, Color::RED);
-        }
-    }
-
-    // Gatlings : croix magenta
-    let cross_size = 40.0;
-    for tf in gatling_q.iter() {
-        let pos = tf.translation.truncate();
-        gizmos.line_2d(
-            pos + Vec2::new(-cross_size, -cross_size),
-            pos + Vec2::new(cross_size, cross_size),
-            Color::rgba(1.0, 0.0, 1.0, 1.0),
-        );
-        gizmos.line_2d(
-            pos + Vec2::new(-cross_size, cross_size),
-            pos + Vec2::new(cross_size, -cross_size),
-            Color::rgba(1.0, 0.0, 1.0, 1.0),
-        );
-        gizmos.circle_2d(pos, cross_size, Color::rgba(1.0, 0.0, 1.0, 1.0));
-    }
-}
+// Dessin debug des tourelles/mothership retiré avec la suppression des
+// modules correspondants. À réimplémenter quand gatling/mothership seront
+// réécrits.
