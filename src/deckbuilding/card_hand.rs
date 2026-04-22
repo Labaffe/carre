@@ -9,40 +9,36 @@ impl Plugin for CardHandPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<HandVisible>()
-            .add_systems(OnEnter(GameState::Playing), spawn_hand_ui)
+            .init_resource::<HandSince>()
             .add_systems(Update, (
-                toggle_hand,
                 animate_hand,
-                hover_card
+                hover_card,
+                hide_hand
             ).run_if(in_state(GameState::Playing)));
-    }
-}
-
-
-fn spawn_hand_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
-    for i in 0..5 {
-        spawn_card_ui(commands.reborrow(), asset_server.clone(), Card::new(), i);
     }
 }
 
 #[derive(Resource, Default)]
 pub struct HandVisible(pub bool);
 
-fn toggle_hand(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut visible: ResMut<HandVisible>,
-) {
-    if keyboard.just_pressed(KeyCode::KeyU) {
-        visible.0 = !visible.0;
-    }
-}
+#[derive(Resource, Default)]
+pub struct HandSince(pub f32);
 
 use crate::tweening::{TweenSequence, Ease,StyleLeft,Tween,StyleTop};
+fn hide_hand(
+    time:Res<Time>,
+    since:Res<HandSince>,
+    mut visible:ResMut<HandVisible>
+) {
+    if (time.elapsed_seconds()>since.0+5.0) & visible.0 {
+        visible.0 = false;
+    }
+}
 fn animate_hand(
     mut commands: Commands,
     visible: Res<HandVisible>,
     windows: Query<&Window>,
-    query: Query<(Entity,&HandCard, &CardUI)>,
+    mut query: Query<(Entity,&HandCard, &CardUI, &mut Style)>,
 ) {
     if !visible.is_changed() {
         return;
@@ -50,7 +46,9 @@ fn animate_hand(
     let window = windows.single();
     let count = query.iter().len();
     let mut i = 0;
-    for (entity,_, card_ui) in query.iter() {
+    println!("{}, {}",visible.0,visible.is_changed());
+    println!("{}",query.iter().len());
+    for (entity,_, card_ui,mut style) in query.iter_mut() {
         let target_x = if visible.0 {
             card_center_x(i,window,count)
         } else {
@@ -71,6 +69,9 @@ fn animate_hand(
                 Tween::new(from_x, target_x, 0.5, Ease::OutQuad)
             )
         );
+        let base_y = window.height() * 0.5;
+
+        style.top = Val::Px(base_y);
         i += 1;
     }
 }
