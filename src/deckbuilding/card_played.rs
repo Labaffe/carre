@@ -15,6 +15,7 @@ impl Plugin for CardPlayedPlugin {
             ).run_if(in_state(GameState::Playing)));
     }
 }
+
 fn position_card(
     mut query: Query<(Entity,Ref<PlayedCard>,&mut CardUI, &mut Style)>,
     windows: Query<&Window>,
@@ -45,6 +46,7 @@ fn position_card(
 fn activate_card(
     mut commands: Commands,
     mouse: Res<ButtonInput<MouseButton>>,
+    time:Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut query: Query<(Entity,Ref<PlayedCard>,&CardUI,&Style)>,
     windows: Query<&Window>,
@@ -86,8 +88,7 @@ fn activate_card(
                 }
             }
         }
-        keyboard.is_changed();
-        if keyboard.just_pressed(KeyCode::Space) {
+        if keyboard.pressed(KeyCode::Space) {
             if card_ui.card.card_type == CardType::Secondary{
                 if mouse.pressed(MouseButton::Left) {
                     commands.entity(entity).remove::<TweenSequence::<StyleTop>>().insert(

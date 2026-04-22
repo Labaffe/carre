@@ -36,8 +36,8 @@ pub fn spawn_card_ui(
                 style: Style {
                     width: Val::Px(200.0),
                     height: Val::Px(300.0),
-                    top: Val::Px(300.0),
-                    left: Val::Px(300.0),
+                    top: Val::Px(3000.0),
+                    left: Val::Px(3000.0),
                     flex_direction: FlexDirection::Column,
                     justify_content: JustifyContent::SpaceBetween,
                     align_items: AlignItems::Center,
@@ -52,7 +52,7 @@ pub fn spawn_card_ui(
             },
             CardUI{index,selectable:false,played:false,card:card.clone()},
             Interaction::default(), 
-            HandCard {}
+            DeckCard {}
         ))
         .with_children(|parent| {
             // Title (top)
