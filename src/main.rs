@@ -4,6 +4,7 @@ use bevy::prelude::*;
 mod debug;
 mod deckbuilding;
 mod enemy;
+mod behavior;
 mod environment;
 mod fx;
 mod game_manager;
@@ -15,11 +16,15 @@ mod player;
 mod tweening;
 mod ui;
 mod weapon;
-
+mod editor;
+mod movement;
 // ─── Imports ───────────────────────────────────────────────────────
 use game_manager::state::GameState;
 use game_manager::game::{GamePlugin, MusicOutro};
 use game_manager::difficulty::DifficultyPlugin;
+
+use editor::EditorPlugin;
+use behavior::BehaviorPlugin;
 
 use level::level::{LevelConfig, LevelPlugin};
 
@@ -32,8 +37,8 @@ use enemy::enemy::{Enemy, EnemyPlugin};
 use enemy::boss::{BossPlugin, MusicBoss};
 use enemy::asteroid::{Asteroid, AsteroidPlugin};
 use enemy::green_ufo::GreenUFOPlugin;
-use enemy::system::BehaviorFrameworkPlugin;
-
+use enemy::hit_flash::HitFlashPlugin;
+use crate::enemy::despawn_zone::DespawnZonePlugin;
 use fx::explosion::{Explosion, ExplosionPlugin};
 use item::item::{Droppable, ItemPlugin};
 
@@ -53,6 +58,8 @@ use physic::health::HealthPlugin;
 use debug::debug::DebugPlugin;
 use deckbuilding::card_hand::CardHandPlugin;
 use tweening::plugin::UiTweenPlugin;
+
+use movement::MovementPlugin;
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -74,6 +81,16 @@ fn main() {
             LevelPlugin,
             GamePlugin,
         ))
+        .add_plugins(
+            EditorPlugin
+            
+        )
+        .add_plugins(
+            BehaviorPlugin
+        )
+        .add_plugins(
+            MovementPlugin
+        )
         // Joueur & armes
         .add_plugins((
             PlayerPlugin,
@@ -86,10 +103,10 @@ fn main() {
         ))
         // Ennemis
         .add_plugins((
-            BehaviorFrameworkPlugin,
             EnemyPlugin,
             BossPlugin,
             GreenUFOPlugin,
+            HitFlashPlugin,DespawnZonePlugin
         ))
         // Entités & effets
         .add_plugins((

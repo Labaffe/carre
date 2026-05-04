@@ -6,13 +6,19 @@
 //! celui-ci est appliqué chaque frame dans `move_asteroids`, ce qui permet
 //! aux astéroïdes déjà à l'écran d'accélérer quand la difficulté augmente.
 
+use crate::behavior::*;
+use crate::behavior::behavior::Behavior;
+use crate::enemy::despawn_zone::DespawnZone;
+use crate::movement::movements::Movements;
+use crate::behavior::ordered_list::OrderedNodeList;
 use crate::game_manager::difficulty::Difficulty;
 use crate::game_manager::state::GameState;
 use crate::item::item::{DropTable, ItemType};
+use crate::movement::translate::Translate;
 use crate::physic::health::Health;
 use bevy::prelude::*;
 use std::time::Duration;
-
+use crate::enemy::hit_flash;
 /// Table de drop des astéroïdes : 5% bombe, 10% bonus score.
 static ASTEROID_DROP_TABLE: [(ItemType, f32); 2] = [
     (ItemType::Bomb, 0.05),
@@ -27,7 +33,7 @@ impl Plugin for AsteroidPlugin {
             .add_systems(Startup, preload_asteroid_textures)
             .add_systems(
                 Update,
-                (spawn_asteroids, move_asteroids, animate_hit_flash)
+                (spawn_asteroids)
                     .run_if(in_state(GameState::Playing)),
             );
     }
@@ -145,6 +151,14 @@ fn spawn_asteroids(
     // Petits ~250 px/s, gros ~100 px/s
     let speed = 250.0 - (side - 35.0) / (180.0 - 35.0) * 150.0;
     let base_velocity = Vec3::new(0.0, -speed, 0.0);
+    
+    let movements_slow = Movements::new()
+        .with(Translate::new(Vec2::new(0.0,-1.0), speed));
+    let movements_fast = Movements::new()
+        .with(Translate::new(Vec2::new(0.0,-1.0), speed*3.5));
+    let behavior=BehaviorBuilder::choice()
+        .with(BehaviorBuilder::from_component(movements_slow))
+        .with(BehaviorBuilder::from_component(movements_fast));
 
     commands.spawn((
         SpriteBundle {
@@ -166,44 +180,12 @@ fn spawn_asteroids(
         DropTable {
             drops: &ASTEROID_DROP_TABLE,
         },
+        DespawnZone {
+            x:-window.width(),
+            y:-window.height(),
+            width: window.width() * 2,
+            height:window.height() * 0.25
+        },
+        behavior
     ));
-}
-
-/// Flash au hit : passe le sprite en blanc pur pendant la durée du flash.
-fn animate_hit_flash(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut query: Query<(Entity, &mut Sprite, &mut HitFlash), With<Asteroid>>,
-) {
-    for (entity, mut sprite, mut flash) in query.iter_mut() {
-        flash.0.tick(time.delta());
-
-        if flash.0.finished() {
-            sprite.color = Color::WHITE;
-            commands.entity(entity).remove::<HitFlash>();
-        } else {
-            // Multiplie chaque canal par une valeur très élevée → surexpose le sprite en blanc pur
-            sprite.color = Color::rgba(100.0, 100.0, 100.0, 1.0);
-        }
-    }
-}
-
-/// Déplace les astéroïdes chaque frame.
-/// Le facteur de difficulté est appliqué dynamiquement : quand il augmente,
-/// tous les astéroïdes à l'écran accélèrent immédiatement.
-fn move_asteroids(
-    mut commands: Commands,
-    mut query: Query<(Entity, &mut Transform, &Asteroid)>,
-    time: Res<Time>,
-    difficulty: Res<Difficulty>,
-    windows: Query<&Window>,
-) {
-    let half_h = windows.single().height() / 2.0;
-    for (entity, mut transform, asteroid) in query.iter_mut() {
-        transform.translation += asteroid.base_velocity * difficulty.factor * time.delta_seconds();
-        // Despawn quand l'astéroïde sort en bas de l'écran
-        if transform.translation.y < -(half_h + 200.0) {
-            if let Some(mut e) = commands.get_entity(entity) { e.despawn(); }
-        }
-    }
 }

@@ -32,9 +32,7 @@ use bevy::prelude::*;
 use crate::enemy::behaviors::{DespawnSelf, PlaySound};
 use crate::enemy::enemies::BOSS;
 use crate::enemy::enemy::Enemy;
-use crate::enemy::system::{
-    b, par, Behavior, EnemyDefinition, Noop, Phase, PhaseId, Transition, TransitionTrigger,
-};
+
 use crate::game_manager::difficulty::{Difficulty, SpawnPosition};
 use crate::game_manager::state::GameState;
 use crate::menu::pause::not_paused;

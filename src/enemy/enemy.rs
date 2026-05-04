@@ -24,15 +24,14 @@
 
 use bevy::prelude::*;
 
-use crate::enemy::system::{
-    behavior_execution_system, phase_transition_system, EnemyDefinition, Phase, PhaseId,
-};
+
 use crate::game_manager::state::GameState;
 use crate::item::item::{DropEvent, DropTable};
 use crate::menu::pause::not_paused;
 use crate::physic::health::Health;
 use crate::ui::score::Score;
 use crate::weapon::projectile::{projectile_hits_circle, Projectile, Team};
+
 
 pub struct EnemyPlugin;
 

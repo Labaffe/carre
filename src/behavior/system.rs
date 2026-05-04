@@ -1,0 +1,27 @@
+use bevy::{ecs::system::Query, prelude::*, time::Time, transform::commands};
+
+use crate::behavior::behavior::BehaviorComponent;
+
+pub fn init_behavior(
+    mut commands:Commands,
+    time:Res<Time>,
+    mut query:Query<(Entity,&mut BehaviorComponent)>
+) {
+    for (entity,mut behavior_component) in query.iter_mut() {
+        behavior_component.timer.tick(time.delta());
+        if behavior_component.timer.just_finished() {
+            behavior_component.behavior.enable(commands.entity(entity));
+        }
+    }
+}
+
+
+pub fn update_behavior(
+    mut command:Commands,
+    time:Res<Time>,
+    mut query:Query<(Entity,&mut BehaviorComponent)>
+) {
+    for (entity,mut behavior_component) in query.iter_mut() {
+        behavior_component.behavior.update(time.delta(),command.entity(entity));
+    }
+}

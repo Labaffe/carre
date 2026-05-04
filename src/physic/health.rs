@@ -19,12 +19,13 @@ use bevy::prelude::*;
 pub struct Health {
     pub current: i32,
     pub max: i32,
+    pub dying:bool
 }
 
 impl Health {
     /// Crée une santé pleine avec une limite donnée.
     pub fn new(max: i32) -> Self {
-        Self { current: max, max }
+        Self { current: max, max,dying:false }
     }
 
     /// Inflige `damage` PV. Clamp `current` à 0 minimum.

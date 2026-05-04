@@ -3,23 +3,29 @@
 //! Phases : `rush` (fonce vers le joueur) ↔ `idle` (pause) en boucle.
 //! Mort = instantanée à PV=0 (phase `dying` → `dead` = DespawnSelf).
 
+use std::str::FromStr;
 use std::time::Duration;
 
 use bevy::prelude::*;
 
+use crate::behavior::BehaviorBuilder;
+use crate::behavior::behavior::BehaviorComponent;
+use crate::enemy::anim_bank::Animation;
 use crate::enemy::behaviors::{
     DespawnIfOffscreen, DespawnSelf, PlaySound, RushMove, SetRushDirection,
 };
 use crate::enemy::enemies::GREEN_UFO;
 use crate::enemy::enemy::{Enemy, EnemyHitFlash};
-use crate::enemy::system::{
-    b, par, EnemyDefinition, Noop, Phase, PhaseId, Transition, TransitionTrigger,
-};
+
+use crate::enemy::enemy_builder::EnemyBuilder;
+use crate::enemy::spawn::SpawnPosition;
 use crate::fx::explosion::{load_frames_from_folder, spawn_custom_anim};
 use crate::game_manager::difficulty::Difficulty;
 use crate::game_manager::state::GameState;
 use crate::item::item::{DropTable, ItemType};
 use crate::menu::pause::not_paused;
+use crate::movement::movements::Movements;
+use crate::movement::translate::{self, Translate};
 use crate::physic::health::Health;
 
 const RUSH_SPEED: f32 = 800.0;
@@ -51,6 +57,56 @@ struct GreenUFODeathFrames(Vec<Handle<Image>>);
 #[derive(Resource)]
 struct GreenUFOSpawner {
     timer: Timer,
+}
+
+pub struct GreenUFOBuilder;
+impl EnemyBuilder for GreenUFOBuilder {
+    fn preload_anim(&self,loader:impl Fn(String,&str)) {
+        loader(
+            "green_ufo".to_string(),
+            "images/green_ufo"
+        );
+        loader(
+            "green_ufo_death".to_string(),
+            "images/green_ufo/death"
+        )
+    }
+    fn spawn(mut commands: Commands,window: &Window,difficulty: ResMut<Difficulty>,windows: Query<&Window>,spawn_pos: SpawnPosition) {
+        let pos = spawn_pos.resolve(window, 60.0);
+        //let first_frame = frames.0.first().cloned().unwrap_or_default();
+        let rush_movement = Movements::new().with(Translate::new(Vec2::new(1.0,0.0),100.0));
+        let alive=BehaviorBuilder::first(
+            Duration::from_secs_f32(RUSH_DURATION),rush_movement
+        ).then(
+            Duration::from_secs_f32(IDLE_DURATION), BehaviorBuilder::nothing()
+        );
+        let dying=BehaviorBuilder::first(
+            Duration::from_secs_f32(1.0),BehaviorBuilder::nothing()
+        ).then(
+            Duration::from_secs_f32(1.0),BehaviorBuilder::nothing()
+        );
+        let behavior = BehaviorBuilder::choice()
+            .with(alive)
+            .with(dying);
+        commands.spawn((
+            SpriteBundle {
+                //texture: first_frame,
+                sprite: Sprite {
+                    custom_size: Some(Vec2::splat(GREEN_UFO.config.sprite_size)),
+                    ..default()
+                },
+                transform: Transform::from_xyz(pos.x, pos.y, 0.5),
+                ..default()
+            },
+            Enemy::new(GREEN_UFO.config.to_config(), green_ufo_definition()),
+            Health::new(GREEN_UFO.total_hp),
+            Animation::new("green_ufo",Duration::from_secs_f32(1.0 / GREEN_UFO_ANIM_FPS)),
+            BehaviorComponent::new(behavior),
+            DropTable {
+                drops: &GREEN_UFO_DROP_TABLE,
+            },
+        ));
+    }
 }
 
 // ─── Définition ─────────────────────────────────────────────────────
@@ -133,15 +189,6 @@ impl Plugin for GreenUFOPlugin {
     }
 }
 
-fn preload_green_ufo_frames(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let frames = load_frames_from_folder(&asset_server, "images/green_ufo")
-        .expect("green_ufo frames folder missing or empty");
-    commands.insert_resource(GreenUFOFrames(frames));
-
-    let death_frames = load_frames_from_folder(&asset_server, "images/green_ufo/death")
-        .expect("green_ufo death frames folder missing or empty");
-    commands.insert_resource(GreenUFODeathFrames(death_frames));
-}
 
 fn spawn_green_ufos(
     mut commands: Commands,

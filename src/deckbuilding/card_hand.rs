@@ -64,7 +64,6 @@ fn animate_hand(
         } else {
             center_x + (i - 2.0) * spacing // exit left
         };
-        println!("{}",match style.top {Val::Px(f)=>"px".to_string(),Val::Percent(f)=>"percent".to_string(),_=>"other".to_string()});
         commands.entity(entity).insert((
             TweenSequence::<StyleLeft>::new(
                 Tween::new(0.0, 200.0, 0.5, Ease::OutQuad)

@@ -1,7 +1,37 @@
 pub mod asteroid;
-pub mod behaviors;
+pub mod anim_bank;
 pub mod boss;
 pub mod enemies;
 pub mod enemy;
+pub mod enemy_builder;
+pub mod enemy_register;
 pub mod green_ufo;
-pub mod system;
+pub mod hit_flash;
+pub mod despawn_zone;
+pub mod spawn;
+mod death;
+
+use bevy::prelude::*;
+use crate::enemy::anim_bank::*;
+use crate::enemy::enemy_register::EnemyRegister;
+use crate::enemy::hit_flash::*;
+use crate::enemy::green_ufo::*;
+use crate::GameState;
+pub struct EnemyPlugin;
+
+impl Plugin for EnemyPlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .insert_resource(
+                EnemyRegister::new()
+                .with(GreenUFOBuilder)
+            )
+            .insert_resource(AnimBank::new())
+            .add_systems(Startup, preload_frames)
+            .add_systems(
+                Update,
+                ( animate_hit_flash,animate)
+                    .run_if(in_state(GameState::Playing)),
+            );
+    }
+}
