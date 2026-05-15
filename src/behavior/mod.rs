@@ -11,7 +11,7 @@ mod choice_list;
 pub mod parallel_node_list;
 
 use bevy::prelude::*;
-use crate::behavior::{behavior::Behavior, choice_list::ChoiceNodeList, component_container::ComponentContainer, ordered_list::OrderedNodeList, system::{init_behavior, update_behavior}};
+use crate::behavior::{behavior::Behavior, choice_list::ChoiceNodeList, component_container::ComponentContainer, ordered_list::OrderedNodeList, parallel_node_list::ParallelNodeList, system::{init_behavior, update_behavior}};
 use crate::behavior::indexed_node_list::NodeListDriver;
 use bevy::ecs::system::EntityCommands;
 use std::time::Duration;
@@ -41,5 +41,8 @@ impl BehaviorBuilder {
     pub fn nothing()->Empty {Empty}
     pub fn from_component<C: Component + Clone>(component: C) ->ComponentContainer {
         ComponentContainer::new(component)
+    }
+    pub fn multiple()->ParallelNodeList {
+        ParallelNodeList::new()
     }
 }

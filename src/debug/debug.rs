@@ -7,7 +7,7 @@ use crate::MusicMain;
 use crate::enemy::asteroid::Asteroid;
 use crate::enemy::boss::{BossCharge, BossMarker};
 use crate::enemy::enemy::Enemy;
-use crate::enemy::green_ufo::GreenUFOMarker;
+//use crate::enemy::green_ufo::GreenUFOMarker;
 use crate::game_manager::difficulty::Difficulty;
 use crate::game_manager::game::{IntroSound, LevelPhase, LevelPhaseKind};
 use crate::level::level::{LevelRunner, Trigger};
@@ -146,7 +146,7 @@ fn toggle_debug(
     runner: Option<ResMut<crate::level::level::LevelRunner>>,
     music_q: Query<Entity, With<MusicMain>>,
     asteroid_q: Query<Entity, With<Asteroid>>,
-    green_ufo_q: Query<Entity, With<GreenUFOMarker>>,
+    //green_ufo_q: Query<Entity, With<GreenUFOMarker>>,
     mut boom_events: EventWriter<crate::game_manager::difficulty::BoomEvent>,
     mut countdown_events: EventWriter<crate::ui::countdown::CountdownEvent>,
     asset_server: Res<AssetServer>,
@@ -156,9 +156,9 @@ fn toggle_debug(
         for entity in asteroid_q.iter() {
             if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
         }
-        for entity in green_ufo_q.iter() {
-            if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
-        }
+        //for entity in green_ufo_q.iter() {
+        //    if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        //}
 
         // Avancer le LevelRunner jusqu'à "planet_appear" (juste avant le boss)
         if let Some(mut runner) = runner {
@@ -219,7 +219,7 @@ fn update_debug_ui(
             &Health,
             &Transform,
             Option<&BossMarker>,
-            Option<&GreenUFOMarker>,
+            //Option<&GreenUFOMarker>,
             Option<&BossCharge>,
         ),
         Without<Player>,
@@ -249,24 +249,16 @@ fn update_debug_ui(
         .unwrap_or_else(|_| ("N/A".to_string(), 0));
 
     let mut enemy_lines = String::new();
-    for (enemy, health, transform, boss, green_ufo, charge) in enemy_q.iter() {
-        let name = if boss.is_some() {
-            "Boss"
-        } else if green_ufo.is_some() {
-            "GreenUFO"
-        } else {
-            enemy.definition.name
-        };
+    for (enemy, health, transform, boss, charge) in enemy_q.iter() {
+        let name = enemy.name;
         let pos = format!(
             "({:.0}, {:.0})",
             transform.translation.x, transform.translation.y
         );
-        let phase_str = enemy.current_phase.0;
         let charging = if charge.is_some() { " [charging]" } else { "" };
-        let timer = enemy.phase_timer.elapsed().as_secs_f32();
         enemy_lines.push_str(&format!(
-            "\n  {} {} | HP {}/{} | phase={} ({:.1}s){}",
-            name, pos, health.current, health.max, phase_str, timer, charging
+            "\n  {} {} | HP {}/{} | {}",
+            name, pos, health.current, health.max, charging
         ));
     }
 
@@ -285,8 +277,7 @@ fn update_debug_ui(
              Asteroides : {}\n\
              Missiles   : {}\n\
              \n\
-             --- Ennemis ---{}\n\
-             \n\
+             Enemy   : {}\n\
              F1 : Debug Mode ON/OFF\n\
              F2 : Skip asteroides\n\
              F3 : Skip au boss\n\
@@ -491,24 +482,8 @@ fn manage_asteroid_labels(
         if labeled.contains(&entity) {
             continue;
         }
-        let name = format!("x{:03}", asteroid.texture_index);
+        //let name = format!("x{:03}", asteroid.texture_index);
         commands.spawn((
-            Text2dBundle {
-                text: Text::from_section(
-                    name,
-                    TextStyle {
-                        font_size: 14.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 0.7),
-                        ..default()
-                    },
-                ),
-                transform: Transform::from_xyz(
-                    transform.translation.x,
-                    transform.translation.y + asteroid.radius + 15.0,
-                    10.0,
-                ),
-                ..default()
-            },
             AsteroidLabel(entity),
         ));
     }

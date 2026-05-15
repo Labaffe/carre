@@ -33,11 +33,10 @@ use weapon::weapon::WeaponPlugin;
 use weapon::player_fire::PlayerFirePlugin;
 use weapon::projectile::{Projectile, ProjectilePlugin};
 
-use enemy::enemy::{Enemy, EnemyPlugin};
-use enemy::boss::{BossPlugin, MusicBoss};
-use enemy::asteroid::{Asteroid, AsteroidPlugin};
-use enemy::green_ufo::GreenUFOPlugin;
-use enemy::hit_flash::HitFlashPlugin;
+use enemy::{enemy::Enemy, EnemyPlugin};
+use enemy::boss::{ MusicBoss};
+use enemy::asteroid::{Asteroid};
+
 use crate::enemy::despawn_zone::DespawnZonePlugin;
 use fx::explosion::{Explosion, ExplosionPlugin};
 use item::item::{Droppable, ItemPlugin};
@@ -104,13 +103,10 @@ fn main() {
         // Ennemis
         .add_plugins((
             EnemyPlugin,
-            BossPlugin,
-            GreenUFOPlugin,
-            HitFlashPlugin,DespawnZonePlugin
+            DespawnZonePlugin
         ))
         // Entités & effets
         .add_plugins((
-            AsteroidPlugin,
             ExplosionPlugin,
             ItemPlugin,
         ))

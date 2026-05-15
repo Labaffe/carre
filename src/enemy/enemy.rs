@@ -25,6 +25,7 @@
 use bevy::prelude::*;
 
 
+use crate::enemy::enemies::EnemyData;
 use crate::game_manager::state::GameState;
 use crate::item::item::{DropEvent, DropTable};
 use crate::menu::pause::not_paused;
@@ -42,12 +43,8 @@ impl Plugin for EnemyPlugin {
                 Update,
                 (
                     // Framework phases+behaviors (exclusif, séquentiel)
-                    phase_transition_system,
-                    behavior_execution_system,
                     // Systèmes réactifs (ordre après la machine à état)
-                    enemy_hit_flash,
                     projectile_enemy_collision,
-                    enemy_death_detection,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing))
@@ -67,15 +64,7 @@ pub struct Enemy {
     // ─── Config statique (immutable après spawn) ───
     pub radius: f32,
     pub sprite_size: f32,
-    pub hit_sound: &'static str,
-    pub death_explosion_sound: &'static str,
-    /// Couleur du flash au hit. None = blanc pur (par défaut).
-    pub hit_flash_color: Option<Color>,
-
-    // ─── Machine à état ───
-    pub definition: EnemyDefinition,
-    pub current_phase: PhaseId,
-    pub phase_timer: Timer,
+    pub name: &'static str,
 }
 
 /// Config statique d'un ennemi (radius, sons, couleurs). Utilisé pour
@@ -89,37 +78,19 @@ pub struct EnemyConfig {
 }
 
 impl Enemy {
-    pub fn new(config: EnemyConfig, definition: EnemyDefinition) -> Self {
-        let initial_phase = definition.initial_phase.clone();
+    pub fn new(data: EnemyData) -> Self {
         Self {
-            radius: config.radius,
-            sprite_size: config.sprite_size,
-            hit_sound: config.hit_sound,
-            death_explosion_sound: config.death_explosion_sound,
-            hit_flash_color: config.hit_flash_color,
-            definition,
-            current_phase: initial_phase,
-            phase_timer: Timer::from_seconds(0.0, TimerMode::Once),
+            radius: data.config.radius,
+            sprite_size: data.config.sprite_size,
+            name: data.name
         }
     }
 
-    /// Phase courante (donne accès à son `invulnerable`, ses transitions, etc.).
-    pub fn current_phase_def(&self) -> Option<&Phase> {
-        self.definition.get_phase(&self.current_phase)
-    }
 
     /// `true` si la phase courante permet de prendre des dégâts.
     /// Par défaut, une phase est vulnérable (invulnerable=false).
     pub fn is_vulnerable(&self) -> bool {
-        self.current_phase_def()
-            .map(|p| !p.invulnerable)
-            .unwrap_or(false)
-    }
-
-    /// `true` si la phase courante est `"dead"` (l'entité va être despawnée
-    /// par `DespawnSelf` au prochain frame).
-    pub fn is_dead_phase(&self) -> bool {
-        self.current_phase == PhaseId("dead")
+        true
     }
 }
 
@@ -157,25 +128,7 @@ const HIT_FLASH_DURATION: f32 = 0.06;
 //  Systèmes
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Applique un flash blanc quand l'entité a un `EnemyHitFlash` et le retire
-/// quand le timer expire.
-fn enemy_hit_flash(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut query: Query<(Entity, &mut Sprite, &mut EnemyHitFlash, &Enemy)>,
-) {
-    for (entity, mut sprite, mut flash, enemy) in query.iter_mut() {
-        flash.0.tick(time.delta());
-        if flash.0.finished() {
-            sprite.color = Color::WHITE;
-            commands.entity(entity).remove::<EnemyHitFlash>();
-        } else {
-            sprite.color = enemy
-                .hit_flash_color
-                .unwrap_or(Color::rgba(100.0, 100.0, 100.0, 1.0));
-        }
-    }
-}
+
 
 /// Collision projectiles joueur → ennemi. Inflige `projectile.damage` PV
 /// à l'ennemi ciblé si celui-ci est dans une phase vulnérable. Le projectile
@@ -190,9 +143,7 @@ fn projectile_enemy_collision(
     let mut despawned_projectiles = std::collections::HashSet::new();
 
     for (enemy_entity, enemy_transform, enemy, mut health) in enemy_q.iter_mut() {
-        if enemy.is_dead_phase() {
-            continue;
-        }
+
 
         for (projectile_entity, projectile_transform, projectile) in projectile_q.iter() {
             if projectile.team != Team::Player {
@@ -229,10 +180,6 @@ fn projectile_enemy_collision(
                         TimerMode::Once,
                     )));
                 }
-                commands.spawn(AudioBundle {
-                    source: asset_server.load(enemy.hit_sound),
-                    settings: PlaybackSettings::DESPAWN,
-                });
             }
 
             break; // Ce projectile est consommé, passer au suivant
@@ -240,32 +187,5 @@ fn projectile_enemy_collision(
     }
 }
 
-/// Détecte les passages en PV=0 et émet un `EnemyDeathEvent` + drop table.
-/// Le nettoyage visuel/sonore est pris en charge par les behaviors de la
-/// phase `"dying"` de chaque définition.
-fn enemy_death_detection(
-    mut enemy_q: Query<(Entity, &Transform, &Enemy, &Health, Option<&DropTable>), Changed<Health>>,
-    mut drop_events: EventWriter<DropEvent>,
-    mut death_events: EventWriter<EnemyDeathEvent>,
-) {
-    for (entity, transform, enemy, health, drop_table) in enemy_q.iter_mut() {
-        if !health.is_dead() {
-            continue;
-        }
-        // Ne pas redéclencher si l'ennemi est déjà en phase dying/dead
-        if enemy.current_phase == PhaseId("dying") || enemy.current_phase == PhaseId("dead") {
-            continue;
-        }
-        if let Some(table) = drop_table {
-            drop_events.send(DropEvent {
-                position: transform.translation,
-                table: table.drops,
-            });
-        }
-        death_events.send(EnemyDeathEvent {
-            entity,
-            position: transform.translation,
-        });
-    }
-}
+
 

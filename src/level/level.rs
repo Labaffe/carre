@@ -414,7 +414,7 @@ pub fn build_level_1() -> Vec<LevelStep> {
             .with(Action::SetDifficulty(0.5))
             .with(Action::StartSpawning(
                 "asteroid",
-                1,
+                4,
                 1.0,
                 SpawnPosition::Top,
             ))
@@ -457,7 +457,7 @@ pub fn build_level_1() -> Vec<LevelStep> {
         LevelStep::at(28.0, "planet_appear").with(Action::ShowPlanet),
         LevelStep::at(35.8, "boss_spawn")
             .with(Action::SpawnEnemy(
-                "boss_v2",
+                "boss",
                 1,
                 SpawnPosition::At(0.0, 50.0),
             ))

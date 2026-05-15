@@ -8,12 +8,14 @@ pub mod enemy_register;
 pub mod green_ufo;
 pub mod hit_flash;
 pub mod despawn_zone;
-pub mod spawn;
+//pub mod spawn;
 mod death;
-
 use bevy::prelude::*;
 use crate::enemy::anim_bank::*;
+use crate::enemy::asteroid::AsteroidBuilder;
+use crate::enemy::boss::BossBuilder;
 use crate::enemy::enemy_register::EnemyRegister;
+use crate::enemy::enemy_register::spawn;
 use crate::enemy::hit_flash::*;
 use crate::enemy::green_ufo::*;
 use crate::GameState;
@@ -24,14 +26,20 @@ impl Plugin for EnemyPlugin {
         app
             .insert_resource(
                 EnemyRegister::new()
-                .with(GreenUFOBuilder)
+                .with(GreenUFOBuilder::new())
+                .with(BossBuilder::new())
+                .with(AsteroidBuilder::new())
             )
             .insert_resource(AnimBank::new())
             .add_systems(Startup, preload_frames)
             .add_systems(
                 Update,
-                ( animate_hit_flash,animate)
-                    .run_if(in_state(GameState::Playing)),
-            );
+                (
+                    animate_hit_flash,
+                    animate,
+                    spawn
+                ).run_if(in_state(GameState::Playing)),
+            )
+            ;
     }
 }

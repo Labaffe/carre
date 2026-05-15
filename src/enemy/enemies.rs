@@ -3,7 +3,7 @@
 
 use bevy::prelude::Color;
 
-use crate::enemy::enemy::EnemyConfig;
+use crate::enemy::{asteroid, enemy::EnemyConfig};
 
 pub struct EnemyData {
     pub name: &'static str,

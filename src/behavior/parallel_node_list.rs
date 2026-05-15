@@ -33,3 +33,8 @@ impl ParallelNodeList {
         }
     }
 }
+impl Behavior for ParallelNodeList {
+    fn enable(&mut self,ec: EntityCommands<'_>) {ParallelNodeList::enable(self, ec);}
+    fn disable(&mut self,ec: EntityCommands<'_>) {ParallelNodeList::disable(self, ec);}
+    fn update(&mut self,timedelta:Duration,ec: EntityCommands<'_>) {ParallelNodeList::update(self,timedelta,ec);}
+}

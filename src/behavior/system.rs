@@ -9,9 +9,7 @@ pub fn init_behavior(
 ) {
     for (entity,mut behavior_component) in query.iter_mut() {
         behavior_component.timer.tick(time.delta());
-        if behavior_component.timer.just_finished() {
-            behavior_component.behavior.enable(commands.entity(entity));
-        }
+        behavior_component.behavior.enable(commands.entity(entity));
     }
 }
 

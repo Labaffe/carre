@@ -42,7 +42,7 @@ fn spawn(
             transform: Transform::from_xyz(shift, 0.0, 0.5),
             ..default()
         },
-        BehaviorComponent::new(behavior, Duration::from_secs_f32(shift))
+        BehaviorComponent::new(behavior)
     ));
 }
 

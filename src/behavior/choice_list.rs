@@ -22,14 +22,12 @@ impl ChoiceNodeList {
         );
         self
     }
-    pub fn should_loop(mut self)->Self {
-        self.looping = true;
-        self
-    }
 }
 use bevy::ecs::system::EntityCommands;
 impl Behavior for ChoiceNodeList {
     fn enable(&mut self,ec: EntityCommands<'_>) {NodeListDriver::enable(self, ec);}
     fn disable(&mut self,ec: EntityCommands<'_>) {NodeListDriver::disable(self, ec);}
-    fn update(&mut self,timedelta:Duration,ec: EntityCommands<'_>) {NodeListDriver::update(self,timedelta,ec);}
+    fn update(&mut self,timedelta:Duration,ec: EntityCommands<'_>) {
+        NodeListDriver::update(self,timedelta,ec);
+    }
 }

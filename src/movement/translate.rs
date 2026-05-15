@@ -15,7 +15,10 @@ impl Translate {
     }
 }
 impl Movement for Translate {
-    fn evaluate(&self,at:Duration,deltatime:Duration,current_position:Vec2)->Vec2 {  
+    fn evaluate(&mut self,at:Duration,deltatime:Duration,current_position:Vec2,player_pos:Vec2)->Vec2 {  
         self.direction * deltatime.as_secs_f32() * self.speed
+    }
+    fn clone_box(&self) -> Box<dyn Movement + Send + Sync> {
+        Box::new(self.clone())
     }
 }

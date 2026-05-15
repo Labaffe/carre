@@ -639,15 +639,7 @@ fn debug_skip_to_outro(
         return;
     }
 
-    // Tuer tous les ennemis
-    for (entity, enemy) in enemy_q.iter() {
-        if enemy.is_dead_phase() {
-            continue;
-        }
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
-        }
-    }
+    
 
     // Despawn tous les astéroïdes
     for entity in asteroid_q.iter() {

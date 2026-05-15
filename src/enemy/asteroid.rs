@@ -5,10 +5,14 @@
 //! La vélocité de base est stockée sans le facteur de difficulté :
 //! celui-ci est appliqué chaque frame dans `move_asteroids`, ce qui permet
 //! aux astéroïdes déjà à l'écran d'accélérer quand la difficulté augmente.
+use bevy::utils::hashbrown::HashMap;
 
 use crate::behavior::*;
-use crate::behavior::behavior::Behavior;
+use crate::behavior::behavior::{Behavior, BehaviorComponent};
+use crate::enemy::anim_bank::Animation;
 use crate::enemy::despawn_zone::DespawnZone;
+use crate::enemy::enemy::Enemy;
+use crate::enemy::enemy_builder::EnemyBuilder;
 use crate::movement::movements::Movements;
 use crate::behavior::ordered_list::OrderedNodeList;
 use crate::game_manager::difficulty::Difficulty;
@@ -25,167 +29,126 @@ static ASTEROID_DROP_TABLE: [(ItemType, f32); 2] = [
     (ItemType::BonusScore, 0.10),
 ];
 
-pub struct AsteroidPlugin;
-
-impl Plugin for AsteroidPlugin {
-    fn build(&self, app: &mut App) {
-        app.insert_resource(AsteroidSpawner::default())
-            .add_systems(Startup, preload_asteroid_textures)
-            .add_systems(
-                Update,
-                (spawn_asteroids)
-                    .run_if(in_state(GameState::Playing)),
-            );
-    }
-}
 
 #[derive(Component)]
 pub struct Asteroid {
-    pub base_velocity: Vec3,
     pub radius: f32,
     pub size: Vec2,
-    /// Index de la texture (0-16), utilisé pour trouver le dossier d'animation de mort.
-    pub texture_index: usize,
 }
 
-/// Inséré sur l'astéroïde au moment d'un hit. Le timer contrôle la durée du flash.
-#[derive(Component)]
-pub struct HitFlash(pub Timer);
 
-#[derive(Resource)]
-struct AsteroidTextures(Vec<(usize, Handle<Image>)>);
 
-#[derive(Resource)]
-struct AsteroidSpawner {
-    timer: Timer,
+pub struct AsteroidBuilder {
+    timer:Timer
+}
+impl AsteroidBuilder {
+    pub fn new()-> Self {Self {timer:Timer::new(Duration::ZERO,TimerMode::Once)}}
 }
 
-impl Default for AsteroidSpawner {
-    fn default() -> Self {
-        Self {
-            timer: Timer::from_seconds(1.0, TimerMode::Repeating),
-        }
-    }
-}
-
-fn preload_asteroid_textures(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let dir = std::path::Path::new("assets/images/asteroids");
-    let mut entries = Vec::new();
-
-    if let Ok(read_dir) = std::fs::read_dir(dir) {
-        for entry in read_dir.flatten() {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            // Cherche les fichiers asteroid_xNNN.png
-            if let Some(rest) = name.strip_prefix("asteroid_x") {
-                if let Some(num_str) = rest.strip_suffix(".png") {
-                    if let Ok(index) = num_str.parse::<usize>() {
-                        let handle = asset_server.load(format!("images/asteroids/{}", name));
-                        entries.push((index, handle));
-                    }
-                }
-            }
-        }
+impl EnemyBuilder for AsteroidBuilder {
+    fn preload_anim(&self)->bevy::utils::HashMap<&str, &str> {
+        HashMap::from([
+            ("asteroid2", "images/asteroids/asteroid2"),
+            ("asteroid3", "images/asteroids/asteroid3"),
+            ("asteroid4", "images/asteroids/asteroid4"),
+            ("asteroid5", "images/asteroids/asteroid5"),
+            ("asteroid6", "images/asteroids/asteroid6"),
+            ("asteroid7", "images/asteroids/asteroid7"),
+            ("asteroid8", "images/asteroids/asteroid8"),
+            ("asteroid9", "images/asteroids/asteroid9"),
+            ("asteroid10", "images/asteroids/asteroid10"),
+            ("asteroid12", "images/asteroids/asteroid12"),
+            ("asteroid13", "images/asteroids/asteroid13"),
+            ("asteroid14", "images/asteroids/asteroid14"),
+            ("asteroid15", "images/asteroids/asteroid15"),
+            ("asteroid16", "images/asteroids/asteroid16")
+        ])
     }
 
-    entries.sort_by_key(|(i, _)| *i);
-    commands.insert_resource(AsteroidTextures(entries));
-}
-
-fn spawn_asteroids(
-    windows: Query<&Window>,
-    mut commands: Commands,
-    mut spawner: ResMut<AsteroidSpawner>,
-    time: Res<Time>,
-    difficulty: Res<Difficulty>,
-    textures: Res<AsteroidTextures>,
-) {
-    // Spawn uniquement si "asteroid" est dans les spawners actifs
-    if !difficulty.active_spawners.contains_key("asteroid") {
-        return;
+    fn get_timer(&mut self)->&mut Timer {
+        &mut self.timer
     }
 
-    spawner
-        .timer
-        .set_duration(Duration::from_secs_f32(difficulty.spawn_interval()));
-    spawner.timer.tick(time.delta());
+    fn spawn(
+        &self,
+        mut commands: Commands,
+        window: &Window,
+        difficulty: &ResMut<Difficulty>,
+        spawn_pos: crate::game_manager::difficulty::SpawnPosition,
+        asset_server:&Res<AssetServer>) {
+        let pos = spawn_pos.resolve(window, 60.0);
+        let half_w = window.width() / 2.0;
+        let half_h = window.height() / 2.0;
+        let x = fastrand::f32() * window.width() - half_w;
+        let is_small = fastrand::f32() < 0.3; // 30% de petits, 70% de gros
+        let pick = fastrand::usize(2..16);
+        let texture_name = "asteroid".to_string()+&pick.to_string();
 
-    if !spawner.timer.just_finished() {
-        return;
-    }
+        let anim = Animation::new(&texture_name,Duration::from_secs_f32(5.0));
+        // Spawn au-dessus de l'écran (juste hors du champ visible)
+        let transform = Transform::from_xyz(pos.x, pos.y + 100.0, 0.0).with_rotation(
+            Quat::from_rotation_z(fastrand::f32() * std::f32::consts::TAU),
+        );
 
-    let window = windows.single();
-    let half_w = window.width() / 2.0;
-    let half_h = window.height() / 2.0;
-    let x = fastrand::f32() * window.width() - half_w;
-    let is_small = fastrand::f32() < 0.3; // 30% de petits, 70% de gros
-    let pick = fastrand::usize(..textures.0.len());
-    let (texture_index, ref texture) = textures.0[pick];
-    let texture = texture.clone();
+        // Taille : petits 80-110px, gros 120-180px
+        let side = if is_small {
+            fastrand::f32() * 30.0 + 80.0
+        } else {
+            fastrand::f32() * 60.0 + 120.0
+        };
+        let size = Vec2::splat(side);
+        let radius = side * 0.30; // hitbox = 30% du diamètre
 
-    // Spawn au-dessus de l'écran (juste hors du champ visible)
-    let transform = Transform::from_xyz(x, half_h + 100.0, 0.0).with_rotation(
-        Quat::from_rotation_z(fastrand::f32() * std::f32::consts::TAU),
-    );
+        // PV proportionnels à la taille : 1 (petit) à 5 (très gros)
+        let health = if side < 35.0 {
+            1
+        } else {
+            ((side - 35.0) / (180.0 - 35.0) * 4.0 + 1.0)
+                .round()
+                .clamp(1.0, 5.0) as i32
+        };
 
-    // Taille : petits 80-110px, gros 120-180px
-    let side = if is_small {
-        fastrand::f32() * 30.0 + 80.0
-    } else {
-        fastrand::f32() * 60.0 + 120.0
-    };
-    let size = Vec2::splat(side);
-    let radius = side * 0.30; // hitbox = 30% du diamètre
+        // Vitesse inversement proportionnelle à la taille (petits = rapides)
+        // Stockée sans le facteur de difficulté (appliqué dans move_asteroids)
+        // Petits ~250 px/s, gros ~100 px/s
+        let speed = 250.0 - (side - 35.0) / (180.0 - 35.0) * 150.0;
+        let base_velocity = Vec3::new(0.0, -speed, 0.0);
+        
+        let movements_slow = Movements::new()
+            .with(Translate::new(Vec2::new(0.0,-1.0), speed));
+        let movements_fast = Movements::new()
+            .with(Translate::new(Vec2::new(0.0,-1.0), speed*3.5));
+        let behavior=BehaviorBuilder::choice()
+            .with(BehaviorBuilder::from_component(movements_slow))
+            .with(BehaviorBuilder::from_component(movements_fast));
 
-    // PV proportionnels à la taille : 1 (petit) à 5 (très gros)
-    let health = if side < 35.0 {
-        1
-    } else {
-        ((side - 35.0) / (180.0 - 35.0) * 4.0 + 1.0)
-            .round()
-            .clamp(1.0, 5.0) as i32
-    };
-
-    // Vitesse inversement proportionnelle à la taille (petits = rapides)
-    // Stockée sans le facteur de difficulté (appliqué dans move_asteroids)
-    // Petits ~250 px/s, gros ~100 px/s
-    let speed = 250.0 - (side - 35.0) / (180.0 - 35.0) * 150.0;
-    let base_velocity = Vec3::new(0.0, -speed, 0.0);
-    
-    let movements_slow = Movements::new()
-        .with(Translate::new(Vec2::new(0.0,-1.0), speed));
-    let movements_fast = Movements::new()
-        .with(Translate::new(Vec2::new(0.0,-1.0), speed*3.5));
-    let behavior=BehaviorBuilder::choice()
-        .with(BehaviorBuilder::from_component(movements_slow))
-        .with(BehaviorBuilder::from_component(movements_fast));
-
-    commands.spawn((
-        SpriteBundle {
-            texture,
-            sprite: Sprite {
-                custom_size: Some(size),
+        commands.spawn((
+            SpriteBundle {
+                //texture: asset_server.load("images/boss/idle/frame000"),
+                sprite: Sprite {
+                    custom_size: Some(size),
+                    ..default()
+                },
+                transform,
                 ..default()
             },
-            transform,
-            ..default()
-        },
-        Asteroid {
-            base_velocity,
-            radius,
-            size,
-            texture_index,
-        },
-        Health::new(health),
-        DropTable {
-            drops: &ASTEROID_DROP_TABLE,
-        },
-        DespawnZone {
-            x:-window.width(),
-            y:-window.height(),
-            width: window.width() * 2,
-            height:window.height() * 0.25
-        },
-        behavior
-    ));
+            anim,
+            Enemy {radius,sprite_size:size.x,name:"Asteroid"},
+            Health::new(health),
+            DropTable {
+                drops: &ASTEROID_DROP_TABLE,
+            },
+            DespawnZone {
+                x:-window.width(),
+                y:-window.height(),
+                width: window.width() * 2.0,
+                height:window.height() * 0.25
+            },
+            BehaviorComponent::new( behavior)
+        ));
+    }
+
+    fn name(&self)->&str {
+        "asteroid"
+    }
 }

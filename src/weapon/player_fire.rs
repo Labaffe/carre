@@ -4,7 +4,8 @@
 //! Le mouvement et le despawn offscreen sont pris en charge par `ProjectilePlugin`.
 //! La collision projectile-ennemi est gérée dans `enemy::enemy::projectile_enemy_collision`.
 
-use crate::enemy::asteroid::{Asteroid, HitFlash};
+use crate::enemy::asteroid::{Asteroid};
+use crate::enemy::hit_flash::HitFlash;
 use crate::fx::explosion::{spawn_explosion, spawn_projectile_death};
 use crate::game_manager::difficulty::Difficulty;
 use crate::game_manager::state::GameState;
@@ -173,15 +174,7 @@ fn projectile_asteroid_collision(
 
                 if health.is_dead() {
                     if !despawned_asteroids.contains(&asteroid_entity) {
-                        spawn_explosion(
-                            &mut commands,
-                            &asset_server,
-                            asteroid_transform.translation,
-                            asteroid.size,
-                            asteroid.texture_index,
-                            asteroid.base_velocity * difficulty.factor,
-                            asteroid_transform.rotation,
-                        );
+
                         commands.spawn(AudioBundle {
                             source: asset_server.load("audio/sfx/asteroid_die.ogg"),
                             settings: PlaybackSettings::DESPAWN,

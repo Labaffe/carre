@@ -370,15 +370,15 @@ fn bomb_apply_damage(
     for (entity, transform, asteroid, mut health, drop_table) in asteroids.iter_mut() {
         health.take_damage(BOMB_DAMAGE_ASTEROID);
         if health.is_dead() {
-            crate::fx::explosion::spawn_explosion(
-                &mut commands,
-                &asset_server,
-                transform.translation,
-                asteroid.size,
-                asteroid.texture_index,
-                asteroid.base_velocity * difficulty.factor,
-                transform.rotation,
-            );
+            //crate::fx::explosion::spawn_explosion(
+            //    &mut commands,
+            //    &asset_server,
+            //    transform.translation,
+            //    asteroid.size,
+            //    asteroid.texture_index,
+            //    asteroid.base_velocity * difficulty.factor,
+            //    transform.rotation,
+            //);
             if let Some(table) = drop_table {
                 drop_events.send(DropEvent {
                     position: transform.translation,
