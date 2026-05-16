@@ -23,9 +23,11 @@
 //! 3. Les systèmes génériques prennent en charge dégâts, flash, transitions
 
 use bevy::prelude::*;
+use bevy::ui::debug::print_ui_layout_tree;
 
 
 use crate::enemy::enemies::EnemyData;
+use crate::enemy::hit_flash::HitFlash;
 use crate::game_manager::state::GameState;
 use crate::item::item::{DropEvent, DropTable};
 use crate::menu::pause::not_paused;
@@ -133,7 +135,7 @@ const HIT_FLASH_DURATION: f32 = 0.06;
 /// Collision projectiles joueur → ennemi. Inflige `projectile.damage` PV
 /// à l'ennemi ciblé si celui-ci est dans une phase vulnérable. Le projectile
 /// est toujours détruit au contact, même contre un ennemi invulnérable.
-fn projectile_enemy_collision(
+pub fn projectile_enemy_collision(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut score: ResMut<Score>,
@@ -141,18 +143,16 @@ fn projectile_enemy_collision(
     mut enemy_q: Query<(Entity, &Transform, &Enemy, &mut Health)>,
 ) {
     let mut despawned_projectiles = std::collections::HashSet::new();
-
     for (enemy_entity, enemy_transform, enemy, mut health) in enemy_q.iter_mut() {
 
-
         for (projectile_entity, projectile_transform, projectile) in projectile_q.iter() {
+             
             if projectile.team != Team::Player {
                 continue;
             }
             if despawned_projectiles.contains(&projectile_entity) {
                 continue;
             }
-
             let hit = projectile_hits_circle(
                 projectile_transform.translation.truncate(),
                 projectile_transform.rotation,
@@ -163,7 +163,6 @@ fn projectile_enemy_collision(
             if !hit {
                 continue;
             }
-
             // Le projectile est détruit même contre un ennemi invulnérable.
             if let Some(mut e) = commands.get_entity(projectile_entity) {
                 e.despawn();
@@ -175,7 +174,7 @@ fn projectile_enemy_collision(
                 score.add(1);
 
                 if let Some(mut ent) = commands.get_entity(enemy_entity) {
-                    ent.insert(EnemyHitFlash(Timer::from_seconds(
+                    ent.insert(HitFlash(Timer::from_seconds(
                         HIT_FLASH_DURATION,
                         TimerMode::Once,
                     )));

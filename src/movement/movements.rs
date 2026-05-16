@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 #[derive(Component)]
 pub struct Movements {
     directions: Vec<Box<dyn Movement + Send + Sync>>,
+    velocity:Vec2,
     time: Stopwatch,
     lag: Duration,
 }
@@ -14,6 +15,7 @@ impl Clone for Movements {
     fn clone(&self) -> Self {
         Movements {
             directions: self.directions.iter().map(|m| m.clone_box()).collect(),
+            velocity:Vec2::ZERO,
             time: self.time.clone(),
             lag: self.lag,
         }
@@ -24,6 +26,7 @@ impl Movements {
         Movements {
             directions: vec![],
             time: Stopwatch::new(),
+            velocity: Vec2::ZERO,
             lag: Duration::ZERO,
         }
     }
@@ -33,14 +36,26 @@ impl Movements {
         self
     }
 
-    pub fn evaluate(&mut self, deltatime: Duration, current_position: Vec2, player_pos: Vec2) -> Vec2 {
+    pub fn evaluate(
+        &mut self, 
+        deltatime: Duration, 
+        current_position: Vec2, 
+        player_pos: Vec2
+    ) -> Vec2 {
         if self.time.elapsed() > self.lag {
             let real_time = self.time.elapsed() - self.lag;
-            self.directions
+            let velocity = self.directions
                 .iter_mut()
-                .map(|m| m.evaluate(real_time, deltatime, current_position, player_pos)
+                .map(|m| m.evaluate(
+                    real_time, 
+                    deltatime, 
+                    current_position, 
+                    self.velocity,
+                    player_pos)
                 )
-                .sum()
+                .sum();
+            self.velocity = velocity;
+            velocity
         } else {
             Vec2::ZERO
         }

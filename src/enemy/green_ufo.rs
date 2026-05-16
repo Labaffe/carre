@@ -27,7 +27,7 @@ use crate::movement::movements::Movements;
 use crate::movement::rush::Rush;
 use crate::movement::translate::{ Translate};
 use crate::physic::health::Health;
-
+use crate::behavior::choice_list::TransitionMessages;
 const RUSH_SPEED: f32 = 800.0;
 const RUSH_DURATION: f32 = 1.5;
 const IDLE_DURATION: f32 = 1.0;
@@ -71,7 +71,7 @@ impl EnemyBuilder for GreenUFOBuilder {
         let pos = spawn_pos.resolve(window, 60.0);
         //let first_frame = frames.0.first().cloned().unwrap_or_default();
         let rush_movement = Movements::new()
-            .with(Rush::new(10.0))
+            .with(Rush::new(1500.0))
             ;
         let rush_sound = BehaviorBuilder::nothing();
         // AudioBundle {
@@ -104,7 +104,8 @@ impl EnemyBuilder for GreenUFOBuilder {
         );
         let behavior = BehaviorBuilder::choice()
             .with(alive)
-            .with(dying);
+            .with(dying)
+            .add_transition(0,1,"die");
         commands.spawn((
             SpriteBundle {
                 //texture: first_frame,
@@ -115,6 +116,7 @@ impl EnemyBuilder for GreenUFOBuilder {
                 transform: Transform::from_xyz(pos.x, pos.y, 0.5),
                 ..default()
             },
+            TransitionMessages::new(),
             Enemy::new(GREEN_UFO),
             Health::new(GREEN_UFO.total_hp),
             HitFlash (Timer::new(Duration::from_secs_f32(1.0), TimerMode::Once) ),

@@ -39,5 +39,5 @@ impl Behavior for ComponentContainer {
             self.active = false;
         }
     }
-    fn update(&mut self,_timedelta:Duration,_cmd:EntityCommands) {}
+    fn update(&mut self,_timedelta:Duration,_cmd:EntityCommands,transition_messages:&Vec<String>) {}
 }

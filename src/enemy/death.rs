@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::{GameState, enemy::enemy::{Enemy, EnemyDeathEvent}, item::item::{DropEvent, DropTable}, physic::health::Health};
+use crate::{GameState, behavior::{self, behavior::BehaviorComponent, choice_list::TransitionMessages}, enemy::enemy::{Enemy, EnemyDeathEvent}, item::item::{DropEvent, DropTable}, physic::health::Health};
 pub struct EnemyDeathPlugin;
 
 impl Plugin for EnemyDeathPlugin {
@@ -23,26 +23,36 @@ pub struct DeathAnim {
 #[derive(Component,Clone)]
 pub struct DespawnSelf;
 
-fn detect_death(
+pub fn detect_death(
     mut commands: Commands,
     time: Res<Time>,
     mut drop_events: EventWriter<DropEvent>,
     mut death_events: EventWriter<EnemyDeathEvent>,
-    mut query: Query<(Entity, &mut Health, &Enemy, &Transform, Option<&DropTable>)>,
+    mut query: Query<(Entity, &mut Health, &Enemy, &Transform, Option<&DropTable>, &mut TransitionMessages)>,
 ) {
-    for (entity, mut health, mut enemy,transform,drop_table) in query.iter_mut() {
+    for (entity, mut health, mut enemy,transform,drop_table,mut messages) in query.iter_mut() {
+        
         if health.is_dead() & !health.dying {
+            println!("got a dead one {}",enemy.name);
             health.dying = true;
             if let Some(table) = drop_table {
-            drop_events.send(DropEvent {
-                position: transform.translation,
-                table: table.drops,
-            });
+                drop_events.send(DropEvent {
+                    position: transform.translation,
+                    table: table.drops,
+                });
             }
+            messages.messages.push("die".to_string());
+            println!("send message");
             death_events.send(EnemyDeathEvent {
                 entity,
                 position: transform.translation,
             });
         }
+    }
+}
+
+pub fn despawn(mut commands: Commands,mut death_events: EventWriter<EnemyDeathEvent>,query:Query<Entity,With<DespawnSelf>>) {
+    for entity in query.iter() {
+        if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
     }
 }

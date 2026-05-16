@@ -19,9 +19,16 @@ impl Sinusoid {
     }
 }
 impl Movement for Sinusoid {
-    fn evaluate(&mut self,at:Duration,delta:Duration,current_position:Vec2,player_pos:Vec2)->Vec2 {
+    fn evaluate(
+        &mut self,
+        at:Duration,
+        deltatime:Duration,
+        current_position:Vec2,
+        velocity:Vec2,
+        player_pos:Vec2
+    )->Vec2 { 
         self.amplitude * (
-            (self.pulse * (at+delta).as_secs_f32() + self.phase).sin() 
+            (self.pulse * (at+deltatime).as_secs_f32() + self.phase).sin() 
             - (self.pulse * (at).as_secs_f32() + self.phase).sin()
         ) * self.direction
     }

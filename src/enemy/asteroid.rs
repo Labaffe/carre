@@ -7,9 +7,11 @@
 //! aux astéroïdes déjà à l'écran d'accélérer quand la difficulté augmente.
 use bevy::utils::hashbrown::HashMap;
 
+use crate::behavior::choice_list::TransitionMessages;
 use crate::behavior::*;
 use crate::behavior::behavior::{Behavior, BehaviorComponent};
 use crate::enemy::anim_bank::Animation;
+use crate::enemy::death::DespawnSelf;
 use crate::enemy::despawn_zone::DespawnZone;
 use crate::enemy::enemy::Enemy;
 use crate::enemy::enemy_builder::EnemyBuilder;
@@ -114,14 +116,13 @@ impl EnemyBuilder for AsteroidBuilder {
         let speed = 250.0 - (side - 35.0) / (180.0 - 35.0) * 150.0;
         let base_velocity = Vec3::new(0.0, -speed, 0.0);
         
-        let movements_slow = Movements::new()
-            .with(Translate::new(Vec2::new(0.0,-1.0), speed));
-        let movements_fast = Movements::new()
-            .with(Translate::new(Vec2::new(0.0,-1.0), speed*3.5));
-        let behavior=BehaviorBuilder::choice()
-            .with(BehaviorBuilder::from_component(movements_slow))
-            .with(BehaviorBuilder::from_component(movements_fast));
-
+        let alive = BehaviorBuilder::from_component(Movements::new()
+            .with(Translate::new(Vec2::new(0.0,-1.0), speed*difficulty.factor)));
+        let dying = BehaviorBuilder::from_component(DespawnSelf);
+        let behavior = BehaviorBuilder::choice()
+            .with(alive)
+            .with(dying)
+            .add_transition(0,1,"die");
         commands.spawn((
             SpriteBundle {
                 //texture: asset_server.load("images/boss/idle/frame000"),
@@ -138,6 +139,7 @@ impl EnemyBuilder for AsteroidBuilder {
             DropTable {
                 drops: &ASTEROID_DROP_TABLE,
             },
+            TransitionMessages::new(),
             DespawnZone {
                 x:-window.width(),
                 y:-window.height(),

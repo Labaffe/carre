@@ -31,9 +31,12 @@ use bevy::prelude::*;
 
 use crate::behavior::BehaviorBuilder;
 use crate::behavior::behavior::BehaviorComponent;
+use crate::enemy::anim_bank::Animation;
 use crate::movement::goto::{self, Goto};
 use crate::movement::movement::Movement;
-use crate::movement::rotate::Rotate;
+use crate::movement::oscilate::Oscilate;
+use crate::movement::rotate::RotateAround;
+use crate::movement::rush::{self, Rush};
 use crate::movement::shake::Shake;
 use crate::movement::sinusoid::Sinusoid;
 use crate::movement::translate::Translate;
@@ -115,7 +118,11 @@ impl EnemyBuilder for BossBuilder {
     }
 
     fn preload_anim(&self)->HashMap<&str, &str> {
-        HashMap::new()
+        HashMap::from([
+            ("boss", "images/boss/animation_1"),
+            ("boss_flexing", "images/boss/flexing"),
+            ("boss_idle", "images/boss/idle"),
+        ])
     }
 
     fn spawn(&self,
@@ -127,37 +134,65 @@ impl EnemyBuilder for BossBuilder {
     ) {
         println!("going to spawn boss");
         let spiral = Movements::new()
-        .with(Rotate::new(Vec2::ZERO, INTRO_SPIRAL_TURNS))
+        .with(RotateAround::new(Vec2::ZERO, INTRO_SPIRAL_TURNS))
         .with(Goto::new(Vec2::ZERO,-100.0));
-        let entering = BehaviorBuilder::multiple()
+        let entering = BehaviorBuilder::first(
+            Duration::from_secs_f32(1.0),
+            BehaviorBuilder::multiple()
             .with(BehaviorBuilder::from_component(spiral))
-            .with(BehaviorBuilder::nothing());
+            .with(BehaviorBuilder::from_component(Animation::new("idle", Duration::from_secs(1))))
+        ).then(
+            Duration::from_secs(1),
+            BehaviorBuilder::from_component(Animation::new("boss_flexing",Duration::from_secs_f32(0.1)))
+        );
             //.with(BehaviorBuilder::from_component(AudioBundle {
             //    source: asset_server.load("audio/sfx/boss_start.ogg"),
             //    settings: PlaybackSettings::DESPAWN,
         //}));
+        let boss_anim_behavior = BehaviorBuilder::from_component( Animation::new("boss", Duration::from_secs_f32(0.1)));
+        let boss_idle_anim_behavior = BehaviorBuilder::from_component( Animation::new("boss_idle", Duration::from_secs_f32(0.1)));
+
         let patrol_movement_left=Movements::new()
-            .with(Sinusoid::new(500.0,1.0,0.0,Vec2::new(0.0, 1.0)))
+            .with(Oscilate::new(
+                Vec2::new(1.0, 0.0),
+                Vec2::ZERO,
+                6.0, 
+                window.height() *0.5
+            ))
             .with(Translate::new(Vec2::new(-1.0,0.0), 100.0));
         let patrol_movement_right=Movements::new()
-            .with(Sinusoid::new(500.0,1.0,0.0,Vec2::new(0.0, 1.0)))
+            .with(Oscilate::new(
+                Vec2::new(1.0, 0.0),
+                Vec2::ZERO,
+                6.0, 
+                window.height() *0.5
+            ))
             .with(Translate::new(Vec2::new(1.0,0.0), 100.0));
-        let charge_movement1 =BehaviorBuilder::nothing();
-        let charge_movement2 =BehaviorBuilder::nothing();
-        let patrol_and_charge= BehaviorBuilder::first(
-                Duration::from_secs_f32(4.0), 
-                BehaviorBuilder::from_component( patrol_movement_left))
+        let charge_movement1 =BehaviorBuilder::from_component(Movements::new().with( Rush::new( 1500.0)));
+        let charge_movement2 =BehaviorBuilder::from_component(Movements::new().with( Rush::new( 1500.0)));
+        let alive= BehaviorBuilder::first(
+                Duration::from_secs_f32(6.0), 
+                BehaviorBuilder::multiple()
+                .with(BehaviorBuilder::from_component( patrol_movement_left))
+                .with(boss_idle_anim_behavior)   
+                )
             .then(
                 Duration::from_secs_f32(1.0),
-                charge_movement1)
+                BehaviorBuilder::multiple()
+                .with(charge_movement1)
+                .with(boss_anim_behavior)
+            )
             .then(
-                Duration::from_secs_f32(4.0),
+                Duration::from_secs_f32(6.0),
+                BehaviorBuilder::multiple()
+                .with(
                 BehaviorBuilder::from_component( patrol_movement_right))
+            )
             .then(
                 Duration::from_secs_f32(1.0),
-                charge_movement2)
+                charge_movement2
+            )
             .should_loop();
-
         let dying=BehaviorBuilder::first(
             Duration::from_secs_f32(0.4),
             BehaviorBuilder::from_component(Movements::new().with(Shake::new(100.0,0.4)))
@@ -165,10 +200,17 @@ impl EnemyBuilder for BossBuilder {
             Duration::from_secs_f32(1.0),
             BehaviorBuilder::from_component(DespawnSelf)
         );
-
-        let behavior = BehaviorBuilder::first(Duration::from_secs_f32(1.0), entering)
-            .then(Duration::from_secs_f32(10.0),patrol_and_charge);
-
+        let life = BehaviorBuilder::choice()
+            .with(alive)
+            .with(dying)
+            .add_transition(0, 1, "die");
+        let behavior = BehaviorBuilder::first(
+            Duration::from_secs_f32(2.0), 
+            entering
+        ).then(
+            Duration::from_secs_f32(10000.0),
+            life
+        );
         commands.spawn((
         SpriteBundle {
             texture: asset_server.load("images/boss/idle/frame000.png"),
@@ -179,11 +221,13 @@ impl EnemyBuilder for BossBuilder {
             },
             transform: Transform {
                 translation: Vec3::ZERO,
-                scale: Vec3::splat(INTRO_START_SCALE),
+                scale: Vec3::splat(INTRO_END_SCALE),
                 ..default()
             },
             ..default()
         },
+
+        Enemy::new(BOSS),
         Health::new(BOSS.total_hp),
         BossMarker,
         BehaviorComponent::new( behavior)

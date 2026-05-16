@@ -13,8 +13,15 @@ impl Chase {
     }
 }
 impl Movement for Chase {
-    fn evaluate(&mut self,at:Duration,delta:Duration,current_position:Vec2,player_position:Vec2)->Vec2 {
-        let direction = (player_position-current_position).normalize_or_zero();
+    fn evaluate(
+        &mut self,
+        at:Duration,
+        deltatime:Duration,
+        current_position:Vec2,
+        velocity:Vec2,
+        player_pos:Vec2
+    )->Vec2 { 
+        let direction = (player_pos-current_position).normalize_or_zero();
         direction * self.speed
     }
     fn clone_box(&self) -> Box<dyn Movement + Send + Sync> {

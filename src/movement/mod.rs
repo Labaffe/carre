@@ -7,6 +7,7 @@ pub mod rush;
 pub mod goto;
 pub mod shake;
 pub mod rotate;
+pub mod oscilate;
 use bevy::prelude::*;
 use crate::movement::movements::Movements;
 use crate::GameState;

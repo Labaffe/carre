@@ -7,7 +7,7 @@ pub mod behavior;
 pub mod component_container;
 pub mod indexed_node_list;
 mod system;
-mod choice_list;
+pub mod choice_list;
 pub mod parallel_node_list;
 
 use bevy::prelude::*;
@@ -27,7 +27,7 @@ pub struct Empty;
 impl Behavior for Empty {
     fn enable(&mut self, ec: EntityCommands) {}
     fn disable(&mut self, ec: EntityCommands) {}
-    fn update(&mut self,timedelta:Duration,ec:EntityCommands) {}
+    fn update(&mut self,timedelta:Duration,ec:EntityCommands,transition_messages:&Vec<String>) {}
 }
 
 pub struct BehaviorBuilder {}

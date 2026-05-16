@@ -15,7 +15,14 @@ impl Shake {
     }
 }
 impl Movement for Shake {
-    fn evaluate(&mut self,at:Duration,delta:Duration,current_position:Vec2,player_pos:Vec2)->Vec2 {
+    fn evaluate(
+        &mut self,
+        at:Duration,
+        deltatime:Duration,
+        current_position:Vec2,
+        velocity:Vec2,
+        player_pos:Vec2
+    )->Vec2 { 
         let progress = at.as_secs_f32() / self.duration;
         let shake = progress * progress * self.amplitude;
         let dx = (fastrand::f32() - 0.5) * 2.0 * shake;

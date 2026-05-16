@@ -414,8 +414,8 @@ pub fn build_level_1() -> Vec<LevelStep> {
             .with(Action::SetDifficulty(0.5))
             .with(Action::StartSpawning(
                 "asteroid",
-                4,
-                1.0,
+                1,
+                0.5,
                 SpawnPosition::Top,
             ))
             .with(Action::Log("Niveau 1 démarré")),

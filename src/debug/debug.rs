@@ -4,6 +4,7 @@
 //! et affiche la timeline du niveau avec les liens de causalité.
 
 use crate::MusicMain;
+use crate::behavior::behavior::BehaviorComponent;
 use crate::enemy::asteroid::Asteroid;
 use crate::enemy::boss::{BossCharge, BossMarker};
 use crate::enemy::enemy::Enemy;
@@ -218,9 +219,7 @@ fn update_debug_ui(
             &Enemy,
             &Health,
             &Transform,
-            Option<&BossMarker>,
-            //Option<&GreenUFOMarker>,
-            Option<&BossCharge>,
+            &BehaviorComponent,
         ),
         Without<Player>,
     >,
@@ -249,16 +248,15 @@ fn update_debug_ui(
         .unwrap_or_else(|_| ("N/A".to_string(), 0));
 
     let mut enemy_lines = String::new();
-    for (enemy, health, transform, boss, charge) in enemy_q.iter() {
+    for (enemy, health, transform, behavior_comp) in enemy_q.iter() {
         let name = enemy.name;
         let pos = format!(
             "({:.0}, {:.0})",
             transform.translation.x, transform.translation.y
         );
-        let charging = if charge.is_some() { " [charging]" } else { "" };
         enemy_lines.push_str(&format!(
-            "\n  {} {} | HP {}/{} | {}",
-            name, pos, health.current, health.max, charging
+            "\n  {} {} | HP {}/{} ",
+            name, pos, health.current, health.max
         ));
     }
 

@@ -17,9 +17,9 @@ impl ParallelNodeList {
         );
         self
     }
-    pub fn update(&mut self,timedelta:Duration,mut cmd:EntityCommands) {
+    pub fn update(&mut self,timedelta:Duration,mut cmd:EntityCommands,transition_messages:&Vec<String>) {
         for node in self.node_list.nodes.iter_mut() {
-            node.0.behavior.update(timedelta, cmd.reborrow());
+            node.0.behavior.update(timedelta, cmd.reborrow(),transition_messages);
         }
     }
     pub fn enable(&mut self,mut ec: EntityCommands) {
@@ -36,5 +36,5 @@ impl ParallelNodeList {
 impl Behavior for ParallelNodeList {
     fn enable(&mut self,ec: EntityCommands<'_>) {ParallelNodeList::enable(self, ec);}
     fn disable(&mut self,ec: EntityCommands<'_>) {ParallelNodeList::disable(self, ec);}
-    fn update(&mut self,timedelta:Duration,ec: EntityCommands<'_>) {ParallelNodeList::update(self,timedelta,ec);}
+    fn update(&mut self,timedelta:Duration,ec: EntityCommands<'_>,transition_messages:&Vec<String>) {ParallelNodeList::update(self,timedelta,ec,transition_messages);}
 }

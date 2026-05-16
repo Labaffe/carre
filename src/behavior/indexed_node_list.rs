@@ -49,11 +49,11 @@ pub trait NodeListDriver {
     fn get_indexed_node_list(&self)-> &IndexedNodeList; 
     fn get_indexed_node_list_mut(&mut self)-> &mut IndexedNodeList; 
     fn pick_next(&mut self);
-    fn update(&mut self,timedelta:Duration,mut cmd:EntityCommands) {
+    fn update(&mut self,timedelta:Duration,mut cmd:EntityCommands,transition_messages:&Vec<String>) {
         let my_span = info_span!("update ordered list", name = "update ordered list").entered();
 
         if self.enabled() {
-            self.get_indexed_node_list_mut().current_node_mut().behavior.update(timedelta, cmd.reborrow());
+            self.get_indexed_node_list_mut().current_node_mut().behavior.update(timedelta, cmd.reborrow(),transition_messages);
             self.get_indexed_node_list_mut().tick(timedelta);
             if self.get_indexed_node_list_mut().is_node_finished() {
                 self.pick_next();
