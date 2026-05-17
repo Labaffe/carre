@@ -57,6 +57,10 @@ struct CountdownPop {
     duration: f32,
 }
 
+/// Taille de police de référence pour le zoom dynamique du countdown.
+#[derive(Component)]
+struct BaseFontSize(f32);
+
 #[derive(Resource)]
 struct CountdownState {
     timer: f32,
@@ -102,10 +106,10 @@ fn start_countdown(
         .with_children(|parent| {
             parent.spawn((
                 Text::new("READY"),
-                TextFont { font, font_size: 80.0, ..default() },
+                TextFont { font, font_size: 0.0, ..default() },
                 TextColor(Color::WHITE),
                 Node::default(),
-                Transform::from_scale(Vec3::splat(0.0)),
+                BaseFontSize(80.0),
                 CountdownPop {
                     timer: 0.0,
                     duration: POP_DURATION,
@@ -128,7 +132,7 @@ fn update_countdown(
     time: Res<Time>,
     asset_server: Res<AssetServer>,
     mut state: Option<ResMut<CountdownState>>,
-    mut text_q: Query<(&mut Text, &mut TextColor, &mut TextFont, &mut CountdownPop), With<ChildOf>>,
+    mut text_q: Query<(&mut Text, &mut TextColor, &mut BaseFontSize, &mut CountdownPop), With<ChildOf>>,
     ui_q: Query<Entity, With<CountdownUI>>,
     mut boom_events: MessageWriter<BoomEvent>,
 ) {
@@ -156,15 +160,15 @@ fn update_countdown(
         state.current_step = next_step;
         let (_, label, sound) = STEPS[next_step];
 
-        for (mut text, mut text_color, mut text_font, mut pop) in text_q.iter_mut() {
+        for (mut text, mut text_color, mut base, mut pop) in text_q.iter_mut() {
             **text = label.to_string();
 
             if label == "GO!" {
                 text_color.0 = Color::srgba(1.0, 0.85, 0.0, 1.0);
-                text_font.font_size = 120.0;
+                base.0 = 120.0;
             } else {
                 text_color.0 = Color::WHITE;
-                text_font.font_size = 100.0;
+                base.0 = 100.0;
             }
 
             // Reset l'animation de pop
@@ -182,11 +186,13 @@ fn update_countdown(
 }
 
 /// Anime le texte du countdown : zoom-in avec overshoot puis stabilisation + léger fade-out en fin.
+/// Le zoom se fait via TextFont.font_size = BaseFontSize * scale, car Transform.scale
+/// ne s'applique pas aux entités UI en Bevy 0.17+.
 fn animate_countdown_text(
     time: Res<Time>,
-    mut query: Query<(&mut Transform, &mut TextColor, &mut CountdownPop)>,
+    mut query: Query<(&mut TextFont, &BaseFontSize, &mut TextColor, &mut CountdownPop)>,
 ) {
-    for (mut transform, mut text_color, mut pop) in query.iter_mut() {
+    for (mut text_font, base, mut text_color, mut pop) in query.iter_mut() {
         pop.timer += time.delta_secs();
         let t = (pop.timer / pop.duration).clamp(0.0, 1.0);
 
@@ -200,7 +206,7 @@ fn animate_countdown_text(
             POP_OVERSHOOT + (1.0 - POP_OVERSHOOT) * ease
         };
 
-        transform.scale = Vec3::splat(scale);
+        text_font.font_size = base.0 * scale;
 
         let alpha = if pop.timer > pop.duration + 0.2 {
             let fade_t = ((pop.timer - pop.duration - 0.2) / 0.15).clamp(0.0, 1.0);
