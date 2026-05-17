@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy::utils::Duration;
+use std::time::Duration;
 pub trait Movement {
     fn evaluate(
         &mut self,

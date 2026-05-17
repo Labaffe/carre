@@ -131,10 +131,10 @@ fn toggle_debug(
     if keyboard.just_pressed(KeyCode::F2) {
         // Nettoyer les entités en jeu
         for entity in asteroid_q.iter() {
-            if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+            if let Ok(mut e) = commands.get_entity(entity) { e.despawn_recursive(); }
         }
         //for entity in green_ufo_q.iter() {
-        //    if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        //    if let Ok(mut e) = commands.get_entity(entity) { e.despawn_recursive(); }
         //}
 
         // Avancer le LevelRunner jusqu'à "planet_appear" (juste avant le boss)
@@ -171,13 +171,13 @@ fn toggle_debug(
         } else {
             Visibility::Hidden
         };
-        if let Ok(mut vis) = ui_q.get_single_mut() {
+        if let Ok(mut vis) = ui_q.single_mut() {
             *vis = new_vis;
         }
-        if let Ok(mut vis) = level_ui_q.get_single_mut() {
+        if let Ok(mut vis) = level_ui_q.single_mut() {
             *vis = new_vis;
         }
-        if let Ok(mut vis) = mouse_ui_q.get_single_mut() {
+        if let Ok(mut vis) = mouse_ui_q.single_mut() {
             *vis = new_vis;
         }
     }
@@ -214,7 +214,7 @@ fn update_debug_ui(
     let seconds = (elapsed % 60.0) as u32;
 
     let (player_pos, player_hp) = player_q
-        .get_single()
+        .single()
         .map(|(t, h)| {
             (
                 format!("({:.0}, {:.0})", t.translation.x, t.translation.y),
@@ -239,7 +239,7 @@ fn update_debug_ui(
     let asteroid_count = asteroid_q.iter().count();
     let missile_count = projectile_q.iter().count();
 
-    if let Ok(mut text) = ui_q.get_single_mut() {
+    if let Ok(mut text) = ui_q.single_mut() {
         **text = format!(
             "[DEBUG] GOD MODE\n\
              FPS        : {:.0}\n\
@@ -412,7 +412,7 @@ fn update_debug_level_ui(
         lines.push_str("(en attente de MarkLevelComplete)\n");
     }
 
-    if let Ok(mut text) = ui_q.get_single_mut() {
+    if let Ok(mut text) = ui_q.single_mut() {
         **text = lines;
     }
 }
@@ -428,7 +428,7 @@ fn manage_asteroid_labels(
 ) {
     for (label_entity, label, _, _) in label_q.iter() {
         if asteroid_q.get(label.0).is_err() {
-            if let Some(mut e) = commands.get_entity(label_entity) { e.despawn(); }
+            if let Ok(mut e) = commands.get_entity(label_entity) { e.despawn(); }
         }
     }
 
@@ -507,13 +507,13 @@ fn debug_mouse_coords(
         return;
     }
 
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let Some(cursor_pos) = window.cursor_position() else {
         return;
     };
 
     // Convertir en coordonnées world
-    let world_pos = if let Ok((camera, cam_transform)) = camera_q.get_single() {
+    let world_pos = if let Ok((camera, cam_transform)) = camera_q.single() {
         camera
             .viewport_to_world_2d(cam_transform, cursor_pos)
             .unwrap_or(Vec2::ZERO)
@@ -524,7 +524,7 @@ fn debug_mouse_coords(
     mouse_pos.0 = world_pos;
 
     // Mettre à jour l'UI
-    if let Ok(mut text) = mouse_ui_q.get_single_mut() {
+    if let Ok(mut text) = mouse_ui_q.single_mut() {
         **text = format!(
             "Mouse: ({:.0}, {:.0})  |  Screen: ({:.0}, {:.0})",
             world_pos.x, world_pos.y, cursor_pos.x, cursor_pos.y,
@@ -585,7 +585,7 @@ fn debug_kill_player(
     if keyboard.just_pressed(KeyCode::F5) && *state.get() == crate::game_manager::state::GameState::Playing {
         for (entity, mut health) in player_q.iter_mut() {
             health.current = 0;
-            if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+            if let Ok(mut e) = commands.get_entity(entity) { e.despawn_recursive(); }
         }
         next_state.set(crate::game_manager::state::GameState::GameOver);
     }

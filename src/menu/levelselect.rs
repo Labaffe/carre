@@ -115,7 +115,7 @@ fn setup_level_select(
         .unwrap_or(0);
 
     // ── Background (sprite world-space) ─────────────────────────
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let img_w = 1536.0_f32;
     let img_h = 672.0_f32;
     let scale = (window.width() / img_w).max(window.height() / img_h);
@@ -438,7 +438,7 @@ fn handle_level_select_input(
         if level_num <= total && !completed.contains(&level_num) {
             // Arrêter la musique du menu
             for entity in menu_music_q.iter() {
-                if let Some(e) = commands.get_entity(entity) {
+                if let Ok(mut e) = commands.get_entity(entity) {
                     e.despawn_recursive();
                 }
             }
@@ -473,14 +473,14 @@ fn handle_level_select_input(
 
 fn cleanup_level_select(
     mut commands: Commands,
-    ui_q: Query<(Entity, Option<&Parent>), With<LevelSelectUI>>,
+    ui_q: Query<(Entity, Option<&ChildOf>), With<LevelSelectUI>>,
 ) {
     commands.remove_resource::<LevelSelectState>();
     commands.remove_resource::<CardTextures>();
     // Ne despawn que les entités racine — les enfants suivent via despawn_recursive
     for (entity, parent) in ui_q.iter() {
         if parent.is_none() {
-            if let Some(e) = commands.get_entity(entity) {
+            if let Ok(mut e) = commands.get_entity(entity) {
                 e.despawn_recursive();
             }
         }

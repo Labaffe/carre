@@ -1,5 +1,5 @@
 use crate::behavior::{node::*,node_list::*};
-use bevy::{ecs::system::EntityCommands, utils::tracing::Instrument};
+use bevy::{ecs::system::EntityCommands, log::tracing::Instrument};
 use std::{ops::Index, time::Duration};
 
 pub struct IndexedNodeList {

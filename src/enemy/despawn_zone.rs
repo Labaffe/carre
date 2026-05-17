@@ -31,7 +31,7 @@ fn despawn_on_trigger(
             & (transform.translation.y > zone.y)
             & (transform.translation.y < zone.y + zone.height);
         if trigger {
-            if let Some(mut e) = commands.get_entity(entity) { e.despawn(); }
+            if let Ok(mut e) = commands.get_entity(entity) { e.despawn(); }
         }
     }
 }

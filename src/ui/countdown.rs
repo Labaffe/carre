@@ -77,7 +77,7 @@ fn start_countdown(
 
     // Nettoyer un countdown précédent
     for entity in existing_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
@@ -128,7 +128,7 @@ fn update_countdown(
     time: Res<Time>,
     asset_server: Res<AssetServer>,
     mut state: Option<ResMut<CountdownState>>,
-    mut text_q: Query<(&mut Text, &mut TextColor, &mut TextFont, &mut CountdownPop), With<Parent>>,
+    mut text_q: Query<(&mut Text, &mut TextColor, &mut TextFont, &mut CountdownPop), With<ChildOf>>,
     ui_q: Query<Entity, With<CountdownUI>>,
     mut boom_events: EventWriter<BoomEvent>,
 ) {
@@ -140,7 +140,7 @@ fn update_countdown(
         state.timer += time.delta_secs();
         if state.timer >= COUNTDOWN_DURATION + GO_LINGER {
             for entity in ui_q.iter() {
-                if let Some(e) = commands.get_entity(entity) {
+                if let Ok(mut e) = commands.get_entity(entity) {
                     e.despawn_recursive();
                 }
             }
@@ -221,7 +221,7 @@ fn animate_countdown_text(
 
 fn cleanup_countdown(mut commands: Commands, query: Query<Entity, With<CountdownUI>>) {
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }

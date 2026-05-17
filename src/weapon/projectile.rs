@@ -199,7 +199,7 @@ fn cleanup_projectiles_offscreen(
     for (entity, transform) in query.iter() {
         let p = transform.translation;
         if p.x.abs() > OFFSCREEN_X || p.y.abs() > OFFSCREEN_Y {
-            if let Some(mut e) = commands.get_entity(entity) {
+            if let Ok(mut e) = commands.get_entity(entity) {
                 e.despawn();
             }
         }

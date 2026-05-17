@@ -91,7 +91,7 @@ fn player_collision<T: Hittable>(
         return;
     }
 
-    let Ok((player_entity, player_transform, mut health, invincible)) = player_q.get_single_mut()
+    let Ok((player_entity, player_transform, mut health, invincible)) = player_q.single_mut()
     else {
         return;
     };
@@ -119,7 +119,7 @@ fn player_collision<T: Hittable>(
 
         if distance < combined_radius {
             if hittable.despawn_on_hit() {
-                if let Some(mut e) = commands.get_entity(hostile_entity) {
+                if let Ok(mut e) = commands.get_entity(hostile_entity) {
                     e.despawn();
                 }
             }
@@ -129,13 +129,13 @@ fn player_collision<T: Hittable>(
             commands.spawn((
                 AudioPlayer::new(asset_server.load("audio/sfx/hurt.ogg")),
                 PlaybackSettings {
-                    volume: bevy::audio::Volume::new(3.0),
+                    volume: bevy::audio::Volume::Linear(3.0),
                     ..PlaybackSettings::DESPAWN
                 },
             ));
 
             if health.is_dead() {
-                if let Some(e) = commands.get_entity(player_entity) {
+                if let Ok(mut e) = commands.get_entity(player_entity) {
                     e.despawn_recursive();
                 }
                 next_state.set(GameState::GameOver);

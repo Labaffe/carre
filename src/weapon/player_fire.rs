@@ -65,10 +65,10 @@ fn shoot(
         return;
     }
 
-    let Ok((player_transform, weapon)) = player_q.get_single() else {
+    let Ok((player_transform, weapon)) = player_q.single() else {
         return;
     };
-    let Ok(crosshair_transform) = crosshair_q.get_single() else {
+    let Ok(crosshair_transform) = crosshair_q.single() else {
         return;
     };
 
@@ -162,7 +162,7 @@ fn projectile_asteroid_collision(
                     projectile_transform.translation,
                     projectile.death_folder,
                 );
-                if let Some(mut e) = commands.get_entity(projectile_entity) {
+                if let Ok(mut e) = commands.get_entity(projectile_entity) {
                     e.despawn();
                 }
                 despawned_projectiles.insert(projectile_entity);
@@ -179,7 +179,7 @@ fn projectile_asteroid_collision(
                                 table: table.drops,
                             });
                         }
-                        if let Some(mut e) = commands.get_entity(asteroid_entity) {
+                        if let Ok(mut e) = commands.get_entity(asteroid_entity) {
                             e.despawn();
                         }
                         despawned_asteroids.insert(asteroid_entity);

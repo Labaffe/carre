@@ -127,7 +127,7 @@ fn setup_player(
     windows: Query<&Window>,
     config: Res<LevelConfig>,
 ) {
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let half_h = window.height() / 2.0;
     spawn_player(
         &mut commands,
@@ -224,11 +224,11 @@ fn movement(
         return;
     }
 
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let half_w = window.width() / 2.0 - PLAYER_MARGIN;
     let half_h = window.height() / 2.0 - PLAYER_MARGIN;
 
-    let (mut transform, ship) = query.single_mut();
+    let Ok((mut transform, ship)) = query.single_mut() else { return; };
     let mut direction = Vec3::ZERO;
 
     if keyboard.pressed(KeyCode::KeyW) {
@@ -281,8 +281,8 @@ fn rotate_towards_crosshair(
     crosshair_q: Query<&Transform, (With<Crosshair>, Without<Player>)>,
     mut player_q: Query<&mut Transform, (With<Player>, Without<Crosshair>)>,
 ) {
-    let crosshair_pos = crosshair_q.single().translation;
-    let mut player_transform = player_q.single_mut();
+    let crosshair_pos = crosshair_q.single().unwrap().translation;
+    let mut player_transform = player_q.single_mut().unwrap();
 
     let direction = crosshair_pos - player_transform.translation;
     let angle = direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2;
@@ -301,7 +301,7 @@ fn boom_flash_trigger(
     }
     boom_events.read().for_each(drop);
 
-    if let Ok(entity) = player_q.get_single() {
+    if let Ok(entity) = player_q.single() {
         commands
             .entity(entity)
             .insert(BoomFlash(Timer::from_seconds(
@@ -422,7 +422,7 @@ fn update_lives_ui(
     player_q: Query<&Health, With<Player>>,
     mut icons: Query<(&LifeIcon, &mut Visibility)>,
 ) {
-    let current_lives = player_q.get_single().map(|h| h.current).unwrap_or(0);
+    let current_lives = player_q.single().map(|h| h.current).unwrap_or(0);
     for (icon, mut vis) in icons.iter_mut() {
         if icon.0 < current_lives {
             *vis = Visibility::Visible;
@@ -434,7 +434,7 @@ fn update_lives_ui(
 
 fn cleanup_lives_ui(mut commands: Commands, query: Query<Entity, With<LivesUI>>) {
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }

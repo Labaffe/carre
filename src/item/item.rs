@@ -246,7 +246,7 @@ fn setup_bomb_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 fn cleanup_bomb_ui(mut commands: Commands, query: Query<Entity, With<BombUI>>) {
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
@@ -320,7 +320,7 @@ fn bomb_input(
         commands.spawn((
             AudioPlayer::new(asset_server.load("audio/sfx/bomb.ogg")),
             PlaybackSettings {
-                volume: bevy::audio::Volume::new(3.0),
+                volume: bevy::audio::Volume::Linear(3.0),
                 ..PlaybackSettings::DESPAWN
             },
         ));
@@ -372,7 +372,7 @@ fn bomb_apply_damage(
                     table: table.drops,
                 });
             }
-            if let Some(mut e) = commands.get_entity(entity) {
+            if let Ok(mut e) = commands.get_entity(entity) {
                 e.despawn();
             }
         }
@@ -398,7 +398,7 @@ fn bomb_screen_flash(
         sprite.color = Color::srgba(1.0, 1.0, 1.0, 1.0 - t);
 
         if flash.0.finished() {
-            if let Some(mut e) = commands.get_entity(entity) {
+            if let Ok(mut e) = commands.get_entity(entity) {
                 e.despawn();
             }
         }
@@ -445,7 +445,7 @@ fn process_drop_events(
             commands.spawn((
                 AudioPlayer::new(asset_server.load("audio/sfx/level_up.ogg")),
                 PlaybackSettings {
-                    volume: bevy::audio::Volume::new(3.0),
+                    volume: bevy::audio::Volume::Linear(3.0),
                     ..PlaybackSettings::DESPAWN
                 },
             ));
@@ -478,11 +478,11 @@ fn cleanup_offscreen_droppables(
     windows: Query<&Window>,
     query: Query<(Entity, &Transform), With<Droppable>>,
 ) {
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let limit = -window.height() / 2.0 - 50.0;
     for (entity, transform) in query.iter() {
         if transform.translation.y < limit {
-            if let Some(mut e) = commands.get_entity(entity) {
+            if let Ok(mut e) = commands.get_entity(entity) {
                 e.despawn();
             }
         }
@@ -497,7 +497,7 @@ fn player_pickup(
     mut bombs: ResMut<PlayerBombs>,
     mut score: ResMut<Score>,
 ) {
-    let Ok(player_transform) = player_q.get_single() else {
+    let Ok(player_transform) = player_q.single() else {
         return;
     };
     let player_pos = player_transform.translation;
@@ -521,12 +521,12 @@ fn player_pickup(
         commands.spawn((
             AudioPlayer::new(asset_server.load(droppable.item_type.pickup_sound())),
             PlaybackSettings {
-                volume: bevy::audio::Volume::new(3.0),
+                volume: bevy::audio::Volume::Linear(3.0),
                 ..PlaybackSettings::DESPAWN
             },
         ));
 
-        if let Some(mut e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn();
         }
     }

@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy::utils::Duration;
+use std::time::Duration;
 use bevy::time::Stopwatch;
 use crate::movement::Movement;
 use std::sync::{Arc, Mutex};

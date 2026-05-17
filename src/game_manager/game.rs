@@ -225,7 +225,7 @@ fn level_phase_system(
             spawn_ratio,
             initialized,
         } => {
-            let window = windows.single();
+            let window = windows.single().unwrap();
             let half_w = window.width() / 2.0;
             let half_h = window.height() / 2.0;
 
@@ -262,7 +262,7 @@ fn level_phase_system(
                     ScrollDirection::Right => std::f32::consts::FRAC_PI_2, // pointe vers la gauche
                 };
 
-                if let Ok(mut transform) = player_q.get_single_mut() {
+                if let Ok(mut transform) = player_q.single_mut() {
                     transform.translation.x = start_pos.x;
                     transform.translation.y = start_pos.y;
                     transform.rotation = Quat::from_rotation_z(ship_angle);
@@ -294,7 +294,7 @@ fn level_phase_system(
             // Ease-out quadratique
             let eased = 1.0 - (1.0 - anim_t).powi(2);
 
-            if let Ok(mut transform) = player_q.get_single_mut() {
+            if let Ok(mut transform) = player_q.single_mut() {
                 let pos = *start_pos + (*target_pos - *start_pos) * eased;
                 transform.translation.x = pos.x;
                 transform.translation.y = pos.y;
@@ -302,7 +302,7 @@ fn level_phase_system(
 
             // Intro terminée quand l'animation ET le son sont finis
             if anim_t >= 1.0 && *sound_finished {
-                if let Ok(mut transform) = player_q.get_single_mut() {
+                if let Ok(mut transform) = player_q.single_mut() {
                     transform.translation.x = target_pos.x;
                     transform.translation.y = target_pos.y;
                 }
@@ -384,7 +384,7 @@ pub(crate) fn do_skip_intro(
         if *initialized {
             *target_pos
         } else {
-            let window = windows.single();
+            let window = windows.single().unwrap();
             let half_w = window.width() / 2.0;
             let half_h = window.height() / 2.0;
             match config.scroll_direction {
@@ -399,14 +399,14 @@ pub(crate) fn do_skip_intro(
     };
 
     // Placer le joueur à sa position cible
-    if let Ok(mut transform) = player_q.get_single_mut() {
+    if let Ok(mut transform) = player_q.single_mut() {
         transform.translation.x = final_pos.x;
         transform.translation.y = final_pos.y;
     }
 
     // Despawn le son d'intro
     for entity in intro_sound_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
@@ -499,12 +499,12 @@ fn start_outro(
 
     // Couper les musiques
     for entity in music_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
     for entity in boss_music_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
@@ -575,7 +575,7 @@ fn level_outro_input(
 
     if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
         for entity in music_q.iter() {
-            if let Some(e) = commands.get_entity(entity) {
+            if let Ok(mut e) = commands.get_entity(entity) {
                 e.despawn_recursive();
             }
         }
@@ -637,7 +637,7 @@ fn debug_skip_to_outro(
 
     // Despawn tous les astéroïdes
     for entity in asteroid_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
@@ -729,22 +729,22 @@ fn cleanup_playing(
     commands.remove_resource::<LevelPhase>();
     commands.remove_resource::<ConfirmPopup>();
     for entity in intro_sound_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
     for entity in outro_ui_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
     for entity in music_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
     for entity in confirm_ui_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
@@ -861,7 +861,7 @@ pub(crate) fn despawn_confirm_popup(
     confirm_ui_q: &Query<Entity, With<ConfirmPopupUI>>,
 ) {
     for entity in confirm_ui_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
@@ -918,7 +918,7 @@ fn handle_credits_input(
 
 fn cleanup_credits(mut commands: Commands, ui_q: Query<Entity, With<CreditsUI>>) {
     for entity in ui_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }

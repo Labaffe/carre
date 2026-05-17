@@ -1,4 +1,4 @@
-use bevy::{prelude::*, utils::hashbrown::HashMap};
+use bevy::{prelude::*, platform::collections::HashMap};
 use std::{ time::Duration};
 
 use crate::enemy::enemy_register::EnemyRegister;

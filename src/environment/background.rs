@@ -126,7 +126,7 @@ fn scroll_background(
         let grid_h = BOSS_TILE_COUNT * BG_TILE_HEIGHT;
         let half_grid_h = grid_h / 2.0;
 
-        let window = windows.single();
+        let window = windows.single().unwrap();
         let half_h = window.height() / 2.0;
         let planet_x = (difficulty.elapsed * 0.3).sin() * 15.0;
         let planet_y = -(half_h + 700.0) + (difficulty.elapsed * 0.2).cos() * 10.0;
@@ -197,7 +197,7 @@ const PLANET_ANIM_DURATION: f32 = 10.0;
 const PLANETE_BOSS_ROTATION_SPEED: f32 = 0.50;
 
 fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let half_h = window.height() / 2.0;
 
     commands.spawn((
@@ -239,7 +239,7 @@ fn animate_planet(
         return;
     }
 
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let half_h = window.height() / 2.0;
 
     let progress =

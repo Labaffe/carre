@@ -41,7 +41,7 @@ use crate::movement::rush::{self, Rush};
 use crate::movement::shake::Shake;
 use crate::movement::sinusoid::Sinusoid;
 use crate::movement::translate::Translate;
-use bevy::utils::hashbrown::HashMap;
+use bevy::platform::collections::HashMap;
 use crate::enemy::enemies::BOSS;
 use crate::enemy::enemy::Enemy;
 use crate::enemy::death::DespawnSelf;

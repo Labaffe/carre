@@ -100,17 +100,17 @@ fn setup_main_menu(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     windows: Query<&Window>,
-    camera_q: Query<(&Camera, &GlobalTransform, &OrthographicProjection)>,
+    camera_q: Query<(&Camera, &GlobalTransform, &Projection)>,
     existing_music: Query<Entity, With<MainMenuMusic>>,
 ) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     let tile_texture = asset_server.load("images/backgrounds/space_tile_1.png");
 
     // ── Tiles de fond (world-space sprites) ───────────────────────
-    let (half_w, half_h) = if let Ok((_cam, _gt, proj)) = camera_q.get_single() {
+    let (half_w, half_h) = if let Ok((_cam, _gt, Projection::Orthographic(proj))) = camera_q.single() {
         (proj.area.max.x, proj.area.max.y)
     } else {
-        let window = windows.single();
+        let window = windows.single().unwrap();
         (window.width() / 2.0, window.height() / 2.0)
     };
 
@@ -464,11 +464,11 @@ fn handle_settings_view(
     // Gauche/Droite pour ajuster le volume
     if keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyA) {
         settings.master_volume = (settings.master_volume - VOLUME_STEP).max(0.0);
-        global_volume.volume = bevy::audio::Volume::new(settings.master_volume);
+        global_volume.volume = bevy::audio::Volume::Linear(settings.master_volume);
     }
     if keyboard.just_pressed(KeyCode::ArrowRight) || keyboard.just_pressed(KeyCode::KeyD) {
         settings.master_volume = (settings.master_volume + VOLUME_STEP).min(1.0);
-        global_volume.volume = bevy::audio::Volume::new(settings.master_volume);
+        global_volume.volume = bevy::audio::Volume::Linear(settings.master_volume);
     }
 
     // Retour au menu principal
@@ -480,7 +480,7 @@ fn handle_settings_view(
         anim.selected = 1; // Reselect "Paramètres"
         // Despawn le sous-menu
         for entity in settings_ui_q.iter() {
-            if let Some(e) = commands.get_entity(entity) {
+            if let Ok(mut e) = commands.get_entity(entity) {
                 e.despawn_recursive();
             }
         }
@@ -497,7 +497,7 @@ fn spawn_settings_ui(
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     let pct = (settings.master_volume * 100.0).round() as i32;
 
-    let Ok(root_entity) = root_q.get_single() else {
+    let Ok(root_entity) = root_q.single() else {
         return;
     };
 
@@ -535,7 +535,7 @@ fn spawn_settings_ui(
 
 fn cleanup_main_menu(mut commands: Commands, query: Query<Entity, With<MainMenuUI>>) {
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }

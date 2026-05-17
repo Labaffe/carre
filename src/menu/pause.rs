@@ -241,7 +241,7 @@ fn unpause(
     pause.paused = false;
     time.unpause();
     for entity in pause_ui_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
@@ -325,12 +325,12 @@ fn cleanup_pause(
     }
     commands.remove_resource::<ConfirmPopup>();
     for entity in pause_ui_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
     for entity in confirm_ui_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }

@@ -5,7 +5,7 @@
 //! La vélocité de base est stockée sans le facteur de difficulté :
 //! celui-ci est appliqué chaque frame dans `move_asteroids`, ce qui permet
 //! aux astéroïdes déjà à l'écran d'accélérer quand la difficulté augmente.
-use bevy::utils::hashbrown::HashMap;
+use bevy::platform::collections::HashMap;
 
 use crate::behavior::choice_list::TransitionMessages;
 use crate::behavior::*;
@@ -48,7 +48,7 @@ impl AsteroidBuilder {
 }
 
 impl EnemyBuilder for AsteroidBuilder {
-    fn preload_anim(&self)->bevy::utils::HashMap<&str, &str> {
+    fn preload_anim(&self)->bevy::platform::collections::HashMap<&str, &str> {
         HashMap::from([
             ("asteroid2", "images/asteroids/asteroid2"),
             ("asteroid3", "images/asteroids/asteroid3"),
@@ -124,14 +124,8 @@ impl EnemyBuilder for AsteroidBuilder {
             .with(dying)
             .add_transition(0,1,"die");
         commands.spawn((
-            SpriteBundle {
-                sprite: Sprite {
-                    custom_size: Some(size),
-                    ..default()
-                },
-                transform,
-                ..default()
-            },
+            Sprite { custom_size: Some(size), ..default() },
+            transform,
             anim,
             Enemy {radius,sprite_size:size.x,name:"Asteroid"},
             Health::new(health),

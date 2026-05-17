@@ -2,7 +2,7 @@ use bevy::input::keyboard::KeyboardInput;
 use bevy::prelude::*;
 use bevy::app::AppExit;
 use bevy::scene::ron::value::Float;
-use bevy::utils::Duration;
+use std::time::Duration;
 use bevy::time::Stopwatch;
 use std::{collections::btree_map::Range, f32::consts::*};
 use crate::{behavior::{behavior::*, indexed_node_list::*,component_container::*, ordered_list::*, parallel_node_list::ParallelNodeList}, movement::goto::Goto};

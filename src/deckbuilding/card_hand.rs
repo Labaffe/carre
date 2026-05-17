@@ -51,7 +51,7 @@ fn animate_hand(
     if !visible.is_changed() {
         return;
     }
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let center_x = window.width() / 2.0;
     let y = window.height() * 0.5;
 
@@ -87,7 +87,7 @@ fn hover_card(
     mut interaction_query: Query<(Entity, &Interaction, &Node, &CardUI), (Changed<Interaction>, With<CardUI>)>,
     windows: Query<&Window>,
 ) {
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let base_y = window.height() * 0.5;
 
     for (entity, interaction, style,card_ui) in interaction_query.iter_mut() {

@@ -164,7 +164,7 @@ pub fn projectile_enemy_collision(
                 continue;
             }
             // Le projectile est détruit même contre un ennemi invulnérable.
-            if let Some(mut e) = commands.get_entity(projectile_entity) {
+            if let Ok(mut e) = commands.get_entity(projectile_entity) {
                 e.despawn();
             }
             despawned_projectiles.insert(projectile_entity);
@@ -173,7 +173,7 @@ pub fn projectile_enemy_collision(
                 health.take_damage(projectile.damage);
                 score.add(1);
 
-                if let Some(mut ent) = commands.get_entity(enemy_entity) {
+                if let Ok(mut ent) = commands.get_entity(enemy_entity) {
                     ent.insert(HitFlash(Timer::from_seconds(
                         HIT_FLASH_DURATION,
                         TimerMode::Once,

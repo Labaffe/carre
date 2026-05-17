@@ -31,7 +31,7 @@ pub fn movement_driver(
     query_player: Query<(&Player, &Transform), Without<Movements>>,
 ) {
     // Gracefully handle missing or multiple players
-    let Ok((_, player_transform)) = query_player.get_single() else {
+    let Ok((_, player_transform)) = query_player.single() else {
         return;
     };
 

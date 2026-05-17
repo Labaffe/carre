@@ -139,7 +139,7 @@ fn setup_gameover_ui(
 
 fn stop_main_music(mut commands: Commands, main_music_q: Query<Entity, With<MusicMain>>) {
     for entity in main_music_q.iter() {
-        if let Some(mut e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn();
         }
     }
@@ -158,7 +158,7 @@ fn animate_gameover(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut next_state: ResMut<NextState<GameState>>,
-    gameover_music_q: Query<(Entity, Option<&AudioSink>), With<MusicGameOver>>,
+    mut gameover_music_q: Query<(Entity, Option<&mut AudioSink>), With<MusicGameOver>>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
 ) {
@@ -196,9 +196,9 @@ fn animate_gameover(
             // Capturer les valeurs actuelles au moment du skip
             anim.fade_start_bg_alpha = Some(current_bg_alpha);
             anim.fade_start_text_alpha = Some(current_text_alpha);
-            for (_entity, sink) in gameover_music_q.iter() {
+            for (_entity, sink) in gameover_music_q.iter_mut() {
                 if let Some(sink) = sink {
-                    anim.fade_start_volume = Some(sink.volume());
+                    anim.fade_start_volume = Some(sink.volume().to_linear());
                 }
             }
         }
@@ -212,9 +212,9 @@ fn animate_gameover(
             // Capturer les valeurs actuelles au moment du déclenchement auto
             anim.fade_start_bg_alpha = Some(current_bg_alpha);
             anim.fade_start_text_alpha = Some(current_text_alpha);
-            for (_entity, sink) in gameover_music_q.iter() {
+            for (_entity, sink) in gameover_music_q.iter_mut() {
                 if let Some(sink) = sink {
-                    anim.fade_start_volume = Some(sink.volume());
+                    anim.fade_start_volume = Some(sink.volume().to_linear());
                 }
             }
         }
@@ -229,7 +229,7 @@ fn animate_gameover(
 
             // Fondu au noir progressif (depuis l'alpha capturé → 1.0)
             let base_bg = anim.fade_start_bg_alpha.unwrap_or(current_bg_alpha);
-            if let Ok(mut bg) = bg_q.get_single_mut() {
+            if let Ok(mut bg) = bg_q.single_mut() {
                 bg.0.set_alpha(base_bg + fade_progress * (1.0 - base_bg));
             }
 
@@ -241,16 +241,16 @@ fn animate_gameover(
 
             // Fondu progressif du volume de la musique (depuis le volume capturé)
             let base_volume = anim.fade_start_volume.unwrap_or(1.0);
-            for (_entity, sink) in gameover_music_q.iter() {
-                if let Some(sink) = sink {
-                    sink.set_volume(base_volume * (1.0 - fade_progress));
+            for (_entity, sink) in gameover_music_q.iter_mut() {
+                if let Some(mut sink) = sink {
+                    sink.set_volume(bevy::audio::Volume::Linear(base_volume * (1.0 - fade_progress)));
                 }
             }
 
             // Transition quand le fondu est terminé
             if fade_progress >= 1.0 {
                 for (entity, _) in gameover_music_q.iter() {
-                    if let Some(mut e) = commands.get_entity(entity) {
+                    if let Ok(mut e) = commands.get_entity(entity) {
                         e.despawn();
                     }
                 }
@@ -265,7 +265,7 @@ fn animate_gameover(
 
     // ── Animation normale ────────────────────────────────────────
     // fond : noir opaque → semi-transparent
-    if let Ok(mut bg) = bg_q.get_single_mut() {
+    if let Ok(mut bg) = bg_q.single_mut() {
         bg.0.set_alpha(1.0 - progress * 0.25);
     }
 
@@ -281,7 +281,7 @@ fn animate_gameover(
 
 fn cleanup_gameover_ui(mut commands: Commands, query: Query<Entity, With<GameOverUI>>) {
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
@@ -350,7 +350,7 @@ fn handle_restart(
     // ─── R = rejouer le niveau (hors campagne uniquement) ──────
     if !is_campaign && keyboard.just_pressed(KeyCode::KeyR) {
         for entity in gameover_music_q.iter() {
-            if let Some(mut e) = commands.get_entity(entity) {
+            if let Ok(mut e) = commands.get_entity(entity) {
                 e.despawn();
             }
         }
@@ -361,7 +361,7 @@ fn handle_restart(
     if !is_campaign && keyboard.just_pressed(KeyCode::Escape) {
         commands.remove_resource::<PlayMode>();
         for entity in gameover_music_q.iter() {
-            if let Some(mut e) = commands.get_entity(entity) {
+            if let Ok(mut e) = commands.get_entity(entity) {
                 e.despawn();
             }
         }

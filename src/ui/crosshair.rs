@@ -45,7 +45,7 @@ const OUTLINE: f32 = 2.0;
 const DOT_SIZE: f32 = 3.0;
 
 fn spawn_crosshair(mut commands: Commands, mut windows: Query<&mut Window>) {
-    let mut window = windows.single_mut();
+    let mut window = windows.single_mut().unwrap();
     window.cursor_options.visible = false;
 
     let half_h = window.height() / 2.0;
@@ -67,10 +67,8 @@ fn spawn_crosshair(mut commands: Commands, mut windows: Query<&mut Window>) {
 
     let parent = commands
         .spawn((
-            SpatialBundle {
-                transform: Transform::from_xyz(0.0, start_y, 10.0),
-                ..default()
-            },
+            Transform::from_xyz(0.0, start_y, 10.0),
+            Visibility::default(),
             Crosshair,
             CrosshairAnim { elapsed: 0.0 },
         ))
@@ -78,62 +76,37 @@ fn spawn_crosshair(mut commands: Commands, mut windows: Query<&mut Window>) {
 
     let mut children = Vec::new();
 
-    // Branches (contour noir + blanc)
     for (ox, oy, w, h) in arms {
-        // Contour noir (derrière, légèrement plus grand)
         let outline = commands
-            .spawn(SpriteBundle {
-                sprite: Sprite {
-                    color: black,
-                    custom_size: Some(Vec2::new(w + OUTLINE, h + OUTLINE)),
-                    ..default()
-                },
-                transform: Transform::from_xyz(ox, oy, 0.0),
-                ..default()
-            })
+            .spawn((
+                Sprite { color: black, custom_size: Some(Vec2::new(w + OUTLINE, h + OUTLINE)), ..default() },
+                Transform::from_xyz(ox, oy, 0.0),
+            ))
             .id();
         children.push(outline);
 
-        // Branche blanche (devant)
         let arm = commands
-            .spawn(SpriteBundle {
-                sprite: Sprite {
-                    color: white,
-                    custom_size: Some(Vec2::new(w, h)),
-                    ..default()
-                },
-                transform: Transform::from_xyz(ox, oy, 0.1),
-                ..default()
-            })
+            .spawn((
+                Sprite { color: white, custom_size: Some(Vec2::new(w, h)), ..default() },
+                Transform::from_xyz(ox, oy, 0.1),
+            ))
             .id();
         children.push(arm);
     }
 
-    // Point central — contour noir
     let dot_outline = commands
-        .spawn(SpriteBundle {
-            sprite: Sprite {
-                color: black,
-                custom_size: Some(Vec2::splat(DOT_SIZE + OUTLINE)),
-                ..default()
-            },
-            transform: Transform::from_xyz(0.0, 0.0, 0.0),
-            ..default()
-        })
+        .spawn((
+            Sprite { color: black, custom_size: Some(Vec2::splat(DOT_SIZE + OUTLINE)), ..default() },
+            Transform::from_xyz(0.0, 0.0, 0.0),
+        ))
         .id();
     children.push(dot_outline);
 
-    // Point central — blanc
     let dot = commands
-        .spawn(SpriteBundle {
-            sprite: Sprite {
-                color: white,
-                custom_size: Some(Vec2::splat(DOT_SIZE)),
-                ..default()
-            },
-            transform: Transform::from_xyz(0.0, 0.0, 0.1),
-            ..default()
-        })
+        .spawn((
+            Sprite { color: white, custom_size: Some(Vec2::splat(DOT_SIZE)), ..default() },
+            Transform::from_xyz(0.0, 0.0, 0.1),
+        ))
         .id();
     children.push(dot);
 
@@ -145,10 +118,10 @@ fn despawn_crosshair(
     query: Query<Entity, With<Crosshair>>,
     mut windows: Query<&mut Window>,
 ) {
-    windows.single_mut().cursor_options.visible = true;
+    windows.single_mut().unwrap().cursor_options.visible = true;
 
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
@@ -163,23 +136,26 @@ fn crosshair_follow_mouse(
     mut crosshair_q: Query<(&mut Transform, &GlobalTransform), With<Crosshair>>,
     difficulty: Res<Difficulty>,
 ) {
-    let (camera, camera_gt) = camera_q.single();
+    let Ok((camera, camera_gt)) = camera_q.single() else { return; };
 
     // Pendant le blocage : téléporter le curseur système sur le crosshair
     if difficulty.elapsed < CROSSHAIR_LOCK_DURATION {
-        let (_, crosshair_gt) = crosshair_q.single();
+        let Ok((_, crosshair_gt)) = crosshair_q.single() else { return; };
         if let Ok(screen_pos) = camera.world_to_viewport(camera_gt, crosshair_gt.translation()) {
-            windows.single_mut().set_cursor_position(Some(screen_pos));
+            if let Ok(mut window) = windows.single_mut() {
+                window.set_cursor_position(Some(screen_pos));
+            }
         }
         return;
     }
 
     // Après le blocage : le crosshair suit la souris normalement
-    let window = windows.single();
+    let Ok(window) = windows.single() else { return; };
     if let Some(cursor_pos) = window.cursor_position() {
         if let Ok(world_pos) = camera.viewport_to_world_2d(camera_gt, cursor_pos) {
-            let (mut crosshair_transform, _) = crosshair_q.single_mut();
-            crosshair_transform.translation = world_pos.extend(10.0);
+            if let Ok((mut crosshair_transform, _)) = crosshair_q.single_mut() {
+                crosshair_transform.translation = world_pos.extend(10.0);
+            }
         }
     }
 }

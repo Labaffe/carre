@@ -7,7 +7,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use bevy::prelude::*;
-use bevy::utils::hashbrown::HashMap;
+use bevy::platform::collections::HashMap;
 
 use crate::behavior::*;
 use crate::behavior::behavior::BehaviorComponent;
@@ -107,15 +107,8 @@ impl EnemyBuilder for GreenUFOBuilder {
             .with(dying)
             .add_transition(0,1,"die");
         commands.spawn((
-            SpriteBundle {
-                //texture: first_frame,
-                sprite: Sprite {
-                    custom_size: Some(Vec2::splat(GREEN_UFO.config.sprite_size)),
-                    ..default()
-                },
-                transform: Transform::from_xyz(pos.x, pos.y, 0.5),
-                ..default()
-            },
+            Sprite { custom_size: Some(Vec2::splat(GREEN_UFO.config.sprite_size)), ..default() },
+            Transform::from_xyz(pos.x, pos.y, 0.5),
             TransitionMessages::new(),
             Enemy::new(GREEN_UFO),
             Health::new(GREEN_UFO.total_hp),

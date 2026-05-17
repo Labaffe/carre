@@ -1,5 +1,5 @@
 use crate::{enemy::enemy_builder::EnemyBuilder, game_manager::difficulty::Difficulty};
-use bevy::{prelude::*, time::Stopwatch, utils::HashMap};
+use bevy::{prelude::*, time::Stopwatch, platform::collections::HashMap};
 
 #[derive(Resource)]
 pub struct EnemyRegister(
@@ -25,7 +25,7 @@ pub fn spawn(
     for enemy_builder in enemy_register.0.iter_mut() {
         enemy_builder.spawns(
             commands.reborrow(), 
-            windows.single(), 
+            windows.single().unwrap(),
             &time,
             &mut difficulty, 
             &asset_server

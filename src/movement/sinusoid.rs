@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use crate::movement::Movement;
-use bevy::utils::Duration;
+use std::time::Duration;
 #[derive(Clone)]
 pub struct Sinusoid {
     amplitude:f32,

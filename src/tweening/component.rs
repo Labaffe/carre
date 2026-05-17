@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy::color::Alpha;
 pub trait TweenTarget: Send + Sync + 'static {
-    type Component: bevy::ecs::component::Component;
+    type Component: bevy::ecs::component::Component<Mutability = bevy::ecs::component::Mutable>;
 
     fn apply(value: f32, target: &mut Self::Component);
 }

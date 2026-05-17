@@ -152,7 +152,7 @@ pub struct MusicGameOver;
 fn setup(mut commands: Commands, settings: Res<GameSettings>) {
     commands.spawn(Camera2d);
     commands.insert_resource(GlobalVolume {
-        volume: bevy::audio::Volume::new(settings.master_volume),
+        volume: bevy::audio::Volume::Linear(settings.master_volume),
     });
 }
 
@@ -184,7 +184,7 @@ fn cleanup_playing(
         .chain(droppables.iter());
 
     for entity in all_entities {
-        if let Some(e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(entity) {
             e.despawn_recursive();
         }
     }
