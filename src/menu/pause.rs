@@ -71,7 +71,7 @@ fn handle_pause_input(
     mouse: Res<ButtonInput<MouseButton>>,
     mut pause: ResMut<PauseState>,
     mut time: ResMut<Time<Virtual>>,
-    mut exit: EventWriter<AppExit>,
+    mut exit: MessageWriter<AppExit>,
     mut next_state: ResMut<NextState<GameState>>,
     pause_ui_q: Query<Entity, With<PauseUI>>,
     mut text_q: Query<(&mut TextColor, &PauseOption), Without<ConfirmOptionMarker>>,
@@ -225,7 +225,7 @@ fn handle_pause_input(
             }
             2 => {
                 // Quitter le jeu
-                exit.send(AppExit::Success);
+                exit.write(AppExit::Success);
             }
             _ => {}
         }
@@ -242,7 +242,7 @@ fn unpause(
     time.unpause();
     for entity in pause_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
 }
@@ -326,12 +326,12 @@ fn cleanup_pause(
     commands.remove_resource::<ConfirmPopup>();
     for entity in pause_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
     for entity in confirm_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
 }

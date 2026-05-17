@@ -58,19 +58,19 @@ pub struct LevelSetupSet;
 ///
 /// Exemple depuis un système boss :
 /// ```ignore
-/// level_events.send(LevelActionEvent(vec![
+/// level_events.write(LevelActionEvent(vec![
 ///     Action::SpawnEnemy("green_ufo", 8),
 ///     Action::PlaySound("audio/alert.ogg"),
 /// ]));
 /// ```
-#[derive(Event)]
+#[derive(Message)]
 pub struct LevelActionEvent(pub Vec<Action>);
 
 pub struct LevelPlugin;
 
 impl Plugin for LevelPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<LevelActionEvent>()
+        app.add_message::<LevelActionEvent>()
             .add_systems(
                 OnEnter(GameState::Playing),
                 setup_level.in_set(LevelSetupSet),
@@ -528,8 +528,8 @@ fn run_level(
     asset_server: Res<AssetServer>,
     runner: Option<ResMut<LevelRunner>>,
     mut difficulty: ResMut<Difficulty>,
-    mut boom_events: EventWriter<BoomEvent>,
-    mut countdown_events: EventWriter<crate::ui::countdown::CountdownEvent>,
+    mut boom_events: MessageWriter<BoomEvent>,
+    mut countdown_events: MessageWriter<crate::ui::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
     level_phase: Option<Res<crate::game_manager::game::LevelPhase>>,
 ) {
@@ -594,8 +594,8 @@ pub(crate) fn execute_action(
     action: &Action,
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
-    boom_events: &mut EventWriter<BoomEvent>,
-    countdown_events: &mut EventWriter<crate::ui::countdown::CountdownEvent>,
+    boom_events: &mut MessageWriter<BoomEvent>,
+    countdown_events: &mut MessageWriter<crate::ui::countdown::CountdownEvent>,
     difficulty: &mut ResMut<Difficulty>,
     music_q: &Query<Entity, With<crate::MusicMain>>,
 ) {
@@ -619,15 +619,15 @@ pub(crate) fn execute_action(
         Action::StopMainMusic => {
             for entity in music_q.iter() {
                 if let Ok(mut e) = commands.get_entity(entity) {
-                    e.despawn_recursive();
+                    e.despawn();
                 }
             }
         }
         Action::StartCountdown => {
-            countdown_events.send(crate::ui::countdown::CountdownEvent);
+            countdown_events.write(crate::ui::countdown::CountdownEvent);
         }
         Action::SendBoom => {
-            boom_events.send(BoomEvent);
+            boom_events.write(BoomEvent);
         }
         Action::SpawnEnemy(name, count, pos) => {
             difficulty.spawn_requests.push((name, *count, *pos));
@@ -665,10 +665,10 @@ pub(crate) fn execute_action(
 fn process_level_action_events(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut events: EventReader<LevelActionEvent>,
+    mut events: MessageReader<LevelActionEvent>,
     mut difficulty: ResMut<Difficulty>,
-    mut boom_events: EventWriter<BoomEvent>,
-    mut countdown_events: EventWriter<crate::ui::countdown::CountdownEvent>,
+    mut boom_events: MessageWriter<BoomEvent>,
+    mut countdown_events: MessageWriter<crate::ui::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
 ) {
     for event in events.read() {

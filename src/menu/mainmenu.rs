@@ -346,7 +346,7 @@ fn handle_menu_input(
     mouse: Res<ButtonInput<MouseButton>>,
     mut anim: ResMut<MainMenuAnim>,
     mut next_state: ResMut<NextState<GameState>>,
-    mut exit: EventWriter<AppExit>,
+    mut exit: MessageWriter<AppExit>,
     mut settings: ResMut<GameSettings>,
     mut global_volume: ResMut<GlobalVolume>,
     asset_server: Res<AssetServer>,
@@ -389,7 +389,7 @@ fn handle_main_view(
     mouse: &Res<ButtonInput<MouseButton>>,
     anim: &mut ResMut<MainMenuAnim>,
     next_state: &mut ResMut<NextState<GameState>>,
-    exit: &mut EventWriter<AppExit>,
+    exit: &mut MessageWriter<AppExit>,
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
     settings: &ResMut<GameSettings>,
@@ -435,7 +435,7 @@ fn handle_main_view(
                 next_state.set(GameState::Editor);
             }
             4 => {
-                exit.send(AppExit::Success);
+                exit.write(AppExit::Success);
             }
             _ => {}
         }
@@ -470,7 +470,7 @@ fn handle_settings_view(
         // Despawn le sous-menu
         for entity in settings_ui_q.iter() {
             if let Ok(mut e) = commands.get_entity(entity) {
-                e.despawn_recursive();
+                e.despawn();
             }
         }
     }
@@ -525,7 +525,7 @@ fn spawn_settings_ui(
 fn cleanup_main_menu(mut commands: Commands, query: Query<Entity, With<MainMenuUI>>) {
     for entity in query.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
     commands.remove_resource::<MainMenuAnim>();

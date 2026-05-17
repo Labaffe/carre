@@ -136,7 +136,7 @@ fn player_collision<T: Hittable>(
 
             if health.is_dead() {
                 if let Ok(mut e) = commands.get_entity(player_entity) {
-                    e.despawn_recursive();
+                    e.despawn();
                 }
                 next_state.set(GameState::GameOver);
             } else {

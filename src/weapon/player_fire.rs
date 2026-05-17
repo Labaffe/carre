@@ -127,7 +127,7 @@ fn projectile_asteroid_collision(
     asset_server: Res<AssetServer>,
     mut score: ResMut<Score>,
     difficulty: Res<Difficulty>,
-    mut drop_events: EventWriter<DropEvent>,
+    mut drop_events: MessageWriter<DropEvent>,
 ) {
     let mut despawned_projectiles = std::collections::HashSet::new();
     let mut despawned_asteroids = std::collections::HashSet::new();
@@ -174,7 +174,7 @@ fn projectile_asteroid_collision(
 
                         commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/asteroid_die.ogg")), PlaybackSettings::DESPAWN));
                         if let Some(table) = drop_table {
-                            drop_events.send(DropEvent {
+                            drop_events.write(DropEvent {
                                 position: asteroid_transform.translation,
                                 table: table.drops,
                             });

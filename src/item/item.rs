@@ -22,8 +22,8 @@ pub struct ItemPlugin;
 
 impl Plugin for ItemPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<DropEvent>()
-            .add_event::<BombEvent>()
+        app.add_message::<DropEvent>()
+            .add_message::<BombEvent>()
             .init_resource::<PlayerBombs>()
             .add_systems(Startup, preload_item_frames)
             .add_systems(OnEnter(GameState::Playing), (setup_bomb_ui, reset_bombs))
@@ -133,14 +133,14 @@ impl Default for PlayerBombs {
 // ─── Événements ─────────────────────────────────────────────────────
 
 /// Émis quand une entité avec `DropTable` meurt.
-#[derive(Event)]
+#[derive(Message)]
 pub struct DropEvent {
     pub position: Vec3,
     pub table: &'static [(ItemType, f32)],
 }
 
 /// Émis quand le joueur déclenche une bombe.
-#[derive(Event)]
+#[derive(Message)]
 pub struct BombEvent;
 
 // ─── Composants UI ──────────────────────────────────────────────────
@@ -247,7 +247,7 @@ fn setup_bomb_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 fn cleanup_bomb_ui(mut commands: Commands, query: Query<Entity, With<BombUI>>) {
     for entity in query.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
 }
@@ -308,13 +308,13 @@ fn blink_bomb_hint(
 fn bomb_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut bombs: ResMut<PlayerBombs>,
-    mut bomb_events: EventWriter<BombEvent>,
+    mut bomb_events: MessageWriter<BombEvent>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
     if keyboard.just_pressed(KeyCode::Space) && bombs.count > 0 {
         bombs.count -= 1;
-        bomb_events.send(BombEvent);
+        bomb_events.write(BombEvent);
 
         // Son de bombe
         commands.spawn((
@@ -341,10 +341,10 @@ fn bomb_input(
 fn bomb_apply_damage(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut bomb_events: EventReader<BombEvent>,
+    mut bomb_events: MessageReader<BombEvent>,
     mut asteroids: Query<(Entity, &Transform, &Asteroid, &mut Health, Option<&DropTable>)>,
     mut enemies: Query<(&Enemy, &mut Health), Without<Asteroid>>,
-    mut drop_events: EventWriter<DropEvent>,
+    mut drop_events: MessageWriter<DropEvent>,
     difficulty: Res<crate::game_manager::difficulty::Difficulty>,
 ) {
     if bomb_events.read().next().is_none() {
@@ -367,7 +367,7 @@ fn bomb_apply_damage(
             //    transform.rotation,
             //);
             if let Some(table) = drop_table {
-                drop_events.send(DropEvent {
+                drop_events.write(DropEvent {
                     position: transform.translation,
                     table: table.drops,
                 });
@@ -410,7 +410,7 @@ fn bomb_screen_flash(
 fn process_drop_events(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut events: EventReader<DropEvent>,
+    mut events: MessageReader<DropEvent>,
     item_frames: Res<ItemFrames>,
 ) {
     for event in events.read() {

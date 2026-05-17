@@ -12,7 +12,7 @@ pub struct CountdownPlugin;
 
 impl Plugin for CountdownPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<CountdownEvent>()
+        app.add_message::<CountdownEvent>()
             .add_systems(
                 Update,
                 (start_countdown, update_countdown, animate_countdown_text)
@@ -23,7 +23,7 @@ impl Plugin for CountdownPlugin {
 }
 
 /// Événement pour déclencher un countdown.
-#[derive(Event)]
+#[derive(Message)]
 pub struct CountdownEvent;
 
 /// Durée totale du countdown (secondes).
@@ -66,7 +66,7 @@ struct CountdownState {
 
 fn start_countdown(
     mut commands: Commands,
-    mut events: EventReader<CountdownEvent>,
+    mut events: MessageReader<CountdownEvent>,
     asset_server: Res<AssetServer>,
     existing_q: Query<Entity, With<CountdownUI>>,
 ) {
@@ -78,7 +78,7 @@ fn start_countdown(
     // Nettoyer un countdown précédent
     for entity in existing_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
 
@@ -130,7 +130,7 @@ fn update_countdown(
     mut state: Option<ResMut<CountdownState>>,
     mut text_q: Query<(&mut Text, &mut TextColor, &mut TextFont, &mut CountdownPop), With<ChildOf>>,
     ui_q: Query<Entity, With<CountdownUI>>,
-    mut boom_events: EventWriter<BoomEvent>,
+    mut boom_events: MessageWriter<BoomEvent>,
 ) {
     let Some(ref mut state) = state else {
         return;
@@ -141,7 +141,7 @@ fn update_countdown(
         if state.timer >= COUNTDOWN_DURATION + GO_LINGER {
             for entity in ui_q.iter() {
                 if let Ok(mut e) = commands.get_entity(entity) {
-                    e.despawn_recursive();
+                    e.despawn();
                 }
             }
             commands.remove_resource::<CountdownState>();
@@ -174,7 +174,7 @@ fn update_countdown(
         commands.spawn((AudioPlayer::new(asset_server.load(sound)), PlaybackSettings::DESPAWN));
 
         if label == "GO!" {
-            boom_events.send(BoomEvent);
+            boom_events.write(BoomEvent);
             state.finished = true;
             state.timer = COUNTDOWN_DURATION;
         }
@@ -222,7 +222,7 @@ fn animate_countdown_text(
 fn cleanup_countdown(mut commands: Commands, query: Query<Entity, With<CountdownUI>>) {
     for entity in query.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
     commands.remove_resource::<CountdownState>();

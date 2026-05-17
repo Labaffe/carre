@@ -439,7 +439,7 @@ fn handle_level_select_input(
             // Arrêter la musique du menu
             for entity in menu_music_q.iter() {
                 if let Ok(mut e) = commands.get_entity(entity) {
-                    e.despawn_recursive();
+                    e.despawn();
                 }
             }
             progress.current_level = level_num;
@@ -481,7 +481,7 @@ fn cleanup_level_select(
     for (entity, parent) in ui_q.iter() {
         if parent.is_none() {
             if let Ok(mut e) = commands.get_entity(entity) {
-                e.despawn_recursive();
+                e.despawn();
             }
         }
     }

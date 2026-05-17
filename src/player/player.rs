@@ -293,7 +293,7 @@ fn rotate_towards_crosshair(
 
 fn boom_flash_trigger(
     mut commands: Commands,
-    mut boom_events: EventReader<BoomEvent>,
+    mut boom_events: MessageReader<BoomEvent>,
     player_q: Query<Entity, With<Player>>,
 ) {
     if boom_events.read().next().is_none() {
@@ -435,7 +435,7 @@ fn update_lives_ui(
 fn cleanup_lives_ui(mut commands: Commands, query: Query<Entity, With<LivesUI>>) {
     for entity in query.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
 }

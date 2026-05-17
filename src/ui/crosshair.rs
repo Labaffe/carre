@@ -44,9 +44,15 @@ const OUTLINE: f32 = 2.0;
 /// Taille du point central (px).
 const DOT_SIZE: f32 = 3.0;
 
-fn spawn_crosshair(mut commands: Commands, mut windows: Query<&mut Window>) {
-    let mut window = windows.single_mut().unwrap();
-    window.cursor_options.visible = false;
+fn spawn_crosshair(
+    mut commands: Commands,
+    windows: Query<&Window>,
+    mut cursor_q: Query<&mut bevy::window::CursorOptions>,
+) {
+    if let Ok(mut cursor) = cursor_q.single_mut() {
+        cursor.visible = false;
+    }
+    let window = windows.single().unwrap();
 
     let half_h = window.height() / 2.0;
     let start_y = -half_h * 0.5 + 150.0;
@@ -116,13 +122,15 @@ fn spawn_crosshair(mut commands: Commands, mut windows: Query<&mut Window>) {
 fn despawn_crosshair(
     mut commands: Commands,
     query: Query<Entity, With<Crosshair>>,
-    mut windows: Query<&mut Window>,
+    mut cursor_q: Query<&mut bevy::window::CursorOptions>,
 ) {
-    windows.single_mut().unwrap().cursor_options.visible = true;
+    if let Ok(mut cursor) = cursor_q.single_mut() {
+        cursor.visible = true;
+    }
 
     for entity in query.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
 }

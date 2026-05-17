@@ -40,7 +40,7 @@ pub struct EnemyPlugin;
 
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<EnemyDeathEvent>()
+        app.add_message::<EnemyDeathEvent>()
             .add_systems(
                 Update,
                 (
@@ -113,7 +113,7 @@ pub struct EnemyDeathAnchor(pub Vec3);
 /// Événement émis quand un ennemi atteint PV=0 pour la première fois.
 /// Permet aux systèmes spécifiques (drop d'items, etc.) de réagir sans
 /// être couplés au moteur de phases.
-#[derive(Event)]
+#[derive(Message)]
 pub struct EnemyDeathEvent {
     pub entity: Entity,
     pub position: Vec3,

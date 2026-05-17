@@ -407,7 +407,7 @@ pub(crate) fn do_skip_intro(
     // Despawn le son d'intro
     for entity in intro_sound_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
 
@@ -422,7 +422,7 @@ pub(crate) fn do_skip_intro(
 fn detect_boss_death(
     mut difficulty: ResMut<Difficulty>,
     boss_q: Query<&Enemy, With<BossMarker>>,
-    mut level_events: EventWriter<crate::level::level::LevelActionEvent>,
+    mut level_events: MessageWriter<crate::level::level::LevelActionEvent>,
 ) {
     // Marquer qu'on a vu un boss vivant (évite la race condition avec Commands différées).
     if !difficulty.boss_seen_alive && !boss_q.is_empty() {
@@ -432,7 +432,7 @@ fn detect_boss_death(
     // Le boss a été vu vivant, toutes les entités boss ont disparu (fin d'anim de mort),
     // et le niveau n'est pas encore marqué comme terminé.
     if difficulty.boss_seen_alive && boss_q.is_empty() && !difficulty.level_complete {
-        level_events.send(crate::level::level::LevelActionEvent(vec![
+        level_events.write(crate::level::level::LevelActionEvent(vec![
             crate::level::level::Action::MarkLevelComplete,
         ]));
     }
@@ -500,12 +500,12 @@ fn start_outro(
     // Couper les musiques
     for entity in music_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
     for entity in boss_music_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
 
@@ -576,7 +576,7 @@ fn level_outro_input(
     if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
         for entity in music_q.iter() {
             if let Ok(mut e) = commands.get_entity(entity) {
-                e.despawn_recursive();
+                e.despawn();
             }
         }
         pause.outro_active = false;
@@ -638,7 +638,7 @@ fn debug_skip_to_outro(
     // Despawn tous les astéroïdes
     for entity in asteroid_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
 
@@ -730,22 +730,22 @@ fn cleanup_playing(
     commands.remove_resource::<ConfirmPopup>();
     for entity in intro_sound_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
     for entity in outro_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
     for entity in music_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
     for entity in confirm_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
 }
@@ -862,7 +862,7 @@ pub(crate) fn despawn_confirm_popup(
 ) {
     for entity in confirm_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
 }
@@ -919,7 +919,7 @@ fn handle_credits_input(
 fn cleanup_credits(mut commands: Commands, ui_q: Query<Entity, With<CreditsUI>>) {
     for entity in ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+            e.despawn();
         }
     }
 }

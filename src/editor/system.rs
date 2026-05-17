@@ -1,7 +1,6 @@
 use bevy::input::keyboard::KeyboardInput;
 use bevy::prelude::*;
 use bevy::app::AppExit;
-use bevy::scene::ron::value::Float;
 use std::time::Duration;
 use bevy::time::Stopwatch;
 use std::{collections::btree_map::Range, f32::consts::*};
@@ -48,8 +47,8 @@ pub fn init(
     }
 }
 
-pub fn pause(mut exit: EventWriter<AppExit>, keyboard: Res<ButtonInput<KeyCode>>,) {
+pub fn pause(mut exit: MessageWriter<AppExit>, keyboard: Res<ButtonInput<KeyCode>>,) {
     if keyboard.just_pressed(KeyCode::Escape) {
-        exit.send(AppExit::Success);
+        exit.write(AppExit::Success);
     }
 }

@@ -124,17 +124,17 @@ fn toggle_debug(
     music_q: Query<Entity, With<MusicMain>>,
     asteroid_q: Query<Entity, With<Asteroid>>,
     //green_ufo_q: Query<Entity, With<GreenUFOMarker>>,
-    mut boom_events: EventWriter<crate::game_manager::difficulty::BoomEvent>,
-    mut countdown_events: EventWriter<crate::ui::countdown::CountdownEvent>,
+    mut boom_events: MessageWriter<crate::game_manager::difficulty::BoomEvent>,
+    mut countdown_events: MessageWriter<crate::ui::countdown::CountdownEvent>,
     asset_server: Res<AssetServer>,
 ) {
     if keyboard.just_pressed(KeyCode::F2) {
         // Nettoyer les entités en jeu
         for entity in asteroid_q.iter() {
-            if let Ok(mut e) = commands.get_entity(entity) { e.despawn_recursive(); }
+            if let Ok(mut e) = commands.get_entity(entity) { e.despawn(); }
         }
         //for entity in green_ufo_q.iter() {
-        //    if let Ok(mut e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        //    if let Ok(mut e) = commands.get_entity(entity) { e.despawn(); }
         //}
 
         // Avancer le LevelRunner jusqu'à "planet_appear" (juste avant le boss)
@@ -585,7 +585,7 @@ fn debug_kill_player(
     if keyboard.just_pressed(KeyCode::F5) && *state.get() == crate::game_manager::state::GameState::Playing {
         for (entity, mut health) in player_q.iter_mut() {
             health.current = 0;
-            if let Ok(mut e) = commands.get_entity(entity) { e.despawn_recursive(); }
+            if let Ok(mut e) = commands.get_entity(entity) { e.despawn(); }
         }
         next_state.set(crate::game_manager::state::GameState::GameOver);
     }

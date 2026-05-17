@@ -28,7 +28,7 @@ pub struct EnemyPlugin;
 
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<EnemyDeathEvent>()
+        app.add_message::<EnemyDeathEvent>()
             .insert_resource(
                 EnemyRegister::new()
                 .with(GreenUFOBuilder::new())
