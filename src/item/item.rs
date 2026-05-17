@@ -190,8 +190,8 @@ fn setup_bomb_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
+            (
+            Node {
                     position_type: PositionType::Absolute,
                     top: Val::Px(92.0),
                     left: Val::Px(32.0),
@@ -199,37 +199,32 @@ fn setup_bomb_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                     row_gap: Val::Px(8.0),
                     ..default()
                 },
-                ..default()
-            },
+        ),
             BombUI,
         ))
         .with_children(|parent| {
             // Conteneur des icônes de bombes
             parent
                 .spawn((
-                    NodeBundle {
-                        style: Style {
+                    (
+            Node {
                             column_gap: Val::Px(6.0),
                             ..default()
                         },
-                        ..default()
-                    },
+        ),
                     BombIconsContainer,
                 ))
                 .with_children(|icons_parent| {
                     let bomb_texture = asset_server.load("images/bomb/frame000.png");
                     for i in 0..BOMB_MAX_DISPLAY {
                         icons_parent.spawn((
-                            ImageBundle {
-                                image: UiImage::new(bomb_texture.clone()),
-                                style: Style {
-                                    width: Val::Px(BOMB_ICON_SIZE),
-                                    height: Val::Px(BOMB_ICON_SIZE),
-                                    ..default()
-                                },
-                                visibility: Visibility::Hidden,
+                            ImageNode::new(bomb_texture.clone()),
+                            Node {
+                                width: Val::Px(BOMB_ICON_SIZE),
+                                height: Val::Px(BOMB_ICON_SIZE),
                                 ..default()
                             },
+                            Visibility::Hidden,
                             BombIcon(i),
                         ));
                     }
@@ -237,15 +232,10 @@ fn setup_bomb_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 
             // Texte clignotant "ESPACE"
             parent.spawn((
-                TextBundle::from_section(
-                    "[ESPACE]",
-                    TextStyle {
-                        font,
-                        font_size: 14.0,
-                        color: Color::WHITE,
-                    },
-                )
-                .with_style(Style { ..default() }),
+                Text::new("[ESPACE]"),
+                TextFont { font, font_size: 14.0, ..default() },
+                TextColor(Color::WHITE),
+                Node::default(),
                 BombHintText {
                     timer: Timer::from_seconds(BOMB_HINT_VISIBLE, TimerMode::Once),
                     visible: true,
@@ -327,25 +317,22 @@ fn bomb_input(
         bomb_events.send(BombEvent);
 
         // Son de bombe
-        commands.spawn(AudioBundle {
-            source: asset_server.load("audio/sfx/bomb.ogg"),
-            settings: PlaybackSettings {
+        commands.spawn((
+            AudioPlayer::new(asset_server.load("audio/sfx/bomb.ogg")),
+            PlaybackSettings {
                 volume: bevy::audio::Volume::new(3.0),
                 ..PlaybackSettings::DESPAWN
             },
-        });
+        ));
 
         // Flash blanc plein écran
         commands.spawn((
-            SpriteBundle {
-                sprite: Sprite {
-                    color: Color::WHITE,
-                    custom_size: Some(Vec2::new(4000.0, 4000.0)),
-                    ..default()
-                },
-                transform: Transform::from_xyz(0.0, 0.0, 900.0),
+            Sprite {
+                color: Color::WHITE,
+                custom_size: Some(Vec2::new(4000.0, 4000.0)),
                 ..default()
             },
+            Transform::from_xyz(0.0, 0.0, 900.0),
             BombScreenFlash(Timer::from_seconds(BOMB_FLASH_DURATION, TimerMode::Once)),
         ));
     }
@@ -408,7 +395,7 @@ fn bomb_screen_flash(
         flash.0.tick(time.delta());
         let t = flash.0.fraction();
         // Fade out : blanc opaque → transparent
-        sprite.color = Color::rgba(1.0, 1.0, 1.0, 1.0 - t);
+        sprite.color = Color::srgba(1.0, 1.0, 1.0, 1.0 - t);
 
         if flash.0.finished() {
             if let Some(mut e) = commands.get_entity(entity) {
@@ -440,15 +427,12 @@ fn process_drop_events(
             let first_frame = frames.first().cloned().unwrap_or_default();
 
             commands.spawn((
-                SpriteBundle {
-                    texture: first_frame,
-                    sprite: Sprite {
-                        custom_size: Some(Vec2::splat(ITEM_SPRITE_SIZE)),
-                        ..default()
-                    },
-                    transform: Transform::from_translation(event.position),
+                Sprite {
+                    image: first_frame,
+                    custom_size: Some(Vec2::splat(ITEM_SPRITE_SIZE)),
                     ..default()
                 },
+                Transform::from_translation(event.position),
                 Droppable { item_type },
                 ItemAnim {
                     frames,
@@ -458,32 +442,32 @@ fn process_drop_events(
             ));
 
             // Son générique d'apparition d'item
-            commands.spawn(AudioBundle {
-                source: asset_server.load("audio/sfx/level_up.ogg"),
-                settings: PlaybackSettings {
+            commands.spawn((
+                AudioPlayer::new(asset_server.load("audio/sfx/level_up.ogg")),
+                PlaybackSettings {
                     volume: bevy::audio::Volume::new(3.0),
                     ..PlaybackSettings::DESPAWN
                 },
-            });
+            ));
         }
     }
 }
 
-fn animate_items(time: Res<Time>, mut query: Query<(&mut Handle<Image>, &mut ItemAnim)>) {
-    for (mut texture, mut anim) in query.iter_mut() {
+fn animate_items(time: Res<Time>, mut query: Query<(&mut Sprite, &mut ItemAnim)>) {
+    for (mut sprite, mut anim) in query.iter_mut() {
         if anim.frames.is_empty() {
             continue;
         }
         anim.timer.tick(time.delta());
         if anim.timer.just_finished() {
             anim.index = (anim.index + 1) % anim.frames.len();
-            *texture = anim.frames[anim.index].clone();
+            sprite.image = anim.frames[anim.index].clone();
         }
     }
 }
 
 fn move_droppables(time: Res<Time>, mut query: Query<&mut Transform, With<Droppable>>) {
-    let dt = time.delta_seconds();
+    let dt = time.delta_secs();
     for mut transform in query.iter_mut() {
         transform.translation.y -= ITEM_FALL_SPEED * dt;
     }
@@ -534,13 +518,13 @@ fn player_pickup(
             }
         }
 
-        commands.spawn(AudioBundle {
-            source: asset_server.load(droppable.item_type.pickup_sound()),
-            settings: PlaybackSettings {
+        commands.spawn((
+            AudioPlayer::new(asset_server.load(droppable.item_type.pickup_sound())),
+            PlaybackSettings {
                 volume: bevy::audio::Volume::new(3.0),
                 ..PlaybackSettings::DESPAWN
             },
-        });
+        ));
 
         if let Some(mut e) = commands.get_entity(entity) {
             e.despawn();

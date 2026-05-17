@@ -46,7 +46,7 @@ fn animate_hand(
     mut commands: Commands,
     visible: Res<HandVisible>,
     windows: Query<&Window>,
-    query: Query<(Entity, &CardUI, &Style)>,
+    query: Query<(Entity, &CardUI, &Node)>,
 ) {
     if !visible.is_changed() {
         return;
@@ -84,7 +84,7 @@ fn animate_hand(
 // In animate_hand or a new system
 fn hover_card(
     mut commands: Commands,
-    mut interaction_query: Query<(Entity, &Interaction, &Style, &CardUI), (Changed<Interaction>, With<CardUI>)>,
+    mut interaction_query: Query<(Entity, &Interaction, &Node, &CardUI), (Changed<Interaction>, With<CardUI>)>,
     windows: Query<&Window>,
 ) {
     let window = windows.single();

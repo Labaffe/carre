@@ -85,19 +85,8 @@ fn spawn_anim(
 ) {
     let frame_duration = DEATH_ANIM_DURATION / frames.len() as f32;
     commands.spawn((
-        SpriteBundle {
-            texture: frames[0].clone(),
-            sprite: Sprite {
-                custom_size: Some(size),
-                ..default()
-            },
-            transform: Transform {
-                translation: position,
-                rotation,
-                ..default()
-            },
-            ..default()
-        },
+        Sprite { image: frames[0].clone(), custom_size: Some(size), ..default() },
+        Transform { translation: position, rotation, ..default() },
         Explosion {
             frames,
             current_frame: 0,
@@ -118,15 +107,7 @@ pub fn spawn_custom_anim(
 ) {
     let frame_duration = duration / frames.len() as f32;
     commands.spawn((
-        SpriteBundle {
-            texture: frames[0].clone(),
-            sprite: Sprite {
-                custom_size: Some(size),
-                ..default()
-            },
-            transform: Transform::from_translation(position),
-            ..default()
-        },
+        (Sprite { image: frames[0].clone(), custom_size: Some(size), ..default() }, Transform::from_translation(position)),
         Explosion {
             frames,
             current_frame: 0,
@@ -195,16 +176,16 @@ pub fn spawn_projectile_death(
 
 fn move_explosions(mut query: Query<(&mut Transform, &Explosion)>, time: Res<Time>) {
     for (mut transform, explosion) in query.iter_mut() {
-        transform.translation += explosion.velocity * time.delta_seconds();
+        transform.translation += explosion.velocity * time.delta_secs();
     }
 }
 
 fn animate_explosions(
     mut commands: Commands,
     time: Res<Time>,
-    mut query: Query<(Entity, &mut Handle<Image>, &mut Explosion)>,
+    mut query: Query<(Entity, &mut Sprite, &mut Explosion)>,
 ) {
-    for (entity, mut texture, mut explosion) in query.iter_mut() {
+    for (entity, mut sprite, mut explosion) in query.iter_mut() {
         explosion.timer.tick(time.delta());
 
         if explosion.timer.just_finished() {
@@ -212,7 +193,7 @@ fn animate_explosions(
             if explosion.current_frame >= explosion.frames.len() {
                 if let Some(mut e) = commands.get_entity(entity) { e.despawn(); }
             } else {
-                *texture = explosion.frames[explosion.current_frame].clone();
+                sprite.image = explosion.frames[explosion.current_frame].clone();
             }
         }
     }

@@ -65,73 +65,49 @@ struct DebugLevelUI;
 fn setup_debug_ui(mut commands: Commands) {
     // Panneau gauche : infos générales
     commands.spawn((
-        TextBundle {
-            text: Text::from_sections([TextSection::new(
-                "",
-                TextStyle {
-                    font_size: 16.0,
-                    color: Color::WHITE,
-                    ..default()
-                },
-            )]),
-            style: Style {
-                position_type: PositionType::Absolute,
-                top: Val::Px(10.0),
-                left: Val::Px(10.0),
-                ..default()
-            },
-            visibility: Visibility::Hidden,
-            z_index: ZIndex::Global(100),
+        Text::new(""),
+        TextFont { font_size: 16.0, ..default() },
+        TextColor(Color::WHITE),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(10.0),
+            left: Val::Px(10.0),
             ..default()
         },
+        Visibility::Hidden,
+        GlobalZIndex(100),
         DebugUI,
     ));
 
     // Coordonnées souris (en bas à gauche)
     commands.spawn((
-        TextBundle {
-            text: Text::from_sections([TextSection::new(
-                "Mouse: (0, 0)",
-                TextStyle {
-                    font_size: 16.0,
-                    color: Color::rgba(0.0, 1.0, 1.0, 1.0),
-                    ..default()
-                },
-            )]),
-            style: Style {
-                position_type: PositionType::Absolute,
-                bottom: Val::Px(10.0),
-                left: Val::Px(10.0),
-                ..default()
-            },
-            visibility: Visibility::Hidden,
-            z_index: ZIndex::Global(100),
+        Text::new("Mouse: (0, 0)"),
+        TextFont { font_size: 16.0, ..default() },
+        TextColor(Color::srgba(0.0, 1.0, 1.0, 1.0)),
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(10.0),
+            left: Val::Px(10.0),
             ..default()
         },
+        Visibility::Hidden,
+        GlobalZIndex(100),
         DebugMouseUI,
     ));
 
     // Panneau droit : timeline du niveau
     commands.spawn((
-        TextBundle {
-            text: Text::from_sections([TextSection::new(
-                "",
-                TextStyle {
-                    font_size: 14.0,
-                    color: Color::WHITE,
-                    ..default()
-                },
-            )]),
-            style: Style {
-                position_type: PositionType::Absolute,
-                top: Val::Px(10.0),
-                right: Val::Px(10.0),
-                ..default()
-            },
-            visibility: Visibility::Hidden,
-            z_index: ZIndex::Global(100),
+        Text::new(""),
+        TextFont { font_size: 14.0, ..default() },
+        TextColor(Color::WHITE),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(10.0),
+            right: Val::Px(10.0),
             ..default()
         },
+        Visibility::Hidden,
+        GlobalZIndex(100),
         DebugLevelUI,
     ));
 }
@@ -230,7 +206,7 @@ fn update_debug_ui(
         return;
     }
 
-    let fps = 1.0 / time.delta_seconds();
+    let fps = 1.0 / time.delta_secs();
     let elapsed = difficulty.elapsed;
     let factor = difficulty.factor;
 
@@ -264,7 +240,7 @@ fn update_debug_ui(
     let missile_count = projectile_q.iter().count();
 
     if let Ok(mut text) = ui_q.get_single_mut() {
-        text.sections[0].value = format!(
+        **text = format!(
             "[DEBUG] GOD MODE\n\
              FPS        : {:.0}\n\
              Timer      : {:02}:{:02}\n\
@@ -437,7 +413,7 @@ fn update_debug_level_ui(
     }
 
     if let Ok(mut text) = ui_q.get_single_mut() {
-        text.sections[0].value = lines;
+        **text = lines;
     }
 }
 
@@ -549,7 +525,7 @@ fn debug_mouse_coords(
 
     // Mettre à jour l'UI
     if let Ok(mut text) = mouse_ui_q.get_single_mut() {
-        text.sections[0].value = format!(
+        **text = format!(
             "Mouse: ({:.0}, {:.0})  |  Screen: ({:.0}, {:.0})",
             world_pos.x, world_pos.y, cursor_pos.x, cursor_pos.y,
         );

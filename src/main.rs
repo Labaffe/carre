@@ -64,7 +64,7 @@ fn main() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Carré".to_string(),
-                mode: bevy::window::WindowMode::BorderlessFullscreen,
+                mode: bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
                 visible: false,
                 ..default()
             }),
@@ -127,7 +127,7 @@ fn main() {
             DebugPlugin,
         ))
         .add_systems(Startup, setup)
-        .add_systems(Update, show_window_after_render.run_if(run_once()))
+        .add_systems(Update, show_window_after_render.run_if(run_once))
         .add_systems(OnExit(GameState::Playing), cleanup_playing)
         .run();
 }

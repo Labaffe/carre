@@ -33,15 +33,7 @@ fn spawn(
         .then(Duration::from_secs(5),ComponentContainer::new( circle))
         .should_loop();
     commands.spawn((
-        SpriteBundle {
-            texture: frames,
-            sprite: Sprite {
-                custom_size: Some(Vec2::splat(50.0)),
-                ..default()
-            },
-            transform: Transform::from_xyz(shift, 0.0, 0.5),
-            ..default()
-        },
+        (Sprite { image: frames, custom_size: Some(Vec2::splat(50.0)), ..default() }, Transform::from_xyz(shift, 0.0, 0.5)),
         BehaviorComponent::new(behavior)
     ));
 }

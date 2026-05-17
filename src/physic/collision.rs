@@ -126,13 +126,13 @@ fn player_collision<T: Hittable>(
 
             health.take_damage(1);
 
-            commands.spawn(AudioBundle {
-                source: asset_server.load("audio/sfx/hurt.ogg"),
-                settings: PlaybackSettings {
+            commands.spawn((
+                AudioPlayer::new(asset_server.load("audio/sfx/hurt.ogg")),
+                PlaybackSettings {
                     volume: bevy::audio::Volume::new(3.0),
                     ..PlaybackSettings::DESPAWN
                 },
-            });
+            ));
 
             if health.is_dead() {
                 if let Some(e) = commands.get_entity(player_entity) {

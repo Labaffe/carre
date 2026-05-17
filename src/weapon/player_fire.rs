@@ -115,10 +115,7 @@ fn shoot(
         );
     }
 
-    commands.spawn(AudioBundle {
-        source: asset_server.load("audio/sfx/projectile.ogg"),
-        settings: PlaybackSettings::DESPAWN,
-    });
+    commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/projectile.ogg")), PlaybackSettings::DESPAWN));
 }
 
 // ─── Collision projectile joueur → astéroïde ────────────────────────
@@ -175,10 +172,7 @@ fn projectile_asteroid_collision(
                 if health.is_dead() {
                     if !despawned_asteroids.contains(&asteroid_entity) {
 
-                        commands.spawn(AudioBundle {
-                            source: asset_server.load("audio/sfx/asteroid_die.ogg"),
-                            settings: PlaybackSettings::DESPAWN,
-                        });
+                        commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/asteroid_die.ogg")), PlaybackSettings::DESPAWN));
                         if let Some(table) = drop_table {
                             drop_events.send(DropEvent {
                                 position: asteroid_transform.translation,
@@ -194,10 +188,7 @@ fn projectile_asteroid_collision(
                     commands
                         .entity(asteroid_entity)
                         .insert(HitFlash(Timer::from_seconds(0.06, TimerMode::Once)));
-                    commands.spawn(AudioBundle {
-                        source: asset_server.load("audio/sfx/asteroid_hit.ogg"),
-                        settings: PlaybackSettings::DESPAWN,
-                    });
+                    commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/asteroid_hit.ogg")), PlaybackSettings::DESPAWN));
                 }
                 break;
             }

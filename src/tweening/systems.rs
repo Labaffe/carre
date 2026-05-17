@@ -11,7 +11,7 @@ pub fn tween_system<T: TweenTarget>(
     mut query: Query<(Entity, &mut TweenSequence<T>, &mut T::Component)>,
 ) {
     for (entity, mut seq, mut target) in query.iter_mut() {
-        let dt = time.delta_seconds();
+        let dt = time.delta_secs();
 
         // advance time
         seq.current.tick(dt);

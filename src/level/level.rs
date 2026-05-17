@@ -542,7 +542,7 @@ fn run_level(
         return;
     }
     let Some(mut runner) = runner else { return };
-    runner.elapsed += time.delta_seconds();
+    runner.elapsed += time.delta_secs();
 
     // Exécuter toutes les étapes dont le déclencheur est atteint
     loop {
@@ -604,19 +604,14 @@ pub(crate) fn execute_action(
             difficulty.factor = *factor;
         }
         Action::PlaySound(path) => {
-            commands.spawn(AudioBundle {
-                source: asset_server.load(*path),
-                settings: PlaybackSettings::DESPAWN,
-            });
+            commands.spawn((AudioPlayer::new(asset_server.load(*path)), PlaybackSettings::DESPAWN));
         }
         Action::StartMusic(path) => {
             commands.spawn((
-                AudioBundle {
-                    source: asset_server.load(*path),
-                    settings: PlaybackSettings {
-                        mode: bevy::audio::PlaybackMode::Once,
-                        ..default()
-                    },
+                AudioPlayer::new(asset_server.load(*path)),
+                PlaybackSettings {
+                    mode: bevy::audio::PlaybackMode::Once,
+                    ..default()
                 },
                 crate::MusicMain,
             ));

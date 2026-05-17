@@ -278,10 +278,7 @@ fn level_phase_system(
             if !*sound_played {
                 *sound_played = true;
                 commands.spawn((
-                    AudioBundle {
-                        source: asset_server.load(*sound),
-                        settings: PlaybackSettings::DESPAWN,
-                    },
+                    (AudioPlayer::new(asset_server.load(*sound)), PlaybackSettings::DESPAWN),
                     IntroSound,
                 ));
             }
@@ -291,7 +288,7 @@ fn level_phase_system(
                 *sound_finished = true;
             }
 
-            *elapsed += time.delta_seconds();
+            *elapsed += time.delta_secs();
             let anim_t = (*elapsed / *duration).clamp(0.0, 1.0);
 
             // Ease-out quadratique
@@ -542,15 +539,12 @@ fn level_outro_animate(
         return;
     };
 
-    *elapsed += time.delta_seconds();
+    *elapsed += time.delta_secs();
 
     if !*music_spawned {
         *music_spawned = true;
         commands.spawn((
-            AudioBundle {
-                source: asset_server.load("audio/music/stage_clear.ogg"),
-                settings: PlaybackSettings::ONCE,
-            },
+            (AudioPlayer::new(asset_server.load("audio/music/stage_clear.ogg")), PlaybackSettings::ONCE),
             MusicOutro,
         ));
     }
@@ -680,8 +674,8 @@ fn spawn_outro_ui(
 
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
+            (
+            Node {
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     align_items: AlignItems::Center,
@@ -690,47 +684,27 @@ fn spawn_outro_ui(
                     row_gap: Val::Px(30.0),
                     ..default()
                 },
-                background_color: Color::rgba(0.0, 0.0, 0.0, 0.6).into(),
-                z_index: ZIndex::Global(90),
-                ..default()
-            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.6)),
+                GlobalZIndex(90),
+        ),
             OutroUI,
         ))
         .with_children(|parent| {
             // Nom du niveau
             parent.spawn((
-                TextBundle::from_section(
-                    name.to_uppercase(),
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 36.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 1.0),
-                    },
-                ),
+                (Text::new(name.to_uppercase()), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 1.0))),
                 OutroUI,
             ));
             // Titre
             parent.spawn((
-                TextBundle::from_section(
-                    "NIVEAU TERMINE",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 64.0,
-                        color: Color::rgba(1.0, 0.85, 0.0, 1.0),
-                    },
-                ),
+                (Text::new("NIVEAU TERMINE"), TextFont { font: font.clone(), font_size: 64.0, ..default() }, TextColor(Color::srgba(1.0, 0.85, 0.0, 1.0))),
                 OutroUI,
             ));
             // Instruction
             parent.spawn((
-                TextBundle::from_section(
-                    "Appuyez sur Entree pour continuer",
-                    TextStyle {
-                        font,
-                        font_size: 24.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 1.0),
-                    },
-                ),
+                Text::new("Appuyez sur Entree pour continuer"),
+                TextFont { font, font_size: 24.0, ..default() },
+                TextColor(Color::srgba(1.0, 1.0, 1.0, 1.0)),
                 OutroUI,
             ));
         });
@@ -781,13 +755,13 @@ fn cleanup_playing(
 /// Spawne la popup de confirmation "Votre progression sera perdue."
 pub(crate) fn spawn_confirm_popup(commands: &mut Commands, asset_server: &Res<AssetServer>) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
-    let ui_yellow = Color::rgba(1.0, 0.85, 0.0, 1.0);
+    let ui_yellow = Color::srgba(1.0, 0.85, 0.0, 1.0);
 
     // Fond opaque plein écran
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
+            (
+            Node {
                     position_type: PositionType::Absolute,
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
@@ -795,30 +769,28 @@ pub(crate) fn spawn_confirm_popup(commands: &mut Commands, asset_server: &Res<As
                     justify_content: JustifyContent::Center,
                     ..default()
                 },
-                background_color: Color::rgba(0.0, 0.0, 0.0, 1.0).into(),
-                z_index: ZIndex::Global(200),
-                ..default()
-            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.0)),
+                GlobalZIndex(200),
+        ),
             ConfirmPopupUI,
         ))
         .with_children(|overlay| {
             // Bordure jaune (padding = épaisseur du bord)
             overlay
-                .spawn(NodeBundle {
-                    style: Style {
+                .spawn((
+            Node {
                         padding: UiRect::all(Val::Px(4.0)),
                         justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
                         ..default()
                     },
-                    background_color: ui_yellow.into(),
-                    ..default()
-                })
+            BackgroundColor(ui_yellow),
+        ))
                 .with_children(|border| {
                     // Panneau noir intérieur
                     border
-                        .spawn(NodeBundle {
-                            style: Style {
+                        .spawn((
+            Node {
                                 flex_direction: FlexDirection::Column,
                                 align_items: AlignItems::Center,
                                 padding: UiRect::new(
@@ -830,72 +802,50 @@ pub(crate) fn spawn_confirm_popup(commands: &mut Commands, asset_server: &Res<As
                                 row_gap: Val::Px(25.0),
                                 ..default()
                             },
-                            background_color: Color::rgba(0.0, 0.0, 0.0, 1.0).into(),
-                            ..default()
-                        })
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.0)),
+        ))
                         .with_children(|panel| {
                             // Question
                             panel.spawn((
-                                TextBundle::from_section(
-                                    "Votre progression sera perdue.",
-                                    TextStyle {
-                                        font: font.clone(),
-                                        font_size: 22.0,
-                                        color: Color::WHITE,
-                                    },
-                                ),
+                                Text::new("Votre progression sera perdue."),
+                                TextFont { font: font.clone(), font_size: 22.0, ..default() },
+                                TextColor(Color::WHITE),
                                 ConfirmPopupUI,
                             ));
 
                             // Avertissement
                             panel.spawn((
-                                TextBundle::from_section(
-                                    "Etes-vous sur de vouloir quitter ?",
-                                    TextStyle {
-                                        font: font.clone(),
-                                        font_size: 18.0,
-                                        color: ui_yellow,
-                                    },
-                                ),
+                                Text::new("Etes-vous sur de vouloir quitter ?"),
+                                TextFont { font: font.clone(), font_size: 18.0, ..default() },
+                                TextColor(ui_yellow),
                                 ConfirmPopupUI,
                             ));
 
                             // Options côte à côte
                             panel
                                 .spawn((
-                                    NodeBundle {
-                                        style: Style {
+                                    (
+            Node {
                                             flex_direction: FlexDirection::Row,
                                             column_gap: Val::Px(80.0),
                                             margin: UiRect::top(Val::Px(10.0)),
                                             ..default()
                                         },
-                                        ..default()
-                                    },
+        ),
                                     ConfirmPopupUI,
                                 ))
                                 .with_children(|row| {
                                     row.spawn((
-                                        TextBundle::from_section(
-                                            "Non",
-                                            TextStyle {
-                                                font: font.clone(),
-                                                font_size: 32.0,
-                                                color: ui_yellow,
-                                            },
-                                        ),
+                                        Text::new("Non"),
+                                        TextFont { font: font.clone(), font_size: 32.0, ..default() },
+                                        TextColor(ui_yellow),
                                         ConfirmPopupUI,
                                         ConfirmOptionMarker(0),
                                     ));
                                     row.spawn((
-                                        TextBundle::from_section(
-                                            "Oui",
-                                            TextStyle {
-                                                font,
-                                                font_size: 32.0,
-                                                color: Color::rgba(0.6, 0.6, 0.6, 1.0),
-                                            },
-                                        ),
+                                        Text::new("Oui"),
+                                        TextFont { font, font_size: 32.0, ..default() },
+                                        TextColor(Color::srgba(0.6, 0.6, 0.6, 1.0)),
                                         ConfirmPopupUI,
                                         ConfirmOptionMarker(1),
                                     ));
@@ -927,8 +877,8 @@ fn setup_credits(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
+            (
+            Node {
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     align_items: AlignItems::Center,
@@ -937,32 +887,21 @@ fn setup_credits(mut commands: Commands, asset_server: Res<AssetServer>) {
                     row_gap: Val::Px(40.0),
                     ..default()
                 },
-                background_color: Color::rgba(0.0, 0.0, 0.0, 1.0).into(),
-                ..default()
-            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.0)),
+        ),
             CreditsUI,
         ))
         .with_children(|parent| {
             parent.spawn((
-                TextBundle::from_section(
-                    "MERCI D'AVOIR JOUE",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 48.0,
-                        color: Color::WHITE,
-                    },
-                ),
+                Text::new("MERCI D'AVOIR JOUE"),
+                TextFont { font: font.clone(), font_size: 48.0, ..default() },
+                TextColor(Color::WHITE),
                 CreditsUI,
             ));
             parent.spawn((
-                TextBundle::from_section(
-                    "Appuyez sur Entree",
-                    TextStyle {
-                        font,
-                        font_size: 24.0,
-                        color: Color::rgba(0.5, 0.5, 0.5, 1.0),
-                    },
-                ),
+                Text::new("Appuyez sur Entree"),
+                TextFont { font, font_size: 24.0, ..default() },
+                TextColor(Color::srgba(0.5, 0.5, 0.5, 1.0)),
                 CreditsUI,
             ));
         });

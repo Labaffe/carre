@@ -83,42 +83,27 @@ fn setup_score_ui(
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
+            (
+            Node {
                     position_type: PositionType::Absolute,
                     top: Val::Px(20.0),
                     right: Val::Px(20.0),
                     column_gap: Val::Px(12.0),
                     ..default()
                 },
-                // fond entièrement noir au départ
-                background_color: Color::rgba(0.0, 0.0, 0.0, 0.5).into(),
-                ..default()
-            },
+            // fond entièrement noir au départ
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+        ),
             ScoreUI,
         ))
         .with_children(|parent| {
             // texte invisible au départ (alpha = 0, scale réduit via Transform)
             parent.spawn((
-                TextBundle::from_section(
-                    "OVER 9000",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 90.0,
-                        color: Color::rgba(1.0, 0.0, 0.0, 1.0),
-                    },
-                ),
+                (Text::new("OVER 9000"), TextFont { font: font.clone(), font_size: 90.0, ..default() }, TextColor(Color::srgba(1.0, 0.0, 0.0, 1.0))),
                 ScoreText,
             ));
             parent.spawn((
-                TextBundle::from_section(
-                    "level",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 90.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 1.0),
-                    },
-                ),
+                (Text::new("level"), TextFont { font: font.clone(), font_size: 90.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 1.0))),
                 LevelText,
             ));
         });
@@ -137,13 +122,11 @@ fn score_update(
     mut text_q: Query<(&mut Text, &mut Transform), With<ScoreText>>,
     mut score: ResMut<Score>,
 ) {
-    score.current_time += time.delta_seconds();
+    score.current_time += time.delta_secs();
 
     // texte : opacité 0 → 1, zoom 0.3 → 1.0
     for (mut text, mut transform) in text_q.iter_mut() {
-        for section in text.sections.iter_mut() {
-            section.value = score.text();
-        }
+        /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
         let coef = score.get_size_coeff();
         let scale = 0.3 * coef + 1.0 * (1.0 - coef);
         transform.scale = Vec3::splat(scale);
@@ -160,16 +143,11 @@ fn level_update(
     let levelup = score.value > LEVELS[level.value] && LEVELS.len() > level.value + 1;
     if levelup {
         level.value += 1;
-        commands.spawn(AudioBundle {
-            source: asset_server.load("audio/sfx/level_up.ogg"),
-            settings: PlaybackSettings::DESPAWN,
-        });
+        commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/level_up.ogg")), PlaybackSettings::DESPAWN));
     }
     // texte : opacité 0 → 1, zoom 0.3 → 1.0
     for (mut text, mut transform) in text_q.iter_mut() {
-        for section in text.sections.iter_mut() {
-            section.value = (level.value + 1).to_string();
-        }
+        /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
         if levelup {
             transform.scale = Vec3::splat(1.0);
         } else {

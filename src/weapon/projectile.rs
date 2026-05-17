@@ -95,38 +95,27 @@ pub fn spawn_projectile(
     // Axe local +Y du sprite aligné sur la direction de tir
     let rotation = Quat::from_rotation_z(dir.y.atan2(dir.x) - std::f32::consts::FRAC_PI_2);
 
-    let sprite_bundle = match spec.sprite {
-        ProjectileSprite::Texture { path, size } => SpriteBundle {
-            texture: asset_server.load(path),
-            sprite: Sprite {
-                custom_size: size,
-                ..default()
-            },
-            transform: Transform {
-                translation: spec.position,
-                rotation,
-                ..default()
-            },
+    let sprite = match spec.sprite {
+        ProjectileSprite::Texture { path, size } => Sprite {
+            image: asset_server.load(path),
+            custom_size: size,
             ..default()
         },
-        ProjectileSprite::Colored { color, size } => SpriteBundle {
-            sprite: Sprite {
-                color,
-                custom_size: Some(size),
-                ..default()
-            },
-            transform: Transform {
-                translation: spec.position,
-                rotation,
-                ..default()
-            },
+        ProjectileSprite::Colored { color, size } => Sprite {
+            color,
+            custom_size: Some(size),
             ..default()
         },
     };
 
     commands
         .spawn((
-            sprite_bundle,
+            sprite,
+            Transform {
+                translation: spec.position,
+                rotation,
+                ..default()
+            },
             Projectile {
                 velocity,
                 hitbox: spec.hitbox,
@@ -196,7 +185,7 @@ pub fn projectile_hits_circle(
 
 /// Déplace tous les projectiles selon leur vélocité.
 fn move_projectiles(mut query: Query<(&mut Transform, &Projectile)>, time: Res<Time>) {
-    let dt = time.delta_seconds();
+    let dt = time.delta_secs();
     for (mut transform, proj) in query.iter_mut() {
         transform.translation += proj.velocity * dt;
     }

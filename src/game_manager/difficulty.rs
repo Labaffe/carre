@@ -177,7 +177,7 @@ fn update_difficulty(
     time: Res<Time>,
     mut countdown_events: EventWriter<CountdownEvent>,
 ) {
-    difficulty.elapsed += time.delta_seconds();
+    difficulty.elapsed += time.delta_secs();
 
     // Countdown phase 3 : dès que la musique boss démarre
     if let Some(_start) = difficulty.boss_music_start_time {

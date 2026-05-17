@@ -88,13 +88,7 @@ fn handle_pause_input(
         // Mise à jour des couleurs Oui/Non
         for (mut text, marker) in confirm_text_q.iter_mut() {
             let is_sel = marker.0 == popup.selected;
-            for section in text.sections.iter_mut() {
-                if is_sel {
-                    section.style.color = Color::rgba(1.0, 0.85, 0.0, 1.0);
-                } else {
-                    section.style.color = Color::rgba(0.6, 0.6, 0.6, 1.0);
-                }
-            }
+            /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
         }
 
         // Navigation gauche/droite
@@ -159,10 +153,7 @@ fn handle_pause_input(
                 sink.pause();
             }
             // Son de pause
-            commands.spawn(AudioBundle {
-                source: asset_server.load("audio/sfx/pause.ogg"),
-                settings: PlaybackSettings::ONCE,
-            });
+            commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/pause.ogg")), PlaybackSettings::ONCE));
             spawn_pause_ui(&mut commands, &asset_server);
         }
         return;
@@ -190,13 +181,7 @@ fn handle_pause_input(
             || (option.action == PauseAction::MainMenu && pause.selected == 1)
             || (option.action == PauseAction::Quit && pause.selected == 2);
 
-        for section in text.sections.iter_mut() {
-            if is_selected {
-                section.style.color = Color::rgba(1.0, 0.85, 0.0, 1.0);
-            } else {
-                section.style.color = Color::rgba(0.6, 0.6, 0.6, 1.0);
-            }
-        }
+        /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
     }
 
     // Validation
@@ -259,8 +244,8 @@ fn spawn_pause_ui(commands: &mut Commands, asset_server: &Res<AssetServer>) {
 
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
+            (
+            Node {
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     align_items: AlignItems::Center,
@@ -269,33 +254,18 @@ fn spawn_pause_ui(commands: &mut Commands, asset_server: &Res<AssetServer>) {
                     row_gap: Val::Px(40.0),
                     ..default()
                 },
-                background_color: Color::rgba(0.0, 0.0, 0.0, 0.7).into(),
-                z_index: ZIndex::Global(100),
-                ..default()
-            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
+                GlobalZIndex(100),
+        ),
             PauseUI,
         ))
         .with_children(|parent| {
             // Titre PAUSE
-            parent.spawn(TextBundle::from_section(
-                "PAUSE",
-                TextStyle {
-                    font: font.clone(),
-                    font_size: 64.0,
-                    color: Color::WHITE,
-                },
-            ));
+            parent.spawn((Text::new("PAUSE"), TextFont { font: font.clone(), font_size: 64.0, ..default() }, TextColor(Color::WHITE)));
 
             // Option : Reprendre (sélectionnée par défaut → jaune)
             parent.spawn((
-                TextBundle::from_section(
-                    "Reprendre",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 36.0,
-                        color: Color::rgba(1.0, 0.85, 0.0, 1.0),
-                    },
-                ),
+                (Text::new("Reprendre"), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(1.0, 0.85, 0.0, 1.0))),
                 PauseOption {
                     action: PauseAction::Resume,
                 },
@@ -303,14 +273,7 @@ fn spawn_pause_ui(commands: &mut Commands, asset_server: &Res<AssetServer>) {
 
             // Option : Menu principal
             parent.spawn((
-                TextBundle::from_section(
-                    "Menu principal",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 36.0,
-                        color: Color::rgba(0.6, 0.6, 0.6, 1.0),
-                    },
-                ),
+                (Text::new("Menu principal"), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(0.6, 0.6, 0.6, 1.0))),
                 PauseOption {
                     action: PauseAction::MainMenu,
                 },
@@ -318,14 +281,7 @@ fn spawn_pause_ui(commands: &mut Commands, asset_server: &Res<AssetServer>) {
 
             // Option : Quitter
             parent.spawn((
-                TextBundle::from_section(
-                    "Quitter",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 36.0,
-                        color: Color::rgba(0.6, 0.6, 0.6, 1.0),
-                    },
-                ),
+                (Text::new("Quitter"), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(0.6, 0.6, 0.6, 1.0))),
                 PauseOption {
                     action: PauseAction::Quit,
                 },

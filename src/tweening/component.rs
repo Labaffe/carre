@@ -14,7 +14,7 @@ pub trait TweenTarget: Send + Sync + 'static {
 pub struct TranslationX;
 pub struct TranslationY;
 
-// UI Style
+// UI Node
 pub struct StyleLeft;
 pub struct StyleTop;
 
@@ -43,20 +43,20 @@ impl TweenTarget for TranslationY {
     }
 }
 
-// -------- UI Style --------
+// -------- UI Node --------
 
 impl TweenTarget for StyleLeft {
-    type Component = Style;
+    type Component = Node;
 
-    fn apply(value: f32, target: &mut Style) {
+    fn apply(value: f32, target: &mut Node) {
         target.left = Val::Px(value);
     }
 }
 
 impl TweenTarget for StyleTop {
-    type Component = Style;
+    type Component = Node;
 
-    fn apply(value: f32, target: &mut Style) {
+    fn apply(value: f32, target: &mut Node) {
         target.top = Val::Px(value);
     }
 }

@@ -46,13 +46,13 @@ const DOT_SIZE: f32 = 3.0;
 
 fn spawn_crosshair(mut commands: Commands, mut windows: Query<&mut Window>) {
     let mut window = windows.single_mut();
-    window.cursor.visible = false;
+    window.cursor_options.visible = false;
 
     let half_h = window.height() / 2.0;
     let start_y = -half_h * 0.5 + 150.0;
 
-    let white = Color::rgba(1.0, 1.0, 1.0, 0.9);
-    let black = Color::rgba(0.0, 0.0, 0.0, 0.8);
+    let white = Color::srgba(1.0, 1.0, 1.0, 0.9);
+    let black = Color::srgba(0.0, 0.0, 0.0, 0.8);
 
     // Offset de chaque branche depuis le centre
     let arm_offset = GAP + ARM_LENGTH / 2.0;
@@ -137,7 +137,7 @@ fn spawn_crosshair(mut commands: Commands, mut windows: Query<&mut Window>) {
         .id();
     children.push(dot);
 
-    commands.entity(parent).push_children(&children);
+    commands.entity(parent).add_children(&children);
 }
 
 fn despawn_crosshair(
@@ -145,7 +145,7 @@ fn despawn_crosshair(
     query: Query<Entity, With<Crosshair>>,
     mut windows: Query<&mut Window>,
 ) {
-    windows.single_mut().cursor.visible = true;
+    windows.single_mut().cursor_options.visible = true;
 
     for entity in query.iter() {
         if let Some(e) = commands.get_entity(entity) {
@@ -168,7 +168,7 @@ fn crosshair_follow_mouse(
     // Pendant le blocage : téléporter le curseur système sur le crosshair
     if difficulty.elapsed < CROSSHAIR_LOCK_DURATION {
         let (_, crosshair_gt) = crosshair_q.single();
-        if let Some(screen_pos) = camera.world_to_viewport(camera_gt, crosshair_gt.translation()) {
+        if let Ok(screen_pos) = camera.world_to_viewport(camera_gt, crosshair_gt.translation()) {
             windows.single_mut().set_cursor_position(Some(screen_pos));
         }
         return;
@@ -177,7 +177,7 @@ fn crosshair_follow_mouse(
     // Après le blocage : le crosshair suit la souris normalement
     let window = windows.single();
     if let Some(cursor_pos) = window.cursor_position() {
-        if let Some(world_pos) = camera.viewport_to_world_2d(camera_gt, cursor_pos) {
+        if let Ok(world_pos) = camera.viewport_to_world_2d(camera_gt, cursor_pos) {
             let (mut crosshair_transform, _) = crosshair_q.single_mut();
             crosshair_transform.translation = world_pos.extend(10.0);
         }
@@ -196,7 +196,7 @@ fn crosshair_animate(
     mut query: Query<(&mut Transform, &mut CrosshairAnim), With<Crosshair>>,
 ) {
     for (mut transform, mut anim) in query.iter_mut() {
-        anim.elapsed += time.delta_seconds();
+        anim.elapsed += time.delta_secs();
         let scale =
             1.0 + (anim.elapsed * PULSE_SPEED * std::f32::consts::TAU).sin() * PULSE_AMPLITUDE;
         transform.scale = Vec3::splat(scale);

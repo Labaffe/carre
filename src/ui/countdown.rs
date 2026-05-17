@@ -87,8 +87,8 @@ fn start_countdown(
     // Container centré plein écran
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
+            (
+            Node {
                     position_type: PositionType::Absolute,
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
@@ -96,25 +96,16 @@ fn start_countdown(
                     align_items: AlignItems::Center,
                     ..default()
                 },
-                ..default()
-            },
+        ),
             CountdownUI,
         ))
         .with_children(|parent| {
             parent.spawn((
-                TextBundle {
-                    text: Text::from_section(
-                        "READY",
-                        TextStyle {
-                            font,
-                            font_size: 80.0,
-                            color: Color::WHITE,
-                        },
-                    ),
-                    style: Style { ..default() },
-                    transform: Transform::from_scale(Vec3::splat(0.0)),
-                    ..default()
-                },
+                Text::new("READY"),
+                TextFont { font, font_size: 80.0, ..default() },
+                TextColor(Color::WHITE),
+                Node::default(),
+                Transform::from_scale(Vec3::splat(0.0)),
                 CountdownPop {
                     timer: 0.0,
                     duration: POP_DURATION,
@@ -123,10 +114,7 @@ fn start_countdown(
         });
 
     // Son READY
-    commands.spawn(AudioBundle {
-        source: asset_server.load(STEPS[0].2),
-        settings: PlaybackSettings::DESPAWN,
-    });
+    commands.spawn((AudioPlayer::new(asset_server.load(STEPS[0].2)), PlaybackSettings::DESPAWN));
 
     commands.insert_resource(CountdownState {
         timer: 0.0,
@@ -140,7 +128,7 @@ fn update_countdown(
     time: Res<Time>,
     asset_server: Res<AssetServer>,
     mut state: Option<ResMut<CountdownState>>,
-    mut text_q: Query<(&mut Text, &mut CountdownPop), With<Parent>>,
+    mut text_q: Query<(&mut Text, &mut TextColor, &mut TextFont, &mut CountdownPop), With<Parent>>,
     ui_q: Query<Entity, With<CountdownUI>>,
     mut boom_events: EventWriter<BoomEvent>,
 ) {
@@ -149,7 +137,7 @@ fn update_countdown(
     };
 
     if state.finished {
-        state.timer += time.delta_seconds();
+        state.timer += time.delta_secs();
         if state.timer >= COUNTDOWN_DURATION + GO_LINGER {
             for entity in ui_q.iter() {
                 if let Some(e) = commands.get_entity(entity) {
@@ -161,32 +149,29 @@ fn update_countdown(
         return;
     }
 
-    state.timer += time.delta_seconds();
+    state.timer += time.delta_secs();
 
     let next_step = state.current_step + 1;
     if next_step < STEPS.len() && state.timer >= STEPS[next_step].0 {
         state.current_step = next_step;
         let (_, label, sound) = STEPS[next_step];
 
-        for (mut text, mut pop) in text_q.iter_mut() {
-            text.sections[0].value = label.to_string();
+        for (mut text, mut text_color, mut text_font, mut pop) in text_q.iter_mut() {
+            **text = label.to_string();
 
             if label == "GO!" {
-                text.sections[0].style.color = Color::rgba(1.0, 0.85, 0.0, 1.0);
-                text.sections[0].style.font_size = 120.0;
+                text_color.0 = Color::srgba(1.0, 0.85, 0.0, 1.0);
+                text_font.font_size = 120.0;
             } else {
-                text.sections[0].style.color = Color::WHITE;
-                text.sections[0].style.font_size = 100.0;
+                text_color.0 = Color::WHITE;
+                text_font.font_size = 100.0;
             }
 
             // Reset l'animation de pop
             pop.timer = 0.0;
         }
 
-        commands.spawn(AudioBundle {
-            source: asset_server.load(sound),
-            settings: PlaybackSettings::DESPAWN,
-        });
+        commands.spawn((AudioPlayer::new(asset_server.load(sound)), PlaybackSettings::DESPAWN));
 
         if label == "GO!" {
             boom_events.send(BoomEvent);
@@ -199,37 +184,33 @@ fn update_countdown(
 /// Anime le texte du countdown : zoom-in avec overshoot puis stabilisation + léger fade-out en fin.
 fn animate_countdown_text(
     time: Res<Time>,
-    mut query: Query<(&mut Transform, &mut Text, &mut CountdownPop)>,
+    mut query: Query<(&mut Transform, &mut TextColor, &mut CountdownPop)>,
 ) {
-    for (mut transform, mut text, mut pop) in query.iter_mut() {
-        pop.timer += time.delta_seconds();
+    for (mut transform, mut text_color, mut pop) in query.iter_mut() {
+        pop.timer += time.delta_secs();
         let t = (pop.timer / pop.duration).clamp(0.0, 1.0);
 
-        // Courbe d'animation : overshoot élastique
-        // Phase 1 (0→0.5) : scale 0 → POP_OVERSHOOT (ease-out)
-        // Phase 2 (0.5→1.0) : scale POP_OVERSHOOT → 1.0 (ease-in-out)
         let scale = if t < 0.5 {
             let t2 = t / 0.5;
-            let ease = 1.0 - (1.0 - t2).powi(3); // ease-out cubic
+            let ease = 1.0 - (1.0 - t2).powi(3);
             ease * POP_OVERSHOOT
         } else {
             let t2 = (t - 0.5) / 0.5;
-            let ease = t2 * t2 * (3.0 - 2.0 * t2); // smoothstep
+            let ease = t2 * t2 * (3.0 - 2.0 * t2);
             POP_OVERSHOOT + (1.0 - POP_OVERSHOOT) * ease
         };
 
         transform.scale = Vec3::splat(scale);
 
-        // Fade-out léger après la fin de l'animation de pop (entre les étapes)
         let alpha = if pop.timer > pop.duration + 0.2 {
             let fade_t = ((pop.timer - pop.duration - 0.2) / 0.15).clamp(0.0, 1.0);
-            1.0 - fade_t * 0.3 // fade partiel, pas complètement invisible
+            1.0 - fade_t * 0.3
         } else {
             1.0
         };
 
-        let base_srgba = text.sections[0].style.color.to_srgba();
-        text.sections[0].style.color = Color::srgba(
+        let base_srgba = text_color.0.to_srgba();
+        text_color.0 = Color::srgba(
             base_srgba.red,
             base_srgba.green,
             base_srgba.blue,

@@ -213,22 +213,18 @@ impl EnemyBuilder for BossBuilder {
             life
         );
         commands.spawn((
-        SpriteBundle {
-            texture: asset_server.load("images/boss/idle/frame000.png"),
-            sprite: Sprite {
+            Sprite {
+                image: asset_server.load("images/boss/idle/frame000.png"),
                 custom_size: Some(Vec2::splat(BOSS.config.sprite_size)),
                 color: Color::WHITE,
                 ..default()
             },
-            transform: Transform {
+            Transform {
                 translation: Vec3::ZERO,
                 scale: Vec3::splat(INTRO_END_SCALE),
                 ..default()
             },
-            ..default()
-        },
-
-        Enemy::new(BOSS),
+            Enemy::new(BOSS),
         Health::new(BOSS.total_hp),
         BossMarker,
         TransitionMessages::new(),

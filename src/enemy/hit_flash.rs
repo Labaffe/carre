@@ -17,7 +17,7 @@ pub fn animate_hit_flash(
             commands.entity(entity).remove::<HitFlash>();
         } else {
             // Multiplie chaque canal par une valeur très élevée → surexpose le sprite en blanc pur
-            sprite.color = Color::rgba(100.0, 100.0, 100.0, 1.0);
+            sprite.color = Color::srgba(100.0, 100.0, 100.0, 1.0);
         }
     }
 }

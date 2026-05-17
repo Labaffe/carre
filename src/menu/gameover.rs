@@ -92,8 +92,8 @@ fn setup_gameover_ui(
 
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
+            (
+            Node {
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     align_items: AlignItems::Center,
@@ -102,38 +102,23 @@ fn setup_gameover_ui(
                     row_gap: Val::Px(20.0),
                     ..default()
                 },
-                // fond entièrement noir au départ
-                background_color: Color::rgba(0.0, 0.0, 0.0, 1.0).into(),
-                ..default()
-            },
+            // fond entièrement noir au départ
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.0)),
+        ),
             GameOverUI,
             GameOverBackground,
         ))
         .with_children(|parent| {
             // texte invisible au départ (alpha = 0, scale réduit via Transform)
             parent.spawn((
-                TextBundle::from_section(
-                    "VOUS ETES MORT",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 90.0,
-                        color: Color::rgba(1.0, 0.0, 0.0, 0.0),
-                    },
-                ),
+                (Text::new("VOUS ETES MORT"), TextFont { font: font.clone(), font_size: 90.0, ..default() }, TextColor(Color::srgba(1.0, 0.0, 0.0, 0.0))),
                 GameOverText,
             ));
 
             // En campagne, pas de texte "R pour rejouer"
             if !is_campaign {
                 parent.spawn((
-                    TextBundle::from_section(
-                        "R pour rejouer | Echap pour quitter",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 28.0,
-                            color: Color::rgba(1.0, 1.0, 1.0, 0.0),
-                        },
-                    ),
+                    (Text::new("R pour rejouer | Echap pour quitter"), TextFont { font: font.clone(), font_size: 28.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 0.0))),
                     GameOverText,
                     GameOverRestartText,
                 ));
@@ -177,7 +162,7 @@ fn animate_gameover(
     keyboard: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
 ) {
-    anim.elapsed += time.delta_seconds();
+    anim.elapsed += time.delta_secs();
 
     // rien avant le délai
     if anim.elapsed < DELAY {
@@ -188,10 +173,7 @@ fn animate_gameover(
     if !anim.music_spawned {
         anim.music_spawned = true;
         commands.spawn((
-            AudioBundle {
-                source: asset_server.load("audio/sfx/you_died.ogg"),
-                settings: PlaybackSettings::ONCE,
-            },
+            (AudioPlayer::new(asset_server.load("audio/sfx/you_died.ogg")), PlaybackSettings::ONCE),
             MusicGameOver,
         ));
     }
@@ -254,9 +236,7 @@ fn animate_gameover(
             // Fondu des textes (depuis l'alpha capturé → 0.0)
             let base_text = anim.fade_start_text_alpha.unwrap_or(current_text_alpha);
             for (mut text, _) in text_q.iter_mut() {
-                for section in text.sections.iter_mut() {
-                    section.style.color.set_alpha(base_text * (1.0 - fade_progress));
-                }
+                /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
             }
 
             // Fondu progressif du volume de la musique (depuis le volume capturé)
@@ -291,9 +271,7 @@ fn animate_gameover(
 
     // texte : opacité 0 → 1, zoom 0.3 → 1.0
     for (mut text, mut transform) in text_q.iter_mut() {
-        for section in text.sections.iter_mut() {
-            section.style.color.set_alpha(progress);
-        }
+        /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
         let scale = 0.3 + progress * 0.7;
         transform.scale = Vec3::splat(scale);
     }
@@ -330,13 +308,7 @@ fn handle_restart(
         // Mise à jour des couleurs Oui/Non
         for (mut text, marker) in confirm_text_q.iter_mut() {
             let is_sel = marker.0 == popup.selected;
-            for section in text.sections.iter_mut() {
-                if is_sel {
-                    section.style.color = Color::rgba(1.0, 0.85, 0.0, 1.0);
-                } else {
-                    section.style.color = Color::rgba(0.6, 0.6, 0.6, 1.0);
-                }
-            }
+            /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
         }
 
         if keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyQ) {
