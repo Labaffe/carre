@@ -63,10 +63,14 @@ pub fn movement_driver(
 
         if let Some(mut zone) = zone {
             let r = bounding.map(|b| b.0).unwrap_or(0.0);
-            let min_x = (zone.margin.x - 0.5) * window.width() + r;
-            let max_x = (0.5 - zone.margin.x) * window.width() - r;
-            let min_y = (zone.margin.y - 0.5) * window.height() + r;
-            let max_y = (0.5 - zone.margin.y) * window.height() - r;
+            // Utiliser physical_size (world units) plutôt que logical_size
+            // (qui dépend du scale factor / DPI) — la caméra 2D rend en physical.
+            let w = window.physical_width() as f32;
+            let h = window.physical_height() as f32;
+            let min_x = (zone.margin.x - 0.5) * w + r;
+            let max_x = (0.5 - zone.margin.x) * w - r;
+            let min_y = (zone.margin.y - 0.5) * h + r;
+            let max_y = (0.5 - zone.margin.y) * h - r;
 
             let hits_left = next.x <= min_x;
             let hits_right = next.x >= max_x;

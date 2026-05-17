@@ -45,3 +45,16 @@ impl MovementZone {
         self
     }
 }
+
+/// Amplitude maximale pour qu'une oscillation centrée sur 0 reste exactement
+/// dans la zone effective (margin + bounding_radius soustraits).
+///
+/// Utiliser pour configurer un `Oscilate::amplitude` qui s'arrête pile au bord
+/// de la zone au lieu de pousser contre le clamp brutal du movement_driver.
+///
+/// - `margin` : fraction de l'écran (même unité que `MovementZone::margin`).
+/// - `bounding_radius` : rayon du sprite (même valeur que `BoundingRadius`).
+/// - `physical_size` : `window.physical_width()` ou `physical_height()` selon l'axe.
+pub fn amplitude_for_zone(margin: f32, bounding_radius: f32, physical_size: f32) -> f32 {
+    ((0.5 - margin) * physical_size - bounding_radius).max(0.0)
+}

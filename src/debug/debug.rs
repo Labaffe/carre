@@ -598,6 +598,13 @@ fn draw_hitboxes(
     asteroid_q: Query<(&Transform, &Asteroid)>,
     projectile_q: Query<(&Transform, &Projectile)>,
     enemy_q: Query<(&Transform, &Enemy)>,
+    zone_q: Query<(
+        &crate::movement::movement_zone::MovementZone,
+        Option<&crate::movement::bounding_radius::BoundingRadius>,
+    )>,
+    sprite_q: Query<(&Transform, &Sprite)>,
+    windows: Query<&Window>,
+    camera_q: Query<&Projection>,
 ) {
     if !debug.0 {
         return;
@@ -609,6 +616,70 @@ fn draw_hitboxes(
     // Projectiles : jaune pour le joueur, orange pour les ennemis (la couleur
     // est uniforme ici — si besoin on peut séparer selon projectile.team).
     draw_hittable(&mut gizmos, &projectile_q, Color::srgb(1.0, 1.0, 0.0));
+
+    // Boîtes blanches semi-transparentes : taille effective des sprites
+    // (Sprite.custom_size). Utile pour comparer la taille rendue avec le
+    // BoundingRadius et la MovementZone.
+    for (transform, sprite) in sprite_q.iter() {
+        if let Some(size) = sprite.custom_size {
+            gizmos.rect_2d(
+                Isometry2d::from_translation(transform.translation.truncate()),
+                size,
+                Color::srgba(1.0, 1.0, 1.0, 0.6),
+            );
+        }
+    }
+
+    // MovementZones : magenta = zone brute (centre clampé), rose = zone effective
+    // (rétrécie par BoundingRadius, là où le bord du sprite vient s'arrêter).
+    let Ok(window) = windows.single() else { return; };
+    let w = window.physical_width() as f32;
+    let h = window.physical_height() as f32;
+
+    // Rectangle de référence vert : ce que la caméra voit réellement (projection.area).
+    // À comparer avec le magenta : s'ils ne coïncident pas, il y a un décalage
+    // entre window.width() et la taille rendue (DPI / scale factor).
+    for projection in camera_q.iter() {
+        if let Projection::Orthographic(ortho) = projection {
+            let area = ortho.area;
+            let cam_center = Vec2::new(
+                (area.min.x + area.max.x) * 0.5,
+                (area.min.y + area.max.y) * 0.5,
+            );
+            let cam_size = Vec2::new(area.max.x - area.min.x, area.max.y - area.min.y);
+            gizmos.rect_2d(
+                Isometry2d::from_translation(cam_center),
+                cam_size,
+                Color::srgb(0.0, 1.0, 0.0),
+            );
+        }
+    }
+    for (zone, bounding) in zone_q.iter() {
+        let min_x_raw = (zone.margin.x - 0.5) * w;
+        let max_x_raw = (0.5 - zone.margin.x) * w;
+        let min_y_raw = (zone.margin.y - 0.5) * h;
+        let max_y_raw = (0.5 - zone.margin.y) * h;
+        let size_raw = Vec2::new(max_x_raw - min_x_raw, max_y_raw - min_y_raw);
+        let center = Vec2::new((min_x_raw + max_x_raw) * 0.5, (min_y_raw + max_y_raw) * 0.5);
+        gizmos.rect_2d(
+            Isometry2d::from_translation(center),
+            size_raw,
+            Color::srgb(1.0, 0.0, 1.0),
+        );
+
+        if let Some(b) = bounding {
+            let r = b.0;
+            let size_eff = Vec2::new(size_raw.x - 2.0 * r, size_raw.y - 2.0 * r);
+            if size_eff.x > 0.0 && size_eff.y > 0.0 {
+                gizmos.rect_2d(
+                    Isometry2d::from_translation(center),
+                    size_eff,
+                    Color::srgb(1.0, 0.5, 0.8),
+                );
+            }
+        }
+    }
+    let _ = (w, h);
 }
 
 // Dessin debug des tourelles/mothership retiré avec la suppression des

@@ -33,27 +33,27 @@ use crate::behavior::BehaviorBuilder;
 use crate::behavior::behavior::BehaviorComponent;
 use crate::behavior::choice_list::TransitionMessages;
 use crate::enemy::anim_bank::Animation;
+use crate::enemy::death::DespawnSelf;
+use crate::enemy::enemies::BOSS;
+use crate::enemy::enemy::Enemy;
+use crate::enemy::enemy_builder::EnemyBuilder;
+use crate::game_manager::difficulty::{Difficulty, SpawnPosition};
+use crate::game_manager::state::GameState;
+use crate::menu::pause::not_paused;
+use crate::movement::bounding_radius::BoundingRadius;
 use crate::movement::goto::{self, Goto};
 use crate::movement::movement::Movement;
+use crate::movement::movement_zone::{MovementZone, amplitude_for_zone};
+use crate::movement::movements::Movements;
 use crate::movement::oscilate::Oscilate;
 use crate::movement::rotate::RotateAround;
 use crate::movement::rush::{self, Rush};
 use crate::movement::shake::Shake;
 use crate::movement::sinusoid::Sinusoid;
 use crate::movement::translate::Translate;
-use bevy::platform::collections::HashMap;
-use crate::enemy::enemies::BOSS;
-use crate::enemy::enemy::Enemy;
-use crate::enemy::death::DespawnSelf;
-use crate::enemy::enemy_builder::EnemyBuilder;
-use crate::game_manager::difficulty::{Difficulty, SpawnPosition};
-use crate::game_manager::state::GameState;
-use crate::menu::pause::not_paused;
-use crate::movement::movements::Movements;
-use crate::movement::movement_zone::MovementZone;
-use crate::movement::bounding_radius::BoundingRadius;
 use crate::physic::health::Health;
 use crate::player::player::Player;
+use bevy::platform::collections::HashMap;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Marqueurs (utilisés par boss.rs pour le charge_movement + musique)
@@ -109,18 +109,22 @@ const DYING_SHAKE_MAX: f32 = 20.0;
 //  Définition du boss
 // ═══════════════════════════════════════════════════════════════════════
 
-pub struct BossBuilder{
-    timer:Timer
+pub struct BossBuilder {
+    timer: Timer,
 }
 impl BossBuilder {
-    pub fn new()-> Self {Self {timer:Timer::new(Duration::ZERO,TimerMode::Once)}}
+    pub fn new() -> Self {
+        Self {
+            timer: Timer::new(Duration::ZERO, TimerMode::Once),
+        }
+    }
 }
 impl EnemyBuilder for BossBuilder {
-    fn get_timer(&mut self)->&mut Timer {
+    fn get_timer(&mut self) -> &mut Timer {
         &mut self.timer
     }
 
-    fn preload_anim(&self)->HashMap<&str, &str> {
+    fn preload_anim(&self) -> HashMap<&str, &str> {
         HashMap::from([
             ("boss", "images/boss/animation_1"),
             ("boss_flexing", "images/boss/flexing"),
@@ -128,73 +132,86 @@ impl EnemyBuilder for BossBuilder {
         ])
     }
 
-    fn spawn(&self,
+    fn spawn(
+        &self,
         mut commands: Commands,
         window: &Window,
         difficulty: &ResMut<Difficulty>,
         spawn_pos: SpawnPosition,
-        asset_server:&Res<AssetServer>
+        asset_server: &Res<AssetServer>,
     ) {
         println!("going to spawn boss");
         let spiral = Movements::new()
-        .with(RotateAround::new(Vec2::ZERO, INTRO_SPIRAL_TURNS))
-        .with(Goto::new(Vec2::ZERO,-100.0));
+            .with(RotateAround::new(Vec2::ZERO, INTRO_SPIRAL_TURNS))
+            .with(Goto::new(Vec2::ZERO, -100.0));
         let entering = BehaviorBuilder::first(
             Duration::from_secs_f32(1.0),
             BehaviorBuilder::multiple()
-            .with(BehaviorBuilder::from_component(spiral))
-            .with(BehaviorBuilder::from_component(Animation::new("idle", Duration::from_secs(1))))
-        ).then(
+                .with(BehaviorBuilder::from_component(spiral))
+                .with(BehaviorBuilder::from_component(Animation::new(
+                    "idle",
+                    Duration::from_secs(1),
+                ))),
+        )
+        .then(
             Duration::from_secs(1),
-            BehaviorBuilder::from_component(Animation::new("boss_flexing",Duration::from_secs_f32(0.1)))
+            BehaviorBuilder::from_component(Animation::new(
+                "boss_flexing",
+                Duration::from_secs_f32(0.1),
+            )),
         );
-            //.with(BehaviorBuilder::from_component(AudioBundle {
-            //    source: asset_server.load("audio/sfx/boss_start.ogg"),
-            //    settings: PlaybackSettings::DESPAWN,
+        //.with(BehaviorBuilder::from_component(AudioBundle {
+        //    source: asset_server.load("audio/sfx/boss_start.ogg"),
+        //    settings: PlaybackSettings::DESPAWN,
         //}));
-        let boss_anim_behavior = BehaviorBuilder::from_component( Animation::new("boss", Duration::from_secs_f32(0.1)));
-        let boss_idle_anim_behavior = BehaviorBuilder::from_component( Animation::new("boss_idle", Duration::from_secs_f32(0.1)));
+        let boss_anim_behavior =
+            BehaviorBuilder::from_component(Animation::new("boss", Duration::from_secs_f32(0.1)));
+        let boss_idle_anim_behavior = BehaviorBuilder::from_component(Animation::new(
+            "boss_idle",
+            Duration::from_secs_f32(0.1),
+        ));
 
+        // Amplitude verticale : pile la hauteur de la zone effective (margin y + radius),
+        // pour que l'oscillation ne pousse jamais contre le clamp du movement_driver.
+        // Doit rester cohérent avec le MovementZone et BoundingRadius en bas de cette fn.
+        let bounding_r = BOSS.config.sprite_size / 2.0;
+        let amplitude_y = amplitude_for_zone(0.0, bounding_r, window.physical_height() as f32);
         let patrol_movement_left = Movements::new()
             .with(Oscilate::new(
                 Vec2::new(1.0, 0.0),
                 Vec2::ZERO,
-                6.0,
-                window.height() * 0.5,
+                20.0,
+                amplitude_y,
             ))
-            .with(Translate::new(Vec2::new(-1.0, 0.0), 100.0));
+            .with(Translate::new(Vec2::new(-1.0, 0.0), 300.0));
         let patrol_movement_right = Movements::new()
             .with(Oscilate::new(
                 Vec2::new(1.0, 0.0),
                 Vec2::ZERO,
-                6.0,
-                window.height() * 0.5,
+                20.0,
+                amplitude_y,
             ))
-            .with(Translate::new(Vec2::new(1.0, 0.0), 100.0));
+            .with(Translate::new(Vec2::new(1.0, 0.0), 300.0));
 
         let alive = BehaviorBuilder::choice()
             .with(BehaviorBuilder::from_component(patrol_movement_left))
             .with(BehaviorBuilder::from_component(patrol_movement_right))
             .add_transition(0, 1, "wall_left")
             .add_transition(1, 0, "wall_right");
-        let dying=BehaviorBuilder::first(
+        let dying = BehaviorBuilder::first(
             Duration::from_secs_f32(0.4),
-            BehaviorBuilder::from_component(Movements::new().with(Shake::new(100.0,0.4)))
-        ).then(
+            BehaviorBuilder::from_component(Movements::new().with(Shake::new(100.0, 0.4))),
+        )
+        .then(
             Duration::from_secs_f32(1.0),
-            BehaviorBuilder::from_component(DespawnSelf)
+            BehaviorBuilder::from_component(DespawnSelf),
         );
         let life = BehaviorBuilder::choice()
             .with(alive)
             .with(dying)
             .add_transition(0, 1, "die");
-        let behavior = BehaviorBuilder::first(
-            Duration::from_secs_f32(2.0), 
-            entering
-        ).then(
-            Duration::from_secs_f32(10000.0),
-            life
-        );
+        let behavior = BehaviorBuilder::first(Duration::from_secs_f32(2.0), entering)
+            .then(Duration::from_secs_f32(10000.0), life);
         commands.spawn((
             Sprite {
                 image: asset_server.load("images/boss/idle/frame000.png"),
@@ -208,18 +225,18 @@ impl EnemyBuilder for BossBuilder {
                 ..default()
             },
             Enemy::new(BOSS),
-        Health::new(BOSS.total_hp),
-        BossMarker,
-        TransitionMessages::new(),
-        BoundingRadius(BOSS.config.sprite_size / 2.0),
-        MovementZone::new(Vec2::new(0.15, 0.0))
-            .with_left("wall_left")
-            .with_right("wall_right"),
-        BehaviorComponent::new( behavior)
-    ));
+            Health::new(BOSS.total_hp),
+            BossMarker,
+            TransitionMessages::new(),
+            BoundingRadius(BOSS.config.sprite_size / 2.0),
+            MovementZone::new(Vec2::new(0.0, 0.0))
+                .with_left("wall_left")
+                .with_right("wall_right"),
+            BehaviorComponent::new(behavior),
+        ));
     }
 
-    fn name(&self)->&str {
+    fn name(&self) -> &str {
         "boss"
     }
 }
