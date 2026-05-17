@@ -18,7 +18,7 @@ use std::collections::HashSet;
 use crate::MusicMain;
 use crate::enemy::asteroid::Asteroid;
 use crate::enemy::boss::{BossMarker, MusicBoss};
-use crate::enemy::enemy::{Enemy, EnemyState};
+use crate::enemy::enemy::Enemy;
 use crate::game_manager::difficulty::Difficulty;
 use crate::game_manager::state::GameState;
 use crate::level::level::{LevelConfig, level_name};
@@ -639,15 +639,7 @@ fn debug_skip_to_outro(
         return;
     }
 
-    // Tuer tous les ennemis
-    for (entity, enemy) in enemy_q.iter() {
-        if matches!(enemy.state, EnemyState::Dying | EnemyState::Dead) {
-            continue;
-        }
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
-        }
-    }
+    
 
     // Despawn tous les astéroïdes
     for entity in asteroid_q.iter() {

@@ -4,11 +4,13 @@
 //! Le mouvement et le despawn offscreen sont pris en charge par `ProjectilePlugin`.
 //! La collision projectile-ennemi est gérée dans `enemy::enemy::projectile_enemy_collision`.
 
-use crate::enemy::asteroid::{Asteroid, HitFlash};
+use crate::enemy::asteroid::{Asteroid};
+use crate::enemy::hit_flash::HitFlash;
 use crate::fx::explosion::{spawn_explosion, spawn_projectile_death};
 use crate::game_manager::difficulty::Difficulty;
 use crate::game_manager::state::GameState;
 use crate::item::item::{DropEvent, DropTable};
+use crate::physic::health::Health;
 use crate::player::player::Player;
 use crate::ui::crosshair::Crosshair;
 use crate::ui::score::Score;
@@ -96,7 +98,7 @@ fn shoot(
 
         spawn_projectile(
             &mut commands,
-            &asset_server,
+            &*asset_server,
             ProjectileSpawn {
                 position: origin,
                 direction: dir,
@@ -124,7 +126,7 @@ fn shoot(
 fn projectile_asteroid_collision(
     mut commands: Commands,
     projectile_q: Query<(Entity, &Transform, &Projectile)>,
-    mut asteroid_q: Query<(Entity, &Transform, &mut Asteroid, Option<&DropTable>)>,
+    mut asteroid_q: Query<(Entity, &Transform, &Asteroid, &mut Health, Option<&DropTable>)>,
     asset_server: Res<AssetServer>,
     mut score: ResMut<Score>,
     difficulty: Res<Difficulty>,
@@ -141,7 +143,7 @@ fn projectile_asteroid_collision(
         if despawned_projectiles.contains(&projectile_entity) {
             continue;
         }
-        for (asteroid_entity, asteroid_transform, mut asteroid, drop_table) in
+        for (asteroid_entity, asteroid_transform, asteroid, mut health, drop_table) in
             asteroid_q.iter_mut()
         {
             if despawned_asteroids.contains(&asteroid_entity) {
@@ -167,20 +169,12 @@ fn projectile_asteroid_collision(
                     e.despawn();
                 }
                 despawned_projectiles.insert(projectile_entity);
-                asteroid.health -= projectile.damage;
+                health.take_damage(projectile.damage);
                 score.add(1);
 
-                if asteroid.health <= 0 {
+                if health.is_dead() {
                     if !despawned_asteroids.contains(&asteroid_entity) {
-                        spawn_explosion(
-                            &mut commands,
-                            &asset_server,
-                            asteroid_transform.translation,
-                            asteroid.size,
-                            asteroid.texture_index,
-                            asteroid.base_velocity * difficulty.factor,
-                            asteroid_transform.rotation,
-                        );
+
                         commands.spawn(AudioBundle {
                             source: asset_server.load("audio/sfx/asteroid_die.ogg"),
                             settings: PlaybackSettings::DESPAWN,

@@ -70,7 +70,7 @@ fn animate_hand(
         } else {
             card_center_x(i,window)
         };
-        commands.entity(entity).insert(
+        commands.entity(entity).insert((
             TweenSequence::<StyleLeft>::new(
                 Tween::new(from_x, from_x,  (i as f32) * 0.1, Ease::OutQuad)
             ).then(

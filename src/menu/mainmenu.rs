@@ -191,7 +191,7 @@ fn setup_main_menu(
                     style: Style {
                         width: Val::Px(750.0),
                         height: Val::Auto,
-                        margin: UiRect::bottom(Val::Px(60.0)),
+                        margin: UiRect::bottom(Val::Px(200.0)),
                         ..default()
                     },
                     background_color: Color::rgba(1.0, 1.0, 1.0, 0.0).into(),
@@ -208,7 +208,8 @@ fn setup_main_menu(
                         style: Style {
                             flex_direction: FlexDirection::Column,
                             align_items: AlignItems::Center,
-                            row_gap: Val::Px(20.0),
+                            bottom:Val::Px(300.0),
+                            row_gap: Val::Px(10.0),
                             ..default()
                         },
                         ..default()
@@ -264,7 +265,20 @@ fn setup_main_menu(
                         },
                         MainMenuUI,
                     ));
-
+                    menu.spawn((
+                        TextBundle::from_section(
+                            "Editeur",
+                            TextStyle {
+                                font: font.clone(),
+                                font_size: 36.0,
+                                color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                            },
+                        ),
+                        MenuOption {
+                            action: MenuAction::Settings,
+                        },
+                        MainMenuUI,
+                    ));
                     // Option : Quitter
                     menu.spawn((
                         TextBundle::from_section(
@@ -455,7 +469,7 @@ fn handle_main_view(
         }
     }
     if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
-        if anim.selected < 3 {
+        if anim.selected < 4 {
             anim.selected += 1;
         }
     }
@@ -484,6 +498,10 @@ fn handle_main_view(
                 spawn_settings_ui(commands, asset_server, settings, root_q);
             }
             3 => {
+                // Ouvrir l'éditeur'
+                next_state.set(GameState::Editor);
+            }
+            4 => {
                 exit.send(AppExit);
             }
             _ => {}

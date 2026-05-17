@@ -4,6 +4,7 @@ use bevy::prelude::*;
 mod debug;
 mod deckbuilding;
 mod enemy;
+mod behavior;
 mod environment;
 mod fx;
 mod game_manager;
@@ -15,11 +16,15 @@ mod player;
 mod tweening;
 mod ui;
 mod weapon;
-
+mod editor;
+mod movement;
 // ─── Imports ───────────────────────────────────────────────────────
 use game_manager::state::GameState;
 use game_manager::game::{GamePlugin, MusicOutro};
 use game_manager::difficulty::DifficultyPlugin;
+
+use editor::EditorPlugin;
+use behavior::BehaviorPlugin;
 
 use level::level::{LevelConfig, LevelPlugin};
 
@@ -28,13 +33,11 @@ use weapon::weapon::WeaponPlugin;
 use weapon::player_fire::PlayerFirePlugin;
 use weapon::projectile::{Projectile, ProjectilePlugin};
 
-use enemy::enemy::{Enemy, EnemyPlugin};
-use enemy::boss::{BossPlugin, MusicBoss};
-use enemy::asteroid::{Asteroid, AsteroidPlugin};
-use enemy::green_ufo::GreenUFOPlugin;
-use enemy::gatling::GatlingPlugin;
-use enemy::mothership::{GatlingLaser, MothershipMarker};
+use enemy::{enemy::Enemy, EnemyPlugin};
+use enemy::boss::{ MusicBoss};
+use enemy::asteroid::{Asteroid};
 
+use crate::enemy::despawn_zone::DespawnZonePlugin;
 use fx::explosion::{Explosion, ExplosionPlugin};
 use item::item::{Droppable, ItemPlugin};
 
@@ -49,10 +52,13 @@ use ui::countdown::CountdownPlugin;
 
 use environment::background::{Background, BackgroundPlugin, Planet};
 use physic::collision::CollisionPlugin;
+use physic::health::HealthPlugin;
 
 use debug::debug::DebugPlugin;
 use deckbuilding::card_hand::CardHandPlugin;
 use tweening::plugin::UiTweenPlugin;
+
+use movement::MovementPlugin;
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -74,6 +80,16 @@ fn main() {
             LevelPlugin,
             GamePlugin,
         ))
+        .add_plugins(
+            EditorPlugin
+            
+        )
+        .add_plugins(
+            BehaviorPlugin
+        )
+        .add_plugins(
+            MovementPlugin
+        )
         // Joueur & armes
         .add_plugins((
             PlayerPlugin,
@@ -82,17 +98,15 @@ fn main() {
             ProjectilePlugin,
             CrosshairPlugin,
             CollisionPlugin,
+            HealthPlugin,
         ))
         // Ennemis
         .add_plugins((
             EnemyPlugin,
-            BossPlugin,
-            GreenUFOPlugin,
-            GatlingPlugin,
+            DespawnZonePlugin
         ))
         // Entités & effets
         .add_plugins((
-            AsteroidPlugin,
             ExplosionPlugin,
             ItemPlugin,
         ))
@@ -162,8 +176,6 @@ fn cleanup_playing(
     boss_music: Query<Entity, With<MusicBoss>>,
     outro_music: Query<Entity, With<MusicOutro>>,
     droppables: Query<Entity, With<Droppable>>,
-    motherships: Query<Entity, With<MothershipMarker>>,
-    lasers: Query<Entity, With<GatlingLaser>>,
 ) {
     let all_entities = players.iter()
         .chain(asteroids.iter())
@@ -175,9 +187,7 @@ fn cleanup_playing(
         .chain(music.iter())
         .chain(boss_music.iter())
         .chain(outro_music.iter())
-        .chain(droppables.iter())
-        .chain(motherships.iter())
-        .chain(lasers.iter());
+        .chain(droppables.iter());
 
     for entity in all_entities {
         if let Some(e) = commands.get_entity(entity) {

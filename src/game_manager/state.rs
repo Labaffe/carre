@@ -10,6 +10,7 @@ pub enum GameState {
     /// État transitoire entre deux niveaux.
     /// Déclenche OnExit(Playing) → cleanup, puis OnEnter(LevelSelect) → sélecteur.
     LevelTransition,
+    Editor,
     /// Écran de fin "Merci d'avoir joué".
     Credits,
     GameOver,
