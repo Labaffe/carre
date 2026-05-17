@@ -232,7 +232,7 @@ fn handle_pause_input(
             }
             2 => {
                 // Quitter le jeu
-                exit.send(AppExit);
+                exit.send(AppExit::Success);
             }
             _ => {}
         }

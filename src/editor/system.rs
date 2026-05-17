@@ -58,6 +58,6 @@ pub fn init(
 
 pub fn pause(mut exit: EventWriter<AppExit>, keyboard: Res<ButtonInput<KeyCode>>,) {
     if keyboard.just_pressed(KeyCode::Escape) {
-        exit.send(AppExit);
+        exit.send(AppExit::Success);
     }
 }

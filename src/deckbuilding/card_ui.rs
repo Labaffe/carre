@@ -63,7 +63,7 @@ pub fn spawn_card_ui<T: Card>(
                 TextStyle {
                     font: font.clone(),
                     font_size: 16.0,
-                    color: Color::GRAY,
+                    color: Color::srgb(0.5, 0.5, 0.5),
                 },
             ));
 
@@ -84,7 +84,7 @@ pub fn spawn_card_ui<T: Card>(
                         TextStyle {
                             font: font.clone(),
                             font_size: 16.0,
-                            color: Color::YELLOW,
+                            color: Color::srgb(1.0, 1.0, 0.0),
                         },
                     ));
 
@@ -93,7 +93,7 @@ pub fn spawn_card_ui<T: Card>(
                         TextStyle {
                             font,
                             font_size: 16.0,
-                            color: Color::CYAN,
+                            color: Color::srgb(0.0, 1.0, 1.0),
                         },
                     ));
                 });

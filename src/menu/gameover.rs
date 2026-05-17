@@ -11,6 +11,7 @@ use crate::game_manager::game::{
 };
 use crate::game_manager::state::GameState;
 use crate::{MusicGameOver, MusicMain};
+use bevy::color::Alpha;
 use bevy::prelude::*;
 
 pub struct GameOverPlugin;
@@ -247,14 +248,14 @@ fn animate_gameover(
             // Fondu au noir progressif (depuis l'alpha capturé → 1.0)
             let base_bg = anim.fade_start_bg_alpha.unwrap_or(current_bg_alpha);
             if let Ok(mut bg) = bg_q.get_single_mut() {
-                bg.0.set_a(base_bg + fade_progress * (1.0 - base_bg));
+                bg.0.set_alpha(base_bg + fade_progress * (1.0 - base_bg));
             }
 
             // Fondu des textes (depuis l'alpha capturé → 0.0)
             let base_text = anim.fade_start_text_alpha.unwrap_or(current_text_alpha);
             for (mut text, _) in text_q.iter_mut() {
                 for section in text.sections.iter_mut() {
-                    section.style.color.set_a(base_text * (1.0 - fade_progress));
+                    section.style.color.set_alpha(base_text * (1.0 - fade_progress));
                 }
             }
 
@@ -285,13 +286,13 @@ fn animate_gameover(
     // ── Animation normale ────────────────────────────────────────
     // fond : noir opaque → semi-transparent
     if let Ok(mut bg) = bg_q.get_single_mut() {
-        bg.0.set_a(1.0 - progress * 0.25);
+        bg.0.set_alpha(1.0 - progress * 0.25);
     }
 
     // texte : opacité 0 → 1, zoom 0.3 → 1.0
     for (mut text, mut transform) in text_q.iter_mut() {
         for section in text.sections.iter_mut() {
-            section.style.color.set_a(progress);
+            section.style.color.set_alpha(progress);
         }
         let scale = 0.3 + progress * 0.7;
         transform.scale = Vec3::splat(scale);

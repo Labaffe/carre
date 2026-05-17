@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::color::Alpha;
 pub trait TweenTarget: Send + Sync + 'static {
     type Component: bevy::ecs::component::Component;
 
@@ -66,6 +67,6 @@ impl TweenTarget for UiOpacity {
     type Component = BackgroundColor;
 
     fn apply(value: f32, target: &mut BackgroundColor) {
-        target.0.set_a(value);
+        target.0.set_alpha(value);
     }
 }

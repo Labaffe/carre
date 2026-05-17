@@ -228,11 +228,13 @@ fn animate_countdown_text(
             1.0
         };
 
-        let base_color = text.sections[0].style.color;
-        let r = base_color.r();
-        let g = base_color.g();
-        let b = base_color.b();
-        text.sections[0].style.color = Color::rgba(r, g, b, alpha);
+        let base_srgba = text.sections[0].style.color.to_srgba();
+        text.sections[0].style.color = Color::srgba(
+            base_srgba.red,
+            base_srgba.green,
+            base_srgba.blue,
+            alpha,
+        );
     }
 }
 

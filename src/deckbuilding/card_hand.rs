@@ -77,8 +77,8 @@ fn animate_hand(
                 Tween::new(target_x, target_x-50.0, 3.5, Ease::OutQuad)
             ).then(
                 Tween::new(from_x, target_x, 0.5, Ease::OutQuad)
-            )
-        );
+            ),
+        ));
     }
 }
 // In animate_hand or a new system

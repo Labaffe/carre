@@ -627,12 +627,12 @@ fn draw_hitboxes(
         return;
     }
 
-    draw_hittable(&mut gizmos, &player_q, Color::GREEN);
-    draw_hittable(&mut gizmos, &asteroid_q, Color::RED);
-    draw_hittable(&mut gizmos, &enemy_q, Color::CYAN);
+    draw_hittable(&mut gizmos, &player_q, Color::srgb(0.0, 1.0, 0.0));
+    draw_hittable(&mut gizmos, &asteroid_q, Color::srgb(1.0, 0.0, 0.0));
+    draw_hittable(&mut gizmos, &enemy_q, Color::srgb(0.0, 1.0, 1.0));
     // Projectiles : jaune pour le joueur, orange pour les ennemis (la couleur
     // est uniforme ici — si besoin on peut séparer selon projectile.team).
-    draw_hittable(&mut gizmos, &projectile_q, Color::YELLOW);
+    draw_hittable(&mut gizmos, &projectile_q, Color::srgb(1.0, 1.0, 0.0));
 }
 
 // Dessin debug des tourelles/mothership retiré avec la suppression des

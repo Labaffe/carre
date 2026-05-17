@@ -9,6 +9,7 @@ use crate::GameSettings;
 use crate::game_manager::game::{CampaignProgress, PlayMode};
 use crate::game_manager::state::GameState;
 use bevy::app::AppExit;
+use bevy::color::Alpha;
 use bevy::prelude::*;
 
 pub struct MainMenuPlugin;
@@ -355,12 +356,12 @@ fn animate_main_menu(
 
     // Tiles
     for mut sprite in tile_q.iter_mut() {
-        sprite.color.set_a(alpha);
+        sprite.color.set_alpha(alpha);
     }
 
     // Fond noir du root
     for mut bg in bg_root_q.iter_mut() {
-        bg.0.set_a(1.0 - alpha);
+        bg.0.set_alpha(1.0 - alpha);
     }
 
     // Logo — cacher dans les sous-menus
@@ -369,7 +370,7 @@ fn animate_main_menu(
             style.display = Display::None;
         } else {
             style.display = Display::Flex;
-            bg.0.set_a(alpha);
+            bg.0.set_alpha(alpha);
         }
     }
 
@@ -502,7 +503,7 @@ fn handle_main_view(
                 next_state.set(GameState::Editor);
             }
             4 => {
-                exit.send(AppExit);
+                exit.send(AppExit::Success);
             }
             _ => {}
         }
