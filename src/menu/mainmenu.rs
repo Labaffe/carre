@@ -51,6 +51,7 @@ struct MenuOptionsContainer;
 
 #[derive(Component)]
 struct MenuOption {
+    index: usize,
     action: MenuAction,
 }
 
@@ -210,42 +211,32 @@ fn setup_main_menu(
                     // Option : Commencer
                     menu.spawn((
                         (Text::new("Commencer"), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 0.0))),
-                        MenuOption {
-                            action: MenuAction::Play,
-                        },
+                        MenuOption { index: 0, action: MenuAction::Play },
                         MainMenuUI,
                     ));
 
                     // Option : Primes
                     menu.spawn((
                         (Text::new("Primes"), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 0.0))),
-                        MenuOption {
-                            action: MenuAction::Primes,
-                        },
+                        MenuOption { index: 1, action: MenuAction::Primes },
                         MainMenuUI,
                     ));
 
                     // Option : Paramètres
                     menu.spawn((
                         (Text::new("Paramètres"), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 0.0))),
-                        MenuOption {
-                            action: MenuAction::Settings,
-                        },
+                        MenuOption { index: 2, action: MenuAction::Settings },
                         MainMenuUI,
                     ));
                     menu.spawn((
                         (Text::new("Editeur"), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 0.0))),
-                        MenuOption {
-                            action: MenuAction::Settings,
-                        },
+                        MenuOption { index: 3, action: MenuAction::Settings },
                         MainMenuUI,
                     ));
                     // Option : Quitter
                     menu.spawn((
                         (Text::new("Quitter"), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 0.0))),
-                        MenuOption {
-                            action: MenuAction::Quit,
-                        },
+                        MenuOption { index: 4, action: MenuAction::Quit },
                         MainMenuUI,
                     ));
                 });
@@ -328,18 +319,16 @@ fn animate_main_menu(
         }
     }
 
-    // Menu options — couleurs de sélection
-    let mut idx = 0;
-    for (mut text_color, _option) in text_q.iter_mut() {
+    // Menu options — couleurs de sélection (utilise option.index, pas l'ordre de la query)
+    for (mut text_color, option) in text_q.iter_mut() {
         if anim.view == MenuView::Main {
-            let is_selected = idx == anim.selected;
+            let is_selected = option.index == anim.selected;
             text_color.0 = if is_selected {
                 Color::srgba(1.0, 0.85, 0.0, alpha)
             } else {
                 Color::srgba(0.6, 0.6, 0.6, alpha)
             };
         }
-        idx += 1;
     }
 
     // Mettre à jour le texte du volume dans le sous-menu
