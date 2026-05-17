@@ -44,6 +44,10 @@ struct GameOverText;
 #[derive(Component)]
 struct GameOverBackground;
 
+/// Taille de police de référence pour le zoom dynamique.
+#[derive(Component)]
+struct BaseFontSize(f32);
+
 // --- Ressource d'animation ---
 
 #[derive(Component)]
@@ -109,16 +113,21 @@ fn setup_gameover_ui(
             GameOverBackground,
         ))
         .with_children(|parent| {
-            // texte invisible au départ (alpha = 0, scale réduit via Transform)
             parent.spawn((
-                (Text::new("VOUS ETES MORT"), TextFont { font: font.clone(), font_size: 90.0, ..default() }, TextColor(Color::srgba(1.0, 0.0, 0.0, 0.0))),
+                Text::new("VOUS ETES MORT"),
+                TextFont { font: font.clone(), font_size: 90.0, ..default() },
+                TextColor(Color::srgba(1.0, 0.0, 0.0, 0.0)),
+                BaseFontSize(90.0),
                 GameOverText,
             ));
 
             // En campagne, pas de texte "R pour rejouer"
             if !is_campaign {
                 parent.spawn((
-                    (Text::new("R pour rejouer | Echap pour quitter"), TextFont { font: font.clone(), font_size: 28.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 0.0))),
+                    Text::new("R pour rejouer | Echap pour quitter"),
+                    TextFont { font: font.clone(), font_size: 28.0, ..default() },
+                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.0)),
+                    BaseFontSize(28.0),
                     GameOverText,
                     GameOverRestartText,
                 ));
@@ -153,7 +162,8 @@ const ANIM_DURATION: f32 = 6.0;
 fn animate_gameover(
     mut anim: ResMut<GameOverAnim>,
     time: Res<Time>,
-    mut text_q: Query<(&mut TextColor, &mut Transform), With<GameOverText>>,
+    mut text_q: Query<&mut TextColor, With<GameOverText>>,
+    mut text_font_q: Query<(&mut TextFont, &BaseFontSize), With<GameOverText>>,
     mut bg_q: Query<&mut BackgroundColor, With<GameOverBackground>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -235,7 +245,7 @@ fn animate_gameover(
 
             // Fondu des textes (depuis l'alpha capturé → 0.0)
             let base_text = anim.fade_start_text_alpha.unwrap_or(current_text_alpha);
-            for (mut text_color, _) in text_q.iter_mut() {
+            for mut text_color in text_q.iter_mut() {
                 text_color.0.set_alpha(base_text * (1.0 - fade_progress));
             }
 
@@ -269,11 +279,14 @@ fn animate_gameover(
         bg.0.set_alpha(1.0 - progress * 0.25);
     }
 
-    // texte : opacité 0 → 1, zoom 0.3 → 1.0
-    for (mut text_color, mut transform) in text_q.iter_mut() {
+    // texte : opacité 0 → 1, zoom 0.3 → 1.0 (via font_size puisque Transform.scale
+    // ne s'applique pas aux entités UI en Bevy 0.17)
+    for mut text_color in text_q.iter_mut() {
         text_color.0.set_alpha(progress);
-        let scale = 0.3 + progress * 0.7;
-        transform.scale = Vec3::splat(scale);
+    }
+    let scale = 0.3 + progress * 0.7;
+    for (mut font, base) in text_font_q.iter_mut() {
+        font.font_size = base.0 * scale;
     }
 }
 

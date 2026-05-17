@@ -26,6 +26,9 @@ struct ScoreUI;
 struct ScoreText;
 #[derive(Component)]
 struct LevelText;
+/// Taille de police de référence pour le zoom dynamique.
+#[derive(Component)]
+struct BaseFontSize(f32);
 #[derive(Resource)]
 pub struct Score {
     value: i32,
@@ -97,13 +100,18 @@ fn setup_score_ui(
             ScoreUI,
         ))
         .with_children(|parent| {
-            // texte invisible au départ (alpha = 0, scale réduit via Transform)
             parent.spawn((
-                (Text::new("OVER 9000"), TextFont { font: font.clone(), font_size: 90.0, ..default() }, TextColor(Color::srgba(1.0, 0.0, 0.0, 1.0))),
+                Text::new("OVER 9000"),
+                TextFont { font: font.clone(), font_size: 90.0, ..default() },
+                TextColor(Color::srgba(1.0, 0.0, 0.0, 1.0)),
+                BaseFontSize(90.0),
                 ScoreText,
             ));
             parent.spawn((
-                (Text::new("level"), TextFont { font: font.clone(), font_size: 90.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 1.0))),
+                Text::new("level"),
+                TextFont { font: font.clone(), font_size: 90.0, ..default() },
+                TextColor(Color::srgba(1.0, 1.0, 1.0, 1.0)),
+                BaseFontSize(90.0),
                 LevelText,
             ));
         });
@@ -119,24 +127,26 @@ fn cleanup_score_ui(mut commands: Commands, query: Query<Entity, With<ScoreUI>>)
 
 fn score_update(
     time: Res<Time>,
-    mut text_q: Query<(&mut Text, &mut Transform), With<ScoreText>>,
+    mut text_q: Query<&mut Text, With<ScoreText>>,
+    mut font_q: Query<(&mut TextFont, &BaseFontSize), With<ScoreText>>,
     mut score: ResMut<Score>,
 ) {
     score.current_time += time.delta_secs();
-
-    // texte : mise à jour de la valeur + zoom dynamique
-    for (mut text, mut transform) in text_q.iter_mut() {
+    for mut text in text_q.iter_mut() {
         **text = score.text();
-        let coef = score.get_size_coeff();
-        let scale = 0.3 * coef + 1.0 * (1.0 - coef);
-        transform.scale = Vec3::splat(scale);
+    }
+    let coef = score.get_size_coeff();
+    let scale = 0.3 * coef + 1.0 * (1.0 - coef);
+    for (mut font, base) in font_q.iter_mut() {
+        font.font_size = base.0 * scale;
     }
 }
 fn level_update(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     time: Res<Time>,
-    mut text_q: Query<(&mut Text, &mut Transform), With<LevelText>>,
+    mut text_q: Query<&mut Text, With<LevelText>>,
+    mut font_q: Query<(&mut TextFont, &BaseFontSize), With<LevelText>>,
     mut level: ResMut<Level>,
     score: Res<Score>,
 ) {
@@ -145,13 +155,11 @@ fn level_update(
         level.value += 1;
         commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/level_up.ogg")), PlaybackSettings::DESPAWN));
     }
-    // texte : niveau courant + zoom selon levelup
-    for (mut text, mut transform) in text_q.iter_mut() {
+    for mut text in text_q.iter_mut() {
         **text = level.value.to_string();
-        if levelup {
-            transform.scale = Vec3::splat(1.0);
-        } else {
-            transform.scale = Vec3::splat(0.3);
-        }
+    }
+    let scale = if levelup { 1.0 } else { 0.3 };
+    for (mut font, base) in font_q.iter_mut() {
+        font.font_size = base.0 * scale;
     }
 }
