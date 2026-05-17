@@ -465,7 +465,7 @@ fn detect_level_complete(
             };
         }
         LevelPhaseKind::OutroCountdown { timer } => {
-            if timer.finished() {
+            if timer.is_finished() {
                 // OutroCountdown → Outro
                 start_outro(
                     &mut commands,

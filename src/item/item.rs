@@ -397,7 +397,7 @@ fn bomb_screen_flash(
         // Fade out : blanc opaque → transparent
         sprite.color = Color::srgba(1.0, 1.0, 1.0, 1.0 - t);
 
-        if flash.0.finished() {
+        if flash.0.is_finished() {
             if let Ok(mut e) = commands.get_entity(entity) {
                 e.despawn();
             }

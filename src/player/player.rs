@@ -320,7 +320,7 @@ fn boom_flash_update(
         flash.0.tick(time.delta());
         let t = flash.0.fraction();
 
-        if flash.0.finished() {
+        if flash.0.is_finished() {
             sprite.color = Color::WHITE;
             commands.entity(entity).remove::<BoomFlash>();
         } else {
@@ -340,7 +340,7 @@ fn update_invincibility(
     for (entity, mut sprite, mut inv) in query.iter_mut() {
         inv.0.tick(time.delta());
 
-        if inv.0.finished() {
+        if inv.0.is_finished() {
             sprite.color = Color::WHITE;
             commands.entity(entity).remove::<Invincible>();
         } else {

@@ -12,7 +12,7 @@ pub fn animate_hit_flash(
     for (entity, mut sprite, mut flash) in query.iter_mut() {
         flash.0.tick(time.delta());
 
-        if flash.0.finished() {
+        if flash.0.is_finished() {
             sprite.color = Color::WHITE;
             commands.entity(entity).remove::<HitFlash>();
         } else {
