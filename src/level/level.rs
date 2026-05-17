@@ -484,6 +484,19 @@ pub fn build_level_2() -> Vec<LevelStep> {
     ]
 }
 
+/// Ressource d'éditeur : si présente au moment de `setup_level`, override
+/// le niveau normal par une timeline minimale qui spawn juste cet ennemi.
+#[derive(Resource)]
+pub struct EditorTestEnemy(pub &'static str);
+
+/// Niveau de test : spawn un seul ennemi du type demandé, rien d'autre.
+pub fn build_level_test_enemy(enemy_name: &'static str) -> Vec<LevelStep> {
+    vec![
+        LevelStep::at(0.0, "test_spawn")
+            .with(Action::SpawnEnemy(enemy_name, 1, SpawnPosition::At(0.0, 50.0))),
+    ]
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Systèmes
 // ═══════════════════════════════════════════════════════════════════════
@@ -492,6 +505,7 @@ fn setup_level(
     mut commands: Commands,
     progress: Res<crate::game_manager::game::GameProgress>,
     mut config: ResMut<LevelConfig>,
+    editor_test: Option<Res<EditorTestEnemy>>,
 ) {
     // Mettre à jour la config visuelle du niveau (immédiat via ResMut)
     let def = crate::level::levels::level_def(progress.current_level);
@@ -499,10 +513,14 @@ fn setup_level(
     config.background_tile = def.background_tile;
     config.scroll_direction = def.scroll_direction;
 
-    let steps = match progress.current_level {
-        1 => build_level_1(),
-        2 => build_level_2(),
-        _ => build_level_1(), // fallback
+    let steps = if let Some(test) = editor_test.as_ref() {
+        build_level_test_enemy(test.0)
+    } else {
+        match progress.current_level {
+            1 => build_level_1(),
+            2 => build_level_2(),
+            _ => build_level_1(), // fallback
+        }
     };
     commands.insert_resource(LevelRunner::new(steps));
 
@@ -689,4 +707,5 @@ fn process_level_action_events(
 
 fn cleanup_level(mut commands: Commands) {
     commands.remove_resource::<LevelRunner>();
+    commands.remove_resource::<EditorTestEnemy>();
 }

@@ -8,6 +8,7 @@
 use crate::GameSettings;
 use crate::game_manager::game::{CampaignProgress, PlayMode};
 use crate::game_manager::state::GameState;
+use crate::level::level::EditorTestEnemy;
 use bevy::app::AppExit;
 use bevy::color::Alpha;
 use bevy::prelude::*;
@@ -18,9 +19,11 @@ impl Plugin for MainMenuPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(GameState::MainMenu), setup_main_menu)
             .add_systems(OnExit(GameState::MainMenu), cleanup_main_menu)
+            .add_systems(OnEnter(GameState::Playing), stop_main_menu_music)
             .add_systems(
                 Update,
-                (animate_main_menu, handle_menu_input).run_if(in_state(GameState::MainMenu)),
+                (animate_main_menu, animate_editor_submenu, handle_menu_input)
+                    .run_if(in_state(GameState::MainMenu)),
             );
     }
 }
@@ -60,12 +63,17 @@ enum MenuAction {
     Play,
     Primes,
     Settings,
+    Editor,
     Quit,
 }
 
 /// Marqueur pour les éléments du sous-menu Paramètres.
 #[derive(Component)]
 struct SettingsUI;
+
+/// Marqueur pour les éléments du sous-menu Éditeur (toutes vues).
+#[derive(Component)]
+struct EditorSubmenuUI;
 
 /// Texte affichant la valeur du volume.
 #[derive(Component)]
@@ -76,6 +84,8 @@ struct VolumeText;
 enum MenuView {
     Main,
     Settings,
+    EditorMain,
+    EditorEnemies,
 }
 
 #[derive(Resource)]
@@ -230,7 +240,7 @@ fn setup_main_menu(
                     ));
                     menu.spawn((
                         (Text::new("Editeur"), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 0.0))),
-                        MenuOption { index: 3, action: MenuAction::Settings },
+                        MenuOption { index: 3, action: MenuAction::Editor },
                         MainMenuUI,
                     ));
                     // Option : Quitter
@@ -351,6 +361,7 @@ fn handle_menu_input(
     mut global_volume: ResMut<GlobalVolume>,
     asset_server: Res<AssetServer>,
     settings_ui_q: Query<Entity, With<SettingsUI>>,
+    editor_ui_q: Query<Entity, With<EditorSubmenuUI>>,
     root_q: Query<Entity, With<MainMenuRoot>>,
 ) {
     if anim.elapsed < FADE_DELAY {
@@ -379,6 +390,27 @@ fn handle_menu_input(
                 &mut global_volume,
                 &mut commands,
                 &settings_ui_q,
+            );
+        }
+        MenuView::EditorMain => {
+            handle_editor_main_view(
+                &keyboard,
+                &mut anim,
+                &mut commands,
+                &asset_server,
+                &editor_ui_q,
+                &root_q,
+            );
+        }
+        MenuView::EditorEnemies => {
+            handle_editor_enemies_view(
+                &keyboard,
+                &mut anim,
+                &mut next_state,
+                &mut commands,
+                &asset_server,
+                &editor_ui_q,
+                &root_q,
             );
         }
     }
@@ -431,8 +463,10 @@ fn handle_main_view(
                 spawn_settings_ui(commands, asset_server, settings, root_q);
             }
             3 => {
-                // Ouvrir l'éditeur'
-                next_state.set(GameState::Editor);
+                // Ouvrir le sous-menu Éditeur
+                anim.view = MenuView::EditorMain;
+                anim.selected = 0;
+                spawn_editor_main_ui(commands, asset_server, root_q);
             }
             4 => {
                 exit.write(AppExit::Success);
@@ -520,7 +554,217 @@ fn spawn_settings_ui(
     });
 }
 
+// ─── Sous-menus Éditeur ──────────────────────────────────────────────
+
+#[derive(Component)]
+struct EditorMenuOption(usize);
+
+fn spawn_editor_options(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    root_q: &Query<Entity, With<MainMenuRoot>>,
+    title: &str,
+    options: &[&str],
+) {
+    let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
+    let Ok(root_entity) = root_q.single() else {
+        return;
+    };
+
+    commands.entity(root_entity).with_children(|parent| {
+        parent
+            .spawn((
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    row_gap: Val::Px(20.0),
+                    ..default()
+                },
+                EditorSubmenuUI,
+            ))
+            .with_children(|parent| {
+                parent.spawn((
+                    Text::new(title),
+                    TextFont { font: font.clone(), font_size: 48.0, ..default() },
+                    TextColor(Color::WHITE),
+                ));
+                for (i, label) in options.iter().enumerate() {
+                    let color = if i == 0 {
+                        Color::srgba(1.0, 0.85, 0.0, 1.0)
+                    } else {
+                        Color::srgba(0.6, 0.6, 0.6, 1.0)
+                    };
+                    parent.spawn((
+                        Text::new(*label),
+                        TextFont { font: font.clone(), font_size: 32.0, ..default() },
+                        TextColor(color),
+                        EditorMenuOption(i),
+                    ));
+                }
+            });
+    });
+}
+
+fn spawn_editor_main_ui(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    root_q: &Query<Entity, With<MainMenuRoot>>,
+) {
+    spawn_editor_options(
+        commands,
+        asset_server,
+        root_q,
+        "EDITEUR",
+        &["Enemies", "Retour"],
+    );
+}
+
+fn spawn_editor_enemies_ui(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    root_q: &Query<Entity, With<MainMenuRoot>>,
+) {
+    spawn_editor_options(
+        commands,
+        asset_server,
+        root_q,
+        "ENEMIES",
+        &["Green UFO", "Boss", "Retour"],
+    );
+}
+
+fn despawn_editor_submenu(
+    commands: &mut Commands,
+    editor_ui_q: &Query<Entity, With<EditorSubmenuUI>>,
+) {
+    for entity in editor_ui_q.iter() {
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.despawn();
+        }
+    }
+}
+
+fn handle_editor_main_view(
+    keyboard: &Res<ButtonInput<KeyCode>>,
+    anim: &mut ResMut<MainMenuAnim>,
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    editor_ui_q: &Query<Entity, With<EditorSubmenuUI>>,
+    root_q: &Query<Entity, With<MainMenuRoot>>,
+) {
+    let count = 2;
+    if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
+        if anim.selected > 0 {
+            anim.selected -= 1;
+        }
+    }
+    if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
+        if anim.selected < count - 1 {
+            anim.selected += 1;
+        }
+    }
+    if keyboard.just_pressed(KeyCode::Escape) {
+        despawn_editor_submenu(commands, editor_ui_q);
+        anim.view = MenuView::Main;
+        anim.selected = 3;
+        return;
+    }
+    if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
+        match anim.selected {
+            0 => {
+                despawn_editor_submenu(commands, editor_ui_q);
+                anim.view = MenuView::EditorEnemies;
+                anim.selected = 0;
+                spawn_editor_enemies_ui(commands, asset_server, root_q);
+            }
+            1 => {
+                despawn_editor_submenu(commands, editor_ui_q);
+                anim.view = MenuView::Main;
+                anim.selected = 3;
+            }
+            _ => {}
+        }
+    }
+}
+
+fn handle_editor_enemies_view(
+    keyboard: &Res<ButtonInput<KeyCode>>,
+    anim: &mut ResMut<MainMenuAnim>,
+    next_state: &mut ResMut<NextState<GameState>>,
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    editor_ui_q: &Query<Entity, With<EditorSubmenuUI>>,
+    root_q: &Query<Entity, With<MainMenuRoot>>,
+) {
+    let count = 3;
+    if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
+        if anim.selected > 0 {
+            anim.selected -= 1;
+        }
+    }
+    if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
+        if anim.selected < count - 1 {
+            anim.selected += 1;
+        }
+    }
+    if keyboard.just_pressed(KeyCode::Escape) {
+        despawn_editor_submenu(commands, editor_ui_q);
+        anim.view = MenuView::EditorMain;
+        anim.selected = 0;
+        spawn_editor_main_ui(commands, asset_server, root_q);
+        return;
+    }
+    if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
+        match anim.selected {
+            0 => {
+                commands.insert_resource(EditorTestEnemy("green_ufo"));
+                commands.insert_resource(PlayMode::Primes);
+                next_state.set(GameState::Playing);
+            }
+            1 => {
+                commands.insert_resource(EditorTestEnemy("boss"));
+                commands.insert_resource(PlayMode::Primes);
+                next_state.set(GameState::Playing);
+            }
+            2 => {
+                despawn_editor_submenu(commands, editor_ui_q);
+                anim.view = MenuView::EditorMain;
+                anim.selected = 0;
+                spawn_editor_main_ui(commands, asset_server, root_q);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn animate_editor_submenu(
+    anim: Res<MainMenuAnim>,
+    mut q: Query<(&mut TextColor, &EditorMenuOption)>,
+) {
+    if !matches!(anim.view, MenuView::EditorMain | MenuView::EditorEnemies) {
+        return;
+    }
+    for (mut text_color, opt) in q.iter_mut() {
+        text_color.0 = if opt.0 == anim.selected {
+            Color::srgba(1.0, 0.85, 0.0, 1.0)
+        } else {
+            Color::srgba(0.6, 0.6, 0.6, 1.0)
+        };
+    }
+}
+
 // ─── Cleanup ─────────────────────────────────────────────────────────
+
+fn stop_main_menu_music(
+    mut commands: Commands,
+    music_q: Query<Entity, With<MainMenuMusic>>,
+) {
+    for entity in music_q.iter() {
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.despawn();
+        }
+    }
+}
 
 fn cleanup_main_menu(mut commands: Commands, query: Query<Entity, With<MainMenuUI>>) {
     for entity in query.iter() {
