@@ -29,7 +29,7 @@ fn draw(
     mut visible: ResMut<HandVisible>,
     mut start: ResMut<HandSince>,
 
-    mut query: Query<(Entity,&mut DeckCard,&mut CardUI, &mut Style)>
+    mut query: Query<(Entity,&mut DeckCard,&mut CardUI, &mut Node)>
 ) {
     if keyboard.just_pressed(KeyCode::KeyU) {
         let size = query.iter().len() as i32;
@@ -48,7 +48,7 @@ fn draw(
             }
         }
         visible.0 = true;
-        start.0 = time.elapsed_seconds();
+        start.0 = time.elapsed_secs();
         println!("draw cards");
 
     }

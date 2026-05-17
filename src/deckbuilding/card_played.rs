@@ -17,10 +17,10 @@ impl Plugin for CardPlayedPlugin {
 }
 
 fn position_card(
-    mut query: Query<(Entity,Ref<PlayedCard>,&mut CardUI, &mut Style)>,
+    mut query: Query<(Entity,Ref<PlayedCard>,&mut CardUI, &mut Node)>,
     windows: Query<&Window>,
 ) {
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let count = query.iter().len();
     let mut max = 0;
     for (entity, played_card,mut card_ui,mut style) in query.iter_mut() {
@@ -48,10 +48,10 @@ fn activate_card(
     mouse: Res<ButtonInput<MouseButton>>,
     time:Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut query: Query<(Entity,Ref<PlayedCard>,&CardUI,&Style)>,
+    mut query: Query<(Entity,Ref<PlayedCard>,&CardUI,&Node)>,
     windows: Query<&Window>,
 ) {
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let base_y = window.height() * 1.0- 100.0;
     let mut count = 0;
     for (_, _,_,_) in query.iter_mut() {

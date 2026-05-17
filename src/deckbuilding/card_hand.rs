@@ -30,7 +30,7 @@ fn hide_hand(
     since:Res<HandSince>,
     mut visible:ResMut<HandVisible>
 ) {
-    if (time.elapsed_seconds()>since.0+5.0) & visible.0 {
+    if (time.elapsed_secs()>since.0+5.0) & visible.0 {
         visible.0 = false;
     }
 }
@@ -38,12 +38,12 @@ fn animate_hand(
     mut commands: Commands,
     visible: Res<HandVisible>,
     windows: Query<&Window>,
-    mut query: Query<(Entity,&HandCard, &CardUI, &mut Style)>,
+    mut query: Query<(Entity,&HandCard, &CardUI, &mut Node)>,
 ) {
     if !visible.is_changed() {
         return;
     }
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let count = query.iter().len();
     let mut i = 0;
     println!("{}, {}",visible.0,visible.is_changed());
@@ -81,7 +81,7 @@ fn hover_card(
     mut interaction_query: Query<(Entity, &Interaction,&HandCard,&mut CardUI), (Changed<Interaction>, With<CardUI>)>,
     windows: Query<&Window>,
 ) {
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let base_y = window.height() * 0.5;
     let mut count = 0;
     for (entity, interaction,_,mut card_ui) in interaction_query.iter_mut() {
