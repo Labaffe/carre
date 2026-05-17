@@ -12,7 +12,7 @@ use crate::behavior::*;
 use crate::behavior::behavior::{Behavior, BehaviorComponent};
 use crate::enemy::anim_bank::Animation;
 use crate::enemy::death::DespawnSelf;
-use crate::enemy::despawn_zone::DespawnZone;
+use crate::movement::despawn_off_screen::DespawnOffScreen;
 use crate::enemy::enemy::Enemy;
 use crate::enemy::enemy_builder::EnemyBuilder;
 use crate::movement::movements::Movements;
@@ -133,12 +133,7 @@ impl EnemyBuilder for AsteroidBuilder {
                 drops: &ASTEROID_DROP_TABLE,
             },
             TransitionMessages::new(),
-            DespawnZone {
-                x:-window.width(),
-                y:-window.height(),
-                width: window.width() * 2.0,
-                height:window.height() * 0.25
-            },
+            DespawnOffScreen,
             BehaviorComponent::new( behavior)
         ));
     }

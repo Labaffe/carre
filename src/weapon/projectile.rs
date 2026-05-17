@@ -1,3 +1,4 @@
+use crate::movement::despawn_off_screen::DespawnOffScreen;
 use crate::game_manager::state::GameState;
 use crate::menu::pause::not_paused;
 use crate::weapon::weapon::HitboxShape;
@@ -9,19 +10,12 @@ impl Plugin for ProjectilePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (move_projectiles, cleanup_projectiles_offscreen)
+            move_projectiles
                 .run_if(in_state(GameState::Playing))
                 .run_if(not_paused),
         );
     }
 }
-
-// ─── Constantes ─────────────────────────────────────────────────────
-
-/// Limite X (absolue) au-delà de laquelle un projectile est despawné (px).
-const OFFSCREEN_X: f32 = 1200.0;
-/// Limite Y (absolue) au-delà de laquelle un projectile est despawné (px).
-const OFFSCREEN_Y: f32 = 900.0;
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -123,6 +117,7 @@ pub fn spawn_projectile(
                 damage: spec.damage,
                 death_folder: spec.death_folder,
             },
+            DespawnOffScreen,
         ))
         .id()
 }
@@ -191,17 +186,3 @@ fn move_projectiles(mut query: Query<(&mut Transform, &Projectile)>, time: Res<T
     }
 }
 
-/// Despawn les projectiles qui sortent des limites d'écran.
-fn cleanup_projectiles_offscreen(
-    mut commands: Commands,
-    query: Query<(Entity, &Transform), With<Projectile>>,
-) {
-    for (entity, transform) in query.iter() {
-        let p = transform.translation;
-        if p.x.abs() > OFFSCREEN_X || p.y.abs() > OFFSCREEN_Y {
-            if let Ok(mut e) = commands.get_entity(entity) {
-                e.despawn();
-            }
-        }
-    }
-}

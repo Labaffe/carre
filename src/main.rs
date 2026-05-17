@@ -37,7 +37,7 @@ use enemy::{enemy::Enemy, EnemyPlugin};
 use enemy::boss::{ MusicBoss};
 use enemy::asteroid::{Asteroid};
 
-use crate::enemy::despawn_zone::DespawnZonePlugin;
+use crate::movement::despawn_off_screen::DespawnOffScreenPlugin;
 use fx::explosion::{Explosion, ExplosionPlugin};
 use item::item::{Droppable, ItemPlugin};
 
@@ -103,7 +103,7 @@ fn main() {
         // Ennemis
         .add_plugins((
             EnemyPlugin,
-            DespawnZonePlugin
+            DespawnOffScreenPlugin
         ))
         // Entités & effets
         .add_plugins((

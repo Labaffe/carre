@@ -10,6 +10,7 @@ pub mod rotate;
 pub mod oscilate;
 pub mod movement_zone;
 pub mod bounding_radius;
+pub mod despawn_off_screen;
 use bevy::prelude::*;
 use crate::behavior::choice_list::TransitionMessages;
 use crate::movement::bounding_radius::BoundingRadius;

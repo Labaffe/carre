@@ -7,7 +7,6 @@ pub mod enemy_builder;
 pub mod enemy_register;
 pub mod green_ufo;
 pub mod hit_flash;
-pub mod despawn_zone;
 //pub mod spawn;
 mod death;
 use bevy::prelude::*;
