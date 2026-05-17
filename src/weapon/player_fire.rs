@@ -163,7 +163,7 @@ fn projectile_asteroid_collision(
                     projectile.death_folder,
                 );
                 if let Ok(mut e) = commands.get_entity(projectile_entity) {
-                    e.despawn();
+                    e.try_despawn();
                 }
                 despawned_projectiles.insert(projectile_entity);
                 health.take_damage(projectile.damage);
@@ -180,7 +180,7 @@ fn projectile_asteroid_collision(
                             });
                         }
                         if let Ok(mut e) = commands.get_entity(asteroid_entity) {
-                            e.despawn();
+                            e.try_despawn();
                         }
                         despawned_asteroids.insert(asteroid_entity);
                     }

@@ -131,10 +131,10 @@ fn toggle_debug(
     if keyboard.just_pressed(KeyCode::F2) {
         // Nettoyer les entités en jeu
         for entity in asteroid_q.iter() {
-            if let Ok(mut e) = commands.get_entity(entity) { e.despawn(); }
+            if let Ok(mut e) = commands.get_entity(entity) { e.try_despawn(); }
         }
         //for entity in green_ufo_q.iter() {
-        //    if let Ok(mut e) = commands.get_entity(entity) { e.despawn(); }
+        //    if let Ok(mut e) = commands.get_entity(entity) { e.try_despawn(); }
         //}
 
         // Avancer le LevelRunner jusqu'à "planet_appear" (juste avant le boss)
@@ -428,7 +428,7 @@ fn manage_asteroid_labels(
 ) {
     for (label_entity, label, _, _) in label_q.iter() {
         if asteroid_q.get(label.0).is_err() {
-            if let Ok(mut e) = commands.get_entity(label_entity) { e.despawn(); }
+            if let Ok(mut e) = commands.get_entity(label_entity) { e.try_despawn(); }
         }
     }
 
@@ -585,7 +585,7 @@ fn debug_kill_player(
     if keyboard.just_pressed(KeyCode::F5) && *state.get() == crate::game_manager::state::GameState::Playing {
         for (entity, mut health) in player_q.iter_mut() {
             health.current = 0;
-            if let Ok(mut e) = commands.get_entity(entity) { e.despawn(); }
+            if let Ok(mut e) = commands.get_entity(entity) { e.try_despawn(); }
         }
         next_state.set(crate::game_manager::state::GameState::GameOver);
     }

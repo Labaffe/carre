@@ -247,7 +247,7 @@ fn setup_bomb_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 fn cleanup_bomb_ui(mut commands: Commands, query: Query<Entity, With<BombUI>>) {
     for entity in query.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }
@@ -373,7 +373,7 @@ fn bomb_apply_damage(
                 });
             }
             if let Ok(mut e) = commands.get_entity(entity) {
-                e.despawn();
+                e.try_despawn();
             }
         }
     }
@@ -399,7 +399,7 @@ fn bomb_screen_flash(
 
         if flash.0.is_finished() {
             if let Ok(mut e) = commands.get_entity(entity) {
-                e.despawn();
+                e.try_despawn();
             }
         }
     }
@@ -483,7 +483,7 @@ fn cleanup_offscreen_droppables(
     for (entity, transform) in query.iter() {
         if transform.translation.y < limit {
             if let Ok(mut e) = commands.get_entity(entity) {
-                e.despawn();
+                e.try_despawn();
             }
         }
     }
@@ -527,7 +527,7 @@ fn player_pickup(
         ));
 
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }

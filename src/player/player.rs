@@ -435,7 +435,7 @@ fn update_lives_ui(
 fn cleanup_lives_ui(mut commands: Commands, query: Query<Entity, With<LivesUI>>) {
     for entity in query.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }

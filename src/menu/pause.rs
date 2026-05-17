@@ -242,7 +242,7 @@ fn unpause(
     time.unpause();
     for entity in pause_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }
@@ -326,12 +326,12 @@ fn cleanup_pause(
     commands.remove_resource::<ConfirmPopup>();
     for entity in pause_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
     for entity in confirm_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }

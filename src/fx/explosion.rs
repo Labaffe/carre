@@ -191,7 +191,7 @@ fn animate_explosions(
         if explosion.timer.just_finished() {
             explosion.current_frame += 1;
             if explosion.current_frame >= explosion.frames.len() {
-                if let Ok(mut e) = commands.get_entity(entity) { e.despawn(); }
+                if let Ok(mut e) = commands.get_entity(entity) { e.try_despawn(); }
             } else {
                 sprite.image = explosion.frames[explosion.current_frame].clone();
             }

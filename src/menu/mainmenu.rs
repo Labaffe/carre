@@ -504,7 +504,7 @@ fn handle_settings_view(
         // Despawn le sous-menu
         for entity in settings_ui_q.iter() {
             if let Ok(mut e) = commands.get_entity(entity) {
-                e.despawn();
+                e.try_despawn();
             }
         }
     }
@@ -639,7 +639,7 @@ fn despawn_editor_submenu(
 ) {
     for entity in editor_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }
@@ -761,7 +761,7 @@ fn stop_main_menu_music(
 ) {
     for entity in music_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }
@@ -769,7 +769,7 @@ fn stop_main_menu_music(
 fn cleanup_main_menu(mut commands: Commands, query: Query<Entity, With<MainMenuUI>>) {
     for entity in query.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
     commands.remove_resource::<MainMenuAnim>();

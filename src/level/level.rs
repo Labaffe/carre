@@ -637,7 +637,7 @@ pub(crate) fn execute_action(
         Action::StopMainMusic => {
             for entity in music_q.iter() {
                 if let Ok(mut e) = commands.get_entity(entity) {
-                    e.despawn();
+                    e.try_despawn();
                 }
             }
         }

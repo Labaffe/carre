@@ -165,7 +165,7 @@ pub fn projectile_enemy_collision(
             }
             // Le projectile est détruit même contre un ennemi invulnérable.
             if let Ok(mut e) = commands.get_entity(projectile_entity) {
-                e.despawn();
+                e.try_despawn();
             }
             despawned_projectiles.insert(projectile_entity);
 

@@ -120,7 +120,7 @@ fn player_collision<T: Hittable>(
         if distance < combined_radius {
             if hittable.despawn_on_hit() {
                 if let Ok(mut e) = commands.get_entity(hostile_entity) {
-                    e.despawn();
+                    e.try_despawn();
                 }
             }
 
@@ -136,7 +136,7 @@ fn player_collision<T: Hittable>(
 
             if health.is_dead() {
                 if let Ok(mut e) = commands.get_entity(player_entity) {
-                    e.despawn();
+                    e.try_despawn();
                 }
                 next_state.set(GameState::GameOver);
             } else {

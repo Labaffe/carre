@@ -407,7 +407,7 @@ pub(crate) fn do_skip_intro(
     // Despawn le son d'intro
     for entity in intro_sound_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 
@@ -500,12 +500,12 @@ fn start_outro(
     // Couper les musiques
     for entity in music_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
     for entity in boss_music_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 
@@ -576,7 +576,7 @@ fn level_outro_input(
     if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
         for entity in music_q.iter() {
             if let Ok(mut e) = commands.get_entity(entity) {
-                e.despawn();
+                e.try_despawn();
             }
         }
         pause.outro_active = false;
@@ -638,7 +638,7 @@ fn debug_skip_to_outro(
     // Despawn tous les astéroïdes
     for entity in asteroid_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 
@@ -730,22 +730,22 @@ fn cleanup_playing(
     commands.remove_resource::<ConfirmPopup>();
     for entity in intro_sound_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
     for entity in outro_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
     for entity in music_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
     for entity in confirm_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }
@@ -862,7 +862,7 @@ pub(crate) fn despawn_confirm_popup(
 ) {
     for entity in confirm_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }
@@ -919,7 +919,7 @@ fn handle_credits_input(
 fn cleanup_credits(mut commands: Commands, ui_q: Query<Entity, With<CreditsUI>>) {
     for entity in ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }

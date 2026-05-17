@@ -185,7 +185,7 @@ fn cleanup_playing(
 
     for entity in all_entities {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }

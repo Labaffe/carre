@@ -82,7 +82,7 @@ fn start_countdown(
     // Nettoyer un countdown précédent
     for entity in existing_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 
@@ -145,7 +145,7 @@ fn update_countdown(
         if state.timer >= COUNTDOWN_DURATION + GO_LINGER {
             for entity in ui_q.iter() {
                 if let Ok(mut e) = commands.get_entity(entity) {
-                    e.despawn();
+                    e.try_despawn();
                 }
             }
             commands.remove_resource::<CountdownState>();
@@ -228,7 +228,7 @@ fn animate_countdown_text(
 fn cleanup_countdown(mut commands: Commands, query: Query<Entity, With<CountdownUI>>) {
     for entity in query.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
     commands.remove_resource::<CountdownState>();
