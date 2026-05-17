@@ -14,8 +14,9 @@ use crate::physic::health::Health;
 use crate::player::player::Player;
 use crate::ui::crosshair::Crosshair;
 use crate::ui::score::Score;
+use crate::geometry::shape::shape_hits_circle;
 use crate::weapon::projectile::{
-    projectile_hits_circle, spawn_projectile, Projectile, ProjectileSpawn, ProjectileSprite, Team,
+    spawn_projectile, Projectile, ProjectileSpawn, ProjectileSprite, Team,
 };
 use crate::weapon::weapon::Weapon;
 use bevy::prelude::*;
@@ -147,7 +148,7 @@ fn projectile_asteroid_collision(
                 continue;
             }
 
-            let hit = projectile_hits_circle(
+            let hit = shape_hits_circle(
                 projectile_transform.translation.truncate(),
                 projectile_transform.rotation,
                 &projectile.hitbox,

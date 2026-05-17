@@ -33,7 +33,8 @@ use crate::item::item::{DropEvent, DropTable};
 use crate::menu::pause::not_paused;
 use crate::physic::health::Health;
 use crate::ui::score::Score;
-use crate::weapon::projectile::{projectile_hits_circle, Projectile, Team};
+use crate::geometry::shape::shape_hits_circle;
+use crate::weapon::projectile::{Projectile, Team};
 
 
 pub struct EnemyPlugin;
@@ -153,7 +154,7 @@ pub fn projectile_enemy_collision(
             if despawned_projectiles.contains(&projectile_entity) {
                 continue;
             }
-            let hit = projectile_hits_circle(
+            let hit = shape_hits_circle(
                 projectile_transform.translation.truncate(),
                 projectile_transform.rotation,
                 &projectile.hitbox,

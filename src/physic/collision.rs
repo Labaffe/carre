@@ -8,7 +8,7 @@ use crate::game_manager::state::GameState;
 use crate::physic::health::Health;
 use crate::player::player::{INVINCIBLE_DURATION, Invincible, Player};
 use crate::weapon::projectile::{Projectile, Team};
-use crate::weapon::weapon::HitboxShape;
+use crate::geometry::shape::Shape;
 use bevy::prelude::*;
 use std::time::Duration;
 
@@ -33,7 +33,7 @@ pub const PLAYER_RADIUS: f32 = 45.0;
 
 /// Trait commun pour tout objet possédant une hitbox.
 pub trait Hittable: Component {
-    fn hitbox_shape(&self) -> HitboxShape;
+    fn hitbox_shape(&self) -> Shape;
     /// Si true, l'entité hostile est despawnée au contact avec le joueur.
     fn despawn_on_hit(&self) -> bool {
         true
@@ -45,20 +45,20 @@ pub trait Hittable: Component {
 }
 
 impl Hittable for Player {
-    fn hitbox_shape(&self) -> HitboxShape {
-        HitboxShape::Circle(PLAYER_RADIUS)
+    fn hitbox_shape(&self) -> Shape {
+        Shape::Circle(PLAYER_RADIUS)
     }
 }
 
 impl Hittable for Asteroid {
-    fn hitbox_shape(&self) -> HitboxShape {
-        HitboxShape::Circle(self.radius)
+    fn hitbox_shape(&self) -> Shape {
+        Shape::Circle(self.radius)
     }
 }
 
 impl Hittable for Enemy {
-    fn hitbox_shape(&self) -> HitboxShape {
-        HitboxShape::Circle(self.radius)
+    fn hitbox_shape(&self) -> Shape {
+        Shape::Circle(self.radius)
     }
     fn despawn_on_hit(&self) -> bool {
         false
@@ -71,7 +71,7 @@ impl Hittable for Enemy {
 /// Un `Projectile` ne blesse le joueur que si son `team` est `Enemy`.
 /// Les projectiles du joueur sont ignorés par ce système de collision joueur.
 impl Hittable for Projectile {
-    fn hitbox_shape(&self) -> HitboxShape {
+    fn hitbox_shape(&self) -> Shape {
         self.hitbox.clone()
     }
     fn is_dangerous(&self) -> bool {
@@ -110,8 +110,8 @@ fn player_collision<T: Hittable>(
             .distance(hostile_transform.translation);
 
         let combined_radius = match hittable.hitbox_shape() {
-            HitboxShape::Circle(r) => PLAYER_RADIUS + r,
-            HitboxShape::Rect {
+            Shape::Circle(r) => PLAYER_RADIUS + r,
+            Shape::Rect {
                 half_length,
                 half_width,
             } => PLAYER_RADIUS + half_length.max(half_width),

@@ -39,6 +39,7 @@ use crate::enemy::enemy::Enemy;
 use crate::enemy::enemy_builder::EnemyBuilder;
 use crate::game_manager::difficulty::{Difficulty, SpawnPosition};
 use crate::game_manager::state::GameState;
+use crate::geometry::shape::Shape;
 use crate::menu::pause::not_paused;
 use crate::movement::bounding_radius::BoundingRadius;
 use crate::movement::goto::{self, Goto};
@@ -52,6 +53,7 @@ use crate::movement::shake::Shake;
 use crate::movement::sinusoid::Sinusoid;
 use crate::movement::translate::Translate;
 use crate::physic::health::Health;
+use crate::physic::player_detection::PlayerDetection;
 use crate::player::player::Player;
 use bevy::platform::collections::HashMap;
 
@@ -63,17 +65,15 @@ use bevy::platform::collections::HashMap;
 #[derive(Component)]
 pub struct BossMarker;
 
-/// Composant indiquant que le boss charge le joueur dans une direction figée.
-/// Le système `boss_charge_movement` (dans boss.rs) déplace l'entité tant
-/// que ce composant est présent.
-#[derive(Component)]
-pub struct BossCharge {
-    pub direction: Vec2,
-}
-
 /// Marqueur pour la musique du boss.
 #[derive(Component)]
 pub struct MusicBoss;
+
+/// Vitesse de patrol latérale du boss (px/s). À transformer en variable
+/// d'entité quand on voudra changer dynamiquement au runtime.
+const PATROL_SPEED: f32 = 150.0;
+/// Vitesse de charge du boss (px/s). Idem patrol pour la dynamicité.
+const CHARGE_SPEED: f32 = 750.0;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Constantes
@@ -183,7 +183,7 @@ impl EnemyBuilder for BossBuilder {
                 20.0,
                 amplitude_y,
             ))
-            .with(Translate::new(Vec2::new(-1.0, 0.0), 300.0));
+            .with(Translate::new(Vec2::new(-1.0, 0.0), PATROL_SPEED));
         let patrol_movement_right = Movements::new()
             .with(Oscilate::new(
                 Vec2::new(1.0, 0.0),
@@ -191,11 +191,31 @@ impl EnemyBuilder for BossBuilder {
                 20.0,
                 amplitude_y,
             ))
-            .with(Translate::new(Vec2::new(1.0, 0.0), 300.0));
+            .with(Translate::new(Vec2::new(1.0, 0.0), PATROL_SPEED));
 
+        // Charge déclenchée par PlayerDetection : Rush::on_axis(X) fige la
+        // direction horizontale (gauche/droite) à la 1re frame selon le côté
+        // du joueur. La charge se termine quand le boss touche un bord
+        // (rising edge wall_left ou wall_right poussé par MovementZone),
+        // pas via un timer.
+        let charge_movement = Movements::new()
+            .with(Rush::new(CHARGE_SPEED).on_axis(Vec2::X));
+        let charge = BehaviorBuilder::from_component(charge_movement);
+
+        // Ordre = priorité quand plusieurs transitions matchent dans la même
+        // frame. player_charge déclaré AVANT wall_* pour qu'une charge gagne
+        // sur un rebond mur (cas typique : boss en patrol_right plaqué au mur
+        // droit, joueur entre dans la zone → on veut la charge, pas le rebond).
+        // Les transitions wall_* depuis index 2 (charge) renvoient vers le
+        // patrol qui s'éloigne du mur touché → bounce naturel.
         let alive = BehaviorBuilder::choice()
-            .with(BehaviorBuilder::from_component(patrol_movement_left))
-            .with(BehaviorBuilder::from_component(patrol_movement_right))
+            .with(BehaviorBuilder::from_component(patrol_movement_left))   // 0
+            .with(BehaviorBuilder::from_component(patrol_movement_right))  // 1
+            .with(charge)                                                   // 2
+            .add_transition(0, 2, "player_charge")
+            .add_transition(1, 2, "player_charge")
+            .add_transition(2, 1, "wall_left")
+            .add_transition(2, 0, "wall_right")
             .add_transition(0, 1, "wall_left")
             .add_transition(1, 0, "wall_right");
         let dying = BehaviorBuilder::first(
@@ -232,6 +252,17 @@ impl EnemyBuilder for BossBuilder {
             MovementZone::new(Vec2::new(0.0, 0.0))
                 .with_left("wall_left")
                 .with_right("wall_right"),
+            PlayerDetection {
+                shape: Shape::Rect {
+                    half_width: window.physical_width() as f32 / 2.0 + 200.0,
+                    half_length: 40.0,
+                },
+                on_enter: Some("player_charge"),
+                on_exit: None,
+                inside: false,
+                cooldown_duration: 3.0,
+                cooldown_remaining: 0.0,
+            },
             BehaviorComponent::new(behavior),
         ));
     }
@@ -240,3 +271,4 @@ impl EnemyBuilder for BossBuilder {
         "boss"
     }
 }
+

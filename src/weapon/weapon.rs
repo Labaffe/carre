@@ -13,6 +13,7 @@
 
 use crate::game_manager::difficulty::Difficulty;
 use crate::game_manager::state::GameState;
+use crate::geometry::shape::Shape;
 use crate::player::player::Player;
 use bevy::prelude::*;
 
@@ -25,17 +26,6 @@ impl Plugin for WeaponPlugin {
             update_player_weapon.run_if(in_state(GameState::Playing)),
         );
     }
-}
-
-// ─── Hitbox ──────────────────────────────────────────────────────────
-
-/// Forme de la hitbox d'un projectile.
-#[derive(Clone)]
-pub enum HitboxShape {
-    /// Cercle simple (rayon).
-    Circle(f32),
-    /// Rectangle orienté (demi-longueur dans l'axe, demi-largeur perpendiculaire).
-    Rect { half_length: f32, half_width: f32 },
 }
 
 // ─── Pattern de tir ──────────────────────────────────────────────────
@@ -53,7 +43,7 @@ pub struct ShotAngle(pub f32);
 pub struct WeaponDef {
     pub name: &'static str,
     pub texture_path: &'static str,
-    pub hitbox: HitboxShape,
+    pub hitbox: Shape,
     /// Vitesse des projectiles (px/s).
     pub speed: f32,
     /// Intervalle entre deux tirs (secondes).
@@ -73,7 +63,7 @@ pub struct WeaponDef {
 pub const STANDARD_MISSILE: WeaponDef = WeaponDef {
     name: "Standard Missile",
     texture_path: "images/projectiles/missile.png",
-    hitbox: HitboxShape::Circle(6.0),
+    hitbox: Shape::Circle(6.0),
     speed: 900.0,
     fire_rate: 0.2,
     pattern: &[ShotAngle(0.0)], // tir unique droit devant
@@ -83,7 +73,7 @@ pub const STANDARD_MISSILE: WeaponDef = WeaponDef {
 pub const RED_PROJECTILE: WeaponDef = WeaponDef {
     name: "Red Projectile",
     texture_path: "images/projectiles/red_projectile.png",
-    hitbox: HitboxShape::Rect {
+    hitbox: Shape::Rect {
         half_length: 32.0,
         half_width: 4.0,
     },
@@ -101,7 +91,7 @@ pub const RED_PROJECTILE: WeaponDef = WeaponDef {
 pub const BLUE_PROJECTILE: WeaponDef = WeaponDef {
     name: "Blue Projectiles",
     texture_path: "images/projectiles/blue_projectile.png",
-    hitbox: HitboxShape::Rect {
+    hitbox: Shape::Rect {
         half_length: 32.0,
         half_width: 4.0,
     },

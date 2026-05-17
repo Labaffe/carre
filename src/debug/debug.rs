@@ -6,7 +6,7 @@
 use crate::MusicMain;
 use crate::behavior::behavior::BehaviorComponent;
 use crate::enemy::asteroid::Asteroid;
-use crate::enemy::boss::{BossCharge, BossMarker};
+use crate::enemy::boss::BossMarker;
 use crate::enemy::enemy::Enemy;
 //use crate::enemy::green_ufo::GreenUFOMarker;
 use crate::game_manager::difficulty::Difficulty;
@@ -15,10 +15,11 @@ use crate::level::level::{LevelRunner, Trigger};
 use crate::menu::pause::PauseState;
 use crate::physic::collision::Hittable;
 use crate::physic::health::Health;
+use crate::physic::player_detection::PlayerDetection;
 use crate::player::player::Player;
 use crate::ui::score::Score;
 use crate::weapon::projectile::Projectile;
-use crate::weapon::weapon::HitboxShape;
+use crate::geometry::shape::Shape;
 use bevy::prelude::*;
 
 pub struct DebugPlugin;
@@ -463,15 +464,57 @@ fn manage_asteroid_labels(
     }
 }
 
+/// Dessine la zone de détection joueur via gizmos. Couleur : magenta normalement,
+/// rouge si le joueur est dedans, gris si en cooldown.
+fn draw_player_detection(
+    gizmos: &mut Gizmos,
+    query: &Query<(&Transform, &PlayerDetection)>,
+) {
+    for (transform, detection) in query.iter() {
+        let pos = transform.translation.truncate();
+        let color = if detection.inside {
+            Color::srgb(1.0, 0.2, 0.2)
+        } else if detection.cooldown_remaining > 0.0 {
+            Color::srgb(0.5, 0.5, 0.5)
+        } else {
+            Color::srgb(1.0, 0.0, 1.0)
+        };
+        match &detection.shape {
+            Shape::Circle(r) => {
+                gizmos.circle_2d(pos, *r, color);
+            }
+            Shape::Rect {
+                half_length,
+                half_width,
+            } => {
+                let angle = transform.rotation.to_euler(EulerRot::ZYX).0;
+                let cos = angle.cos();
+                let sin = angle.sin();
+                let ax = Vec2::new(cos, sin);
+                let ay = Vec2::new(-sin, cos);
+                let corners = [
+                    pos + ax * *half_width + ay * *half_length,
+                    pos - ax * *half_width + ay * *half_length,
+                    pos - ax * *half_width - ay * *half_length,
+                    pos + ax * *half_width - ay * *half_length,
+                ];
+                for i in 0..4 {
+                    gizmos.line_2d(corners[i], corners[(i + 1) % 4], color);
+                }
+            }
+        }
+    }
+}
+
 /// Dessine la hitbox d'un Hittable via gizmos.
 fn draw_hittable<T: Hittable>(gizmos: &mut Gizmos, query: &Query<(&Transform, &T)>, color: Color) {
     for (transform, hittable) in query.iter() {
         let pos = transform.translation.truncate();
         match hittable.hitbox_shape() {
-            HitboxShape::Circle(r) => {
+            Shape::Circle(r) => {
                 gizmos.circle_2d(pos, r, color);
             }
-            HitboxShape::Rect {
+            Shape::Rect {
                 half_length,
                 half_width,
             } => {
@@ -598,6 +641,7 @@ fn draw_hitboxes(
     asteroid_q: Query<(&Transform, &Asteroid)>,
     projectile_q: Query<(&Transform, &Projectile)>,
     enemy_q: Query<(&Transform, &Enemy)>,
+    detection_q: Query<(&Transform, &PlayerDetection)>,
     zone_q: Query<(
         &crate::movement::movement_zone::MovementZone,
         Option<&crate::movement::bounding_radius::BoundingRadius>,
@@ -613,6 +657,7 @@ fn draw_hitboxes(
     draw_hittable(&mut gizmos, &player_q, Color::srgb(0.0, 1.0, 0.0));
     draw_hittable(&mut gizmos, &asteroid_q, Color::srgb(1.0, 0.0, 0.0));
     draw_hittable(&mut gizmos, &enemy_q, Color::srgb(0.0, 1.0, 1.0));
+    draw_player_detection(&mut gizmos, &detection_q);
     // Projectiles : jaune pour le joueur, orange pour les ennemis (la couleur
     // est uniforme ici — si besoin on peut séparer selon projectile.team).
     draw_hittable(&mut gizmos, &projectile_q, Color::srgb(1.0, 1.0, 0.0));

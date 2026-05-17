@@ -18,6 +18,7 @@ mod ui;
 mod weapon;
 mod editor;
 mod movement;
+mod geometry;
 // ─── Imports ───────────────────────────────────────────────────────
 use game_manager::state::GameState;
 use game_manager::game::{GamePlugin, MusicOutro};
@@ -53,6 +54,7 @@ use ui::countdown::CountdownPlugin;
 use environment::background::{Background, BackgroundPlugin, Planet};
 use physic::collision::CollisionPlugin;
 use physic::health::HealthPlugin;
+use physic::player_detection::PlayerDetectionPlugin;
 
 use debug::debug::DebugPlugin;
 use deckbuilding::card_hand::CardHandPlugin;
@@ -99,6 +101,7 @@ fn main() {
             CrosshairPlugin,
             CollisionPlugin,
             HealthPlugin,
+            PlayerDetectionPlugin,
         ))
         // Ennemis
         .add_plugins((
