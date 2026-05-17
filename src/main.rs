@@ -65,7 +65,7 @@ fn main() {
             primary_window: Some(Window {
                 title: "Carré".to_string(),
                 mode: bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
-                visible: false,
+                visible: true,
                 ..default()
             }),
             ..default()
@@ -127,7 +127,6 @@ fn main() {
             DebugPlugin,
         ))
         .add_systems(Startup, setup)
-        .add_systems(Update, show_window_after_render.run_if(run_once))
         .add_systems(OnExit(GameState::Playing), cleanup_playing)
         .run();
 }
@@ -151,15 +150,10 @@ pub struct MusicMain;
 pub struct MusicGameOver;
 
 fn setup(mut commands: Commands, settings: Res<GameSettings>) {
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn(Camera2d);
     commands.insert_resource(GlobalVolume {
         volume: bevy::audio::Volume::new(settings.master_volume),
     });
-}
-
-/// Affiche la fenêtre après la première frame (évite le flash blanc Windows).
-fn show_window_after_render(mut windows: Query<&mut Window>) {
-    windows.single_mut().visible = true;
 }
 
 /// Nettoyage de toutes les entités de jeu quand on quitte l'état Playing.

@@ -74,21 +74,25 @@ fn handle_pause_input(
     mut exit: EventWriter<AppExit>,
     mut next_state: ResMut<NextState<GameState>>,
     pause_ui_q: Query<Entity, With<PauseUI>>,
-    mut text_q: Query<(&mut Text, &PauseOption), Without<ConfirmOptionMarker>>,
+    mut text_q: Query<(&mut TextColor, &PauseOption), Without<ConfirmOptionMarker>>,
     asset_server: Res<AssetServer>,
     music_q: Query<&AudioSink, With<MusicMain>>,
     boss_music_q: Query<&AudioSink, With<MusicBoss>>,
     play_mode: Option<Res<PlayMode>>,
     confirm: Option<ResMut<ConfirmPopup>>,
     confirm_ui_q: Query<Entity, With<ConfirmPopupUI>>,
-    mut confirm_text_q: Query<(&mut Text, &ConfirmOptionMarker), Without<PauseOption>>,
+    mut confirm_text_q: Query<(&mut TextColor, &ConfirmOptionMarker), Without<PauseOption>>,
 ) {
     // ─── Popup de confirmation active ───────────────────────────
     if let Some(mut popup) = confirm {
         // Mise à jour des couleurs Oui/Non
-        for (mut text, marker) in confirm_text_q.iter_mut() {
+        for (mut text_color, marker) in confirm_text_q.iter_mut() {
             let is_sel = marker.0 == popup.selected;
-            /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
+            text_color.0 = if is_sel {
+                Color::srgba(1.0, 0.85, 0.0, 1.0)
+            } else {
+                Color::srgba(0.6, 0.6, 0.6, 1.0)
+            };
         }
 
         // Navigation gauche/droite
@@ -176,12 +180,16 @@ fn handle_pause_input(
     }
 
     // Mise à jour des couleurs des options
-    for (mut text, option) in text_q.iter_mut() {
+    for (mut text_color, option) in text_q.iter_mut() {
         let is_selected = (option.action == PauseAction::Resume && pause.selected == 0)
             || (option.action == PauseAction::MainMenu && pause.selected == 1)
             || (option.action == PauseAction::Quit && pause.selected == 2);
 
-        /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
+        text_color.0 = if is_selected {
+            Color::srgba(1.0, 0.85, 0.0, 1.0)
+        } else {
+            Color::srgba(0.6, 0.6, 0.6, 1.0)
+        };
     }
 
     // Validation

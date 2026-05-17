@@ -124,9 +124,9 @@ fn score_update(
 ) {
     score.current_time += time.delta_secs();
 
-    // texte : opacité 0 → 1, zoom 0.3 → 1.0
+    // texte : mise à jour de la valeur + zoom dynamique
     for (mut text, mut transform) in text_q.iter_mut() {
-        /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
+        **text = score.text();
         let coef = score.get_size_coeff();
         let scale = 0.3 * coef + 1.0 * (1.0 - coef);
         transform.scale = Vec3::splat(scale);
@@ -145,9 +145,9 @@ fn level_update(
         level.value += 1;
         commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/level_up.ogg")), PlaybackSettings::DESPAWN));
     }
-    // texte : opacité 0 → 1, zoom 0.3 → 1.0
+    // texte : niveau courant + zoom selon levelup
     for (mut text, mut transform) in text_q.iter_mut() {
-        /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
+        **text = level.value.to_string();
         if levelup {
             transform.scale = Vec3::splat(1.0);
         } else {

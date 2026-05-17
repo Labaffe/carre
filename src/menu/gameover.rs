@@ -153,7 +153,7 @@ const ANIM_DURATION: f32 = 6.0;
 fn animate_gameover(
     mut anim: ResMut<GameOverAnim>,
     time: Res<Time>,
-    mut text_q: Query<(&mut Text, &mut Transform), With<GameOverText>>,
+    mut text_q: Query<(&mut TextColor, &mut Transform), With<GameOverText>>,
     mut bg_q: Query<&mut BackgroundColor, With<GameOverBackground>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -235,8 +235,8 @@ fn animate_gameover(
 
             // Fondu des textes (depuis l'alpha capturé → 0.0)
             let base_text = anim.fade_start_text_alpha.unwrap_or(current_text_alpha);
-            for (mut text, _) in text_q.iter_mut() {
-                /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
+            for (mut text_color, _) in text_q.iter_mut() {
+                text_color.0.set_alpha(base_text * (1.0 - fade_progress));
             }
 
             // Fondu progressif du volume de la musique (depuis le volume capturé)
@@ -270,8 +270,8 @@ fn animate_gameover(
     }
 
     // texte : opacité 0 → 1, zoom 0.3 → 1.0
-    for (mut text, mut transform) in text_q.iter_mut() {
-        /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
+    for (mut text_color, mut transform) in text_q.iter_mut() {
+        text_color.0.set_alpha(progress);
         let scale = 0.3 + progress * 0.7;
         transform.scale = Vec3::splat(scale);
     }
@@ -301,14 +301,18 @@ fn handle_restart(
     play_mode: Option<Res<PlayMode>>,
     confirm: Option<ResMut<ConfirmPopup>>,
     confirm_ui_q: Query<Entity, With<ConfirmPopupUI>>,
-    mut confirm_text_q: Query<(&mut Text, &ConfirmOptionMarker)>,
+    mut confirm_text_q: Query<(&mut TextColor, &ConfirmOptionMarker)>,
 ) {
     // ─── Popup de confirmation active ───────────────────────────
     if let Some(mut popup) = confirm {
         // Mise à jour des couleurs Oui/Non
-        for (mut text, marker) in confirm_text_q.iter_mut() {
+        for (mut text_color, marker) in confirm_text_q.iter_mut() {
             let is_sel = marker.0 == popup.selected;
-            /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
+            text_color.0 = if is_sel {
+                Color::srgba(1.0, 0.85, 0.0, 1.0)
+            } else {
+                Color::srgba(0.6, 0.6, 0.6, 1.0)
+            };
         }
 
         if keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyQ) {

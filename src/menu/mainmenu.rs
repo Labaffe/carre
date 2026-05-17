@@ -163,31 +163,32 @@ fn setup_main_menu(
     // UI racine (fond noir, recouvre tout l'écran)
     commands
         .spawn((
-            (
             Node {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    flex_direction: FlexDirection::Column,
-                    ..default()
-                },
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.0)),
-        ),
             MainMenuUI,
             MainMenuRoot,
         ))
         .with_children(|parent| {
             // Logo (centré indépendamment)
             parent.spawn((
-                ImageNode::new(asset_server.load("images/ui/main_menu_title.png")),
+                ImageNode {
+                    image: asset_server.load("images/ui/main_menu_title.png"),
+                    color: Color::srgba(1.0, 1.0, 1.0, 0.0),
+                    ..default()
+                },
                 Node {
                     width: Val::Px(750.0),
                     height: Val::Auto,
                     margin: UiRect::bottom(Val::Px(200.0)),
                     ..default()
                 },
-                BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.0)),
                 MainMenuUI,
                 MainMenuLogo,
             ));
@@ -195,15 +196,13 @@ fn setup_main_menu(
             // Conteneur des options du menu (décalé vers le haut)
             parent
                 .spawn((
-                    (
-            Node {
-                            flex_direction: FlexDirection::Column,
-                            align_items: AlignItems::Center,
-                            bottom:Val::Px(300.0),
-                            row_gap: Val::Px(10.0),
-                            ..default()
-                        },
-        ),
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        bottom: Val::Px(300.0),
+                        row_gap: Val::Px(10.0),
+                        ..default()
+                    },
                     MainMenuUI,
                     MenuOptionsContainer,
                 ))
@@ -280,12 +279,12 @@ fn animate_main_menu(
     time: Res<Time>,
     mut bg_root_q: Query<&mut BackgroundColor, With<MainMenuRoot>>,
     mut logo_q: Query<
-        (&mut BackgroundColor, &mut Node),
+        (&mut ImageNode, &mut Node),
         (With<MainMenuLogo>, Without<MainMenuRoot>),
     >,
     mut container_q: Query<&mut Node, (With<MenuOptionsContainer>, Without<MainMenuLogo>)>,
     mut text_q: Query<
-        (&mut Text, &MenuOption, &mut Node),
+        (&mut TextColor, &MenuOption),
         (Without<MainMenuLogo>, Without<MenuOptionsContainer>),
     >,
     mut tile_q: Query<&mut Sprite, With<MainMenuTile>>,
@@ -310,13 +309,13 @@ fn animate_main_menu(
         bg.0.set_alpha(1.0 - alpha);
     }
 
-    // Logo — cacher dans les sous-menus
-    for (mut bg, mut style) in logo_q.iter_mut() {
+    // Logo — cacher dans les sous-menus, fade via tint de l'ImageNode
+    for (mut image_node, mut style) in logo_q.iter_mut() {
         if anim.view != MenuView::Main {
             style.display = Display::None;
         } else {
             style.display = Display::Flex;
-            bg.0.set_alpha(alpha);
+            image_node.color.set_alpha(alpha);
         }
     }
 
@@ -331,10 +330,14 @@ fn animate_main_menu(
 
     // Menu options — couleurs de sélection
     let mut idx = 0;
-    for (mut text, _option, _style) in text_q.iter_mut() {
+    for (mut text_color, _option) in text_q.iter_mut() {
         if anim.view == MenuView::Main {
             let is_selected = idx == anim.selected;
-            /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
+            text_color.0 = if is_selected {
+                Color::srgba(1.0, 0.85, 0.0, alpha)
+            } else {
+                Color::srgba(0.6, 0.6, 0.6, alpha)
+            };
         }
         idx += 1;
     }

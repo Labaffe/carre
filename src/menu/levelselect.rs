@@ -250,7 +250,7 @@ fn animate_level_select(
     play_mode: Option<Res<PlayMode>>,
     campaign: Option<Res<CampaignProgress>>,
     mut border_q: Query<(&CardBorder, &mut BackgroundColor), Without<PrimeCard>>,
-    mut label_q: Query<(&CardLabel, &mut Text)>,
+    mut label_q: Query<(&CardLabel, &mut TextColor)>,
     mut card_q: Query<(&PrimeCard, &mut ImageNode, &mut BackgroundColor), Without<CardBorder>>,
     textures: Res<CardTextures>,
 ) {
@@ -303,11 +303,17 @@ fn animate_level_select(
     }
 
     // Couleur du label selon l'état
-    for (label, mut text) in label_q.iter_mut() {
+    for (label, mut text_color) in label_q.iter_mut() {
         let level_num = label.0 + 1;
         let is_selected = label.0 == state.selected;
         let is_completed = completed.contains(&level_num);
-        /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
+        text_color.0 = if is_completed {
+            Color::srgba(0.4, 0.4, 0.4, 0.7)
+        } else if is_selected {
+            Color::srgba(1.0, 0.85, 0.0, 1.0)
+        } else {
+            Color::srgba(0.7, 0.8, 0.8, 0.9)
+        };
     }
 }
 
@@ -324,7 +330,7 @@ fn handle_level_select_input(
     menu_music_q: Query<Entity, With<MainMenuMusic>>,
     mut confirm: Option<ResMut<ConfirmPopup>>,
     confirm_ui_q: Query<Entity, With<ConfirmPopupUI>>,
-    mut confirm_options_q: Query<(&ConfirmOptionMarker, &mut Text)>,
+    mut confirm_options_q: Query<(&ConfirmOptionMarker, &mut TextColor)>,
     asset_server: Res<AssetServer>,
 ) {
     let Some(ref mut state) = state else { return };
@@ -349,8 +355,13 @@ fn handle_level_select_input(
         }
 
         // Mise à jour des couleurs
-        for (marker, mut text) in confirm_options_q.iter_mut() {
-            /* TODO Bevy 0.15: refactor via TextColor/TextFont query */ {}
+        for (marker, mut text_color) in confirm_options_q.iter_mut() {
+            let is_sel = marker.0 == confirm.selected;
+            text_color.0 = if is_sel {
+                ui_yellow
+            } else {
+                Color::srgba(0.6, 0.6, 0.6, 1.0)
+            };
         }
 
         if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
