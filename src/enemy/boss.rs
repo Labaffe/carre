@@ -50,6 +50,8 @@ use crate::game_manager::difficulty::{Difficulty, SpawnPosition};
 use crate::game_manager::state::GameState;
 use crate::menu::pause::not_paused;
 use crate::movement::movements::Movements;
+use crate::movement::movement_zone::MovementZone;
+use crate::movement::bounding_radius::BoundingRadius;
 use crate::physic::health::Health;
 use crate::player::player::Player;
 
@@ -153,47 +155,28 @@ impl EnemyBuilder for BossBuilder {
         let boss_anim_behavior = BehaviorBuilder::from_component( Animation::new("boss", Duration::from_secs_f32(0.1)));
         let boss_idle_anim_behavior = BehaviorBuilder::from_component( Animation::new("boss_idle", Duration::from_secs_f32(0.1)));
 
-        let patrol_movement_left=Movements::new()
+        let patrol_movement_left = Movements::new()
             .with(Oscilate::new(
                 Vec2::new(1.0, 0.0),
                 Vec2::ZERO,
-                6.0, 
-                window.height() *0.5
+                6.0,
+                window.height() * 0.5,
             ))
-            .with(Translate::new(Vec2::new(-1.0,0.0), 100.0));
-        let patrol_movement_right=Movements::new()
+            .with(Translate::new(Vec2::new(-1.0, 0.0), 100.0));
+        let patrol_movement_right = Movements::new()
             .with(Oscilate::new(
                 Vec2::new(1.0, 0.0),
                 Vec2::ZERO,
-                6.0, 
-                window.height() *0.5
+                6.0,
+                window.height() * 0.5,
             ))
-            .with(Translate::new(Vec2::new(1.0,0.0), 100.0));
-        let charge_movement1 =BehaviorBuilder::from_component(Movements::new().with( Rush::new( 1500.0)));
-        let charge_movement2 =BehaviorBuilder::from_component(Movements::new().with( Rush::new( 1500.0)));
-        let alive= BehaviorBuilder::first(
-                Duration::from_secs_f32(6.0), 
-                BehaviorBuilder::multiple()
-                .with(BehaviorBuilder::from_component( patrol_movement_left))
-                .with(boss_idle_anim_behavior)   
-                )
-            .then(
-                Duration::from_secs_f32(1.0),
-                BehaviorBuilder::multiple()
-                .with(charge_movement1)
-                .with(boss_anim_behavior)
-            )
-            .then(
-                Duration::from_secs_f32(6.0),
-                BehaviorBuilder::multiple()
-                .with(
-                BehaviorBuilder::from_component( patrol_movement_right))
-            )
-            .then(
-                Duration::from_secs_f32(1.0),
-                charge_movement2
-            )
-            .should_loop();
+            .with(Translate::new(Vec2::new(1.0, 0.0), 100.0));
+
+        let alive = BehaviorBuilder::choice()
+            .with(BehaviorBuilder::from_component(patrol_movement_left))
+            .with(BehaviorBuilder::from_component(patrol_movement_right))
+            .add_transition(0, 1, "wall_left")
+            .add_transition(1, 0, "wall_right");
         let dying=BehaviorBuilder::first(
             Duration::from_secs_f32(0.4),
             BehaviorBuilder::from_component(Movements::new().with(Shake::new(100.0,0.4)))
@@ -228,6 +211,10 @@ impl EnemyBuilder for BossBuilder {
         Health::new(BOSS.total_hp),
         BossMarker,
         TransitionMessages::new(),
+        BoundingRadius(BOSS.config.sprite_size / 2.0),
+        MovementZone::new(Vec2::new(0.15, 0.0))
+            .with_left("wall_left")
+            .with_right("wall_right"),
         BehaviorComponent::new( behavior)
     ));
     }
