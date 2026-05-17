@@ -31,6 +31,7 @@ use bevy::prelude::*;
 
 use crate::behavior::BehaviorBuilder;
 use crate::behavior::behavior::BehaviorComponent;
+use crate::behavior::choice_list::TransitionMessages;
 use crate::enemy::anim_bank::Animation;
 use crate::movement::goto::{self, Goto};
 use crate::movement::movement::Movement;
@@ -230,6 +231,7 @@ impl EnemyBuilder for BossBuilder {
         Enemy::new(BOSS),
         Health::new(BOSS.total_hp),
         BossMarker,
+        TransitionMessages::new(),
         BehaviorComponent::new( behavior)
     ));
     }
