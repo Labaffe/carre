@@ -36,6 +36,12 @@ impl OrderedNodeList {
         );
         self
     }
+    pub fn during(mut self, duration:Duration)->Self {
+        if let Some(last) = self.indexed_node_list.node_list.nodes.last_mut() {
+            last.0.schedule = UpdateSchedule::ByDuration(duration);
+        }
+        self
+    }
     pub fn should_loop(mut self)->Self {
         self.looping = true;
         self

@@ -125,7 +125,6 @@ impl EnemyBuilder for AsteroidBuilder {
             .add_transition(0,1,"die");
         commands.spawn((
             SpriteBundle {
-                //texture: asset_server.load("images/boss/idle/frame000"),
                 sprite: Sprite {
                     custom_size: Some(size),
                     ..default()

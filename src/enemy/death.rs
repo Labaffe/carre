@@ -33,7 +33,6 @@ pub fn detect_death(
     for (entity, mut health, mut enemy,transform,drop_table,mut messages) in query.iter_mut() {
         
         if health.is_dead() & !health.dying {
-            println!("got a dead one {}",enemy.name);
             health.dying = true;
             if let Some(table) = drop_table {
                 drop_events.send(DropEvent {
@@ -42,7 +41,6 @@ pub fn detect_death(
                 });
             }
             messages.messages.push("die".to_string());
-            println!("send message");
             death_events.send(EnemyDeathEvent {
                 entity,
                 position: transform.translation,
