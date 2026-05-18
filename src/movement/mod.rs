@@ -7,6 +7,7 @@ pub mod rush;
 pub mod goto;
 pub mod shake;
 pub mod rotate;
+pub mod spin;
 pub mod oscilate;
 pub mod movement_zone;
 pub mod bounding_radius;
@@ -23,10 +24,10 @@ pub struct MovementPlugin;
 
 impl Plugin for MovementPlugin {
     fn build(&self, app: &mut App) {
-        app
-        .add_systems(
+        app.add_systems(
             FixedUpdate,
-            movement_driver.run_if(in_state(GameState::Playing))
+            (movement_driver, crate::movement::spin::spin_driver)
+                .run_if(in_state(GameState::Playing)),
         );
     }
 }

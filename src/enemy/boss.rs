@@ -51,6 +51,7 @@ use crate::movement::rotate::RotateAround;
 use crate::movement::rush::{self, Rush};
 use crate::movement::shake::Shake;
 use crate::movement::sinusoid::Sinusoid;
+use crate::movement::spin::Spin;
 use crate::movement::translate::Translate;
 use crate::physic::health::Health;
 use crate::physic::player_detection::PlayerDetection;
@@ -74,6 +75,9 @@ pub struct MusicBoss;
 const PATROL_SPEED: f32 = 150.0;
 /// Vitesse de charge du boss (px/s). Idem patrol pour la dynamicité.
 const CHARGE_SPEED: f32 = 750.0;
+/// Vitesse de rotation du boss pendant la charge (rad/s).
+/// `4π` ≈ 2 tours par seconde.
+const CHARGE_SPIN: f32 = 4.0 * std::f32::consts::PI;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Constantes
@@ -195,12 +199,16 @@ impl EnemyBuilder for BossBuilder {
 
         // Charge déclenchée par PlayerDetection : Rush::on_axis(X) fige la
         // direction horizontale (gauche/droite) à la 1re frame selon le côté
-        // du joueur. La charge se termine quand le boss touche un bord
-        // (rising edge wall_left ou wall_right poussé par MovementZone),
-        // pas via un timer.
-        let charge_movement = Movements::new()
-            .with(Rush::new(CHARGE_SPEED).on_axis(Vec2::X));
-        let charge = BehaviorBuilder::from_component(charge_movement);
+        // du joueur. Spin::with_auto_reset fait tourner le boss sur lui-même
+        // pendant la charge et remet la rotation à 0 quand le composant est
+        // retiré (via hook on_remove). La charge se termine quand le boss
+        // touche un bord (rising edge wall_left/wall_right via MovementZone).
+        let charge_movement = Movements::new().with(Rush::new(CHARGE_SPEED).on_axis(Vec2::X));
+        let charge = BehaviorBuilder::multiple()
+            .with(BehaviorBuilder::from_component(charge_movement))
+            .with(BehaviorBuilder::from_component(
+                Spin::new(CHARGE_SPIN).with_auto_reset(),
+            ));
 
         // Ordre = priorité quand plusieurs transitions matchent dans la même
         // frame. player_charge déclaré AVANT wall_* pour qu'une charge gagne
@@ -209,9 +217,9 @@ impl EnemyBuilder for BossBuilder {
         // Les transitions wall_* depuis index 2 (charge) renvoient vers le
         // patrol qui s'éloigne du mur touché → bounce naturel.
         let alive = BehaviorBuilder::choice()
-            .with(BehaviorBuilder::from_component(patrol_movement_left))   // 0
-            .with(BehaviorBuilder::from_component(patrol_movement_right))  // 1
-            .with(charge)                                                   // 2
+            .with(BehaviorBuilder::from_component(patrol_movement_left)) // 0
+            .with(BehaviorBuilder::from_component(patrol_movement_right)) // 1
+            .with(charge) // 2
             .add_transition(0, 2, "player_charge")
             .add_transition(1, 2, "player_charge")
             .add_transition(2, 1, "wall_left")
@@ -271,4 +279,3 @@ impl EnemyBuilder for BossBuilder {
         "boss"
     }
 }
-
