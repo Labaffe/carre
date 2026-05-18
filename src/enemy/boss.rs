@@ -53,6 +53,7 @@ use crate::movement::shake::Shake;
 use crate::movement::sinusoid::Sinusoid;
 use crate::movement::spin::Spin;
 use crate::movement::translate::Translate;
+use crate::physic::harmless::Harmless;
 use crate::physic::health::Health;
 use crate::physic::invulnerable::Invulnerable;
 use crate::physic::player_detection::PlayerDetection;
@@ -105,10 +106,17 @@ impl BossPhaseTracker {
 // ═══════════════════════════════════════════════════════════════════════
 
 const INTRO_DURATION: f32 = 7.0;
-const INTRO_TARGET_Y: f32 = 250.0;
+/// Y de spawn du boss avant l'intro. Le boss tombe en spirale depuis ce point
+/// vers (0, 0).
+const INTRO_SPAWN_Y: f32 = 250.0;
 const INTRO_START_SCALE: f32 = 0.01;
 const INTRO_END_SCALE: f32 = 1.0;
-const INTRO_SPIRAL_TURNS: f32 = 2.5;
+/// Vitesse de rotation pendant la spirale d'intro (tours/seconde).
+const INTRO_SPIRAL_TURNS: f32 = 1.0;
+/// Vitesse d'attraction du `Goto` qui ramène le boss au centre pendant la
+/// spirale (px/s). Calculé pour arriver à (0, 0) en ~1 seconde depuis
+/// `INTRO_SPAWN_Y` (= 250) avec un petit overhead pour la spirale.
+const INTRO_GOTO_SPEED: f32 = 250.0;
 const INTRO_SPIRAL_RADIUS: f32 = 150.0;
 
 const PHASE1_PATROL_SPEED_X: f32 = 200.0;
@@ -168,14 +176,14 @@ impl EnemyBuilder for BossBuilder {
         println!("going to spawn boss");
         let spiral = Movements::new()
             .with(RotateAround::new(Vec2::ZERO, INTRO_SPIRAL_TURNS))
-            .with(Goto::new(Vec2::ZERO, -100.0));
-        let entering = BehaviorBuilder::first(
-            Duration::from_secs_f32(1.0),
+            .with(Goto::new(Vec2::ZERO, INTRO_GOTO_SPEED));
+        let entering_sequence = BehaviorBuilder::first(
+            Duration::from_secs_f32(3.0),
             BehaviorBuilder::multiple()
                 .with(BehaviorBuilder::from_component(spiral))
                 .with(BehaviorBuilder::from_component(Animation::new(
                     "idle",
-                    Duration::from_secs(1),
+                    Duration::from_secs(3),
                 ))),
         )
         .then(
@@ -185,6 +193,14 @@ impl EnemyBuilder for BossBuilder {
                 Duration::from_secs_f32(0.1),
             )),
         );
+        // Pendant toute la durée d'entering (spirale + flexing), le boss est
+        // invulnérable ET inoffensif au contact. Les deux markers sont insérés
+        // en parallèle de la séquence et retirés automatiquement quand le
+        // wrapping `multiple()` se disable (fin de l'entering top-level).
+        let entering = BehaviorBuilder::multiple()
+            .with(entering_sequence)
+            .with(BehaviorBuilder::from_component(Invulnerable))
+            .with(BehaviorBuilder::from_component(Harmless));
         //.with(BehaviorBuilder::from_component(AudioBundle {
         //    source: asset_server.load("audio/sfx/boss_start.ogg"),
         //    settings: PlaybackSettings::DESPAWN,
@@ -289,7 +305,7 @@ impl EnemyBuilder for BossBuilder {
                 ..default()
             },
             Transform {
-                translation: Vec3::ZERO,
+                translation: Vec3::new(0.0, INTRO_SPAWN_Y, 0.0),
                 scale: Vec3::splat(INTRO_END_SCALE),
                 ..default()
             },
