@@ -18,17 +18,23 @@ impl Goto {
 impl Movement for Goto {
     fn evaluate(
         &mut self,
-        at:Duration,
-        deltatime:Duration,
-        current_position:Vec2,
-        velocity:Vec2,
-        player_pos:Vec2
-    )->Vec2 {  
-        let delta = (self.target-current_position);
+        at: Duration,
+        deltatime: Duration,
+        current_position: Vec2,
+        velocity: Vec2,
+        player_pos: Vec2,
+    ) -> Vec2 {
+        let delta = self.target - current_position;
         if let Some(direction) = delta.try_normalize() {
-            direction * deltatime.as_secs_f32() * self.speed /  (delta.x * delta.x + delta.y * delta.y)
-        }
-        else {
+            // Évite l'overshoot : si on est à moins d'un pas de la cible, on
+            // y va exactement (sinon on oscillerait autour à vitesse constante).
+            let step = self.speed * deltatime.as_secs_f32();
+            if step >= delta.length() {
+                delta
+            } else {
+                direction * step
+            }
+        } else {
             Vec2::ZERO
         }
     }
