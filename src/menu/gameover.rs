@@ -11,6 +11,7 @@ use crate::game_manager::game::{
 };
 use crate::game_manager::state::GameState;
 use crate::{MusicGameOver, MusicMain};
+use bevy::color::Alpha;
 use bevy::prelude::*;
 
 pub struct GameOverPlugin;
@@ -42,6 +43,10 @@ struct GameOverText;
 
 #[derive(Component)]
 struct GameOverBackground;
+
+/// Taille de police de référence pour le zoom dynamique.
+#[derive(Component)]
+struct BaseFontSize(f32);
 
 // --- Ressource d'animation ---
 
@@ -91,8 +96,8 @@ fn setup_gameover_ui(
 
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
+            (
+            Node {
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     align_items: AlignItems::Center,
@@ -101,38 +106,28 @@ fn setup_gameover_ui(
                     row_gap: Val::Px(20.0),
                     ..default()
                 },
-                // fond entièrement noir au départ
-                background_color: Color::rgba(0.0, 0.0, 0.0, 1.0).into(),
-                ..default()
-            },
+            // fond entièrement noir au départ
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.0)),
+        ),
             GameOverUI,
             GameOverBackground,
         ))
         .with_children(|parent| {
-            // texte invisible au départ (alpha = 0, scale réduit via Transform)
             parent.spawn((
-                TextBundle::from_section(
-                    "VOUS ETES MORT",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 90.0,
-                        color: Color::rgba(1.0, 0.0, 0.0, 0.0),
-                    },
-                ),
+                Text::new("VOUS ETES MORT"),
+                TextFont { font: font.clone(), font_size: 90.0, ..default() },
+                TextColor(Color::srgba(1.0, 0.0, 0.0, 0.0)),
+                BaseFontSize(90.0),
                 GameOverText,
             ));
 
             // En campagne, pas de texte "R pour rejouer"
             if !is_campaign {
                 parent.spawn((
-                    TextBundle::from_section(
-                        "R pour rejouer | Echap pour quitter",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 28.0,
-                            color: Color::rgba(1.0, 1.0, 1.0, 0.0),
-                        },
-                    ),
+                    Text::new("R pour rejouer | Echap pour quitter"),
+                    TextFont { font: font.clone(), font_size: 28.0, ..default() },
+                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.0)),
+                    BaseFontSize(28.0),
                     GameOverText,
                     GameOverRestartText,
                 ));
@@ -153,8 +148,8 @@ fn setup_gameover_ui(
 
 fn stop_main_music(mut commands: Commands, main_music_q: Query<Entity, With<MusicMain>>) {
     for entity in main_music_q.iter() {
-        if let Some(mut e) = commands.get_entity(entity) {
-            e.despawn();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
 }
@@ -167,16 +162,17 @@ const ANIM_DURATION: f32 = 6.0;
 fn animate_gameover(
     mut anim: ResMut<GameOverAnim>,
     time: Res<Time>,
-    mut text_q: Query<(&mut Text, &mut Transform), With<GameOverText>>,
+    mut text_q: Query<&mut TextColor, With<GameOverText>>,
+    mut text_font_q: Query<(&mut TextFont, &BaseFontSize), With<GameOverText>>,
     mut bg_q: Query<&mut BackgroundColor, With<GameOverBackground>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut next_state: ResMut<NextState<GameState>>,
-    gameover_music_q: Query<(Entity, Option<&AudioSink>), With<MusicGameOver>>,
+    mut gameover_music_q: Query<(Entity, Option<&mut AudioSink>), With<MusicGameOver>>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
 ) {
-    anim.elapsed += time.delta_seconds();
+    anim.elapsed += time.delta_secs();
 
     // rien avant le délai
     if anim.elapsed < DELAY {
@@ -187,10 +183,7 @@ fn animate_gameover(
     if !anim.music_spawned {
         anim.music_spawned = true;
         commands.spawn((
-            AudioBundle {
-                source: asset_server.load("audio/sfx/you_died.ogg"),
-                settings: PlaybackSettings::ONCE,
-            },
+            (AudioPlayer::new(asset_server.load("audio/sfx/you_died.ogg")), PlaybackSettings::ONCE),
             MusicGameOver,
         ));
     }
@@ -213,9 +206,9 @@ fn animate_gameover(
             // Capturer les valeurs actuelles au moment du skip
             anim.fade_start_bg_alpha = Some(current_bg_alpha);
             anim.fade_start_text_alpha = Some(current_text_alpha);
-            for (_entity, sink) in gameover_music_q.iter() {
+            for (_entity, sink) in gameover_music_q.iter_mut() {
                 if let Some(sink) = sink {
-                    anim.fade_start_volume = Some(sink.volume());
+                    anim.fade_start_volume = Some(sink.volume().to_linear());
                 }
             }
         }
@@ -229,9 +222,9 @@ fn animate_gameover(
             // Capturer les valeurs actuelles au moment du déclenchement auto
             anim.fade_start_bg_alpha = Some(current_bg_alpha);
             anim.fade_start_text_alpha = Some(current_text_alpha);
-            for (_entity, sink) in gameover_music_q.iter() {
+            for (_entity, sink) in gameover_music_q.iter_mut() {
                 if let Some(sink) = sink {
-                    anim.fade_start_volume = Some(sink.volume());
+                    anim.fade_start_volume = Some(sink.volume().to_linear());
                 }
             }
         }
@@ -246,31 +239,29 @@ fn animate_gameover(
 
             // Fondu au noir progressif (depuis l'alpha capturé → 1.0)
             let base_bg = anim.fade_start_bg_alpha.unwrap_or(current_bg_alpha);
-            if let Ok(mut bg) = bg_q.get_single_mut() {
-                bg.0.set_a(base_bg + fade_progress * (1.0 - base_bg));
+            if let Ok(mut bg) = bg_q.single_mut() {
+                bg.0.set_alpha(base_bg + fade_progress * (1.0 - base_bg));
             }
 
             // Fondu des textes (depuis l'alpha capturé → 0.0)
             let base_text = anim.fade_start_text_alpha.unwrap_or(current_text_alpha);
-            for (mut text, _) in text_q.iter_mut() {
-                for section in text.sections.iter_mut() {
-                    section.style.color.set_a(base_text * (1.0 - fade_progress));
-                }
+            for mut text_color in text_q.iter_mut() {
+                text_color.0.set_alpha(base_text * (1.0 - fade_progress));
             }
 
             // Fondu progressif du volume de la musique (depuis le volume capturé)
             let base_volume = anim.fade_start_volume.unwrap_or(1.0);
-            for (_entity, sink) in gameover_music_q.iter() {
-                if let Some(sink) = sink {
-                    sink.set_volume(base_volume * (1.0 - fade_progress));
+            for (_entity, sink) in gameover_music_q.iter_mut() {
+                if let Some(mut sink) = sink {
+                    sink.set_volume(bevy::audio::Volume::Linear(base_volume * (1.0 - fade_progress)));
                 }
             }
 
             // Transition quand le fondu est terminé
             if fade_progress >= 1.0 {
                 for (entity, _) in gameover_music_q.iter() {
-                    if let Some(mut e) = commands.get_entity(entity) {
-                        e.despawn();
+                    if let Ok(mut e) = commands.get_entity(entity) {
+                        e.try_despawn();
                     }
                 }
                 // Progression perdue en campagne
@@ -284,17 +275,18 @@ fn animate_gameover(
 
     // ── Animation normale ────────────────────────────────────────
     // fond : noir opaque → semi-transparent
-    if let Ok(mut bg) = bg_q.get_single_mut() {
-        bg.0.set_a(1.0 - progress * 0.25);
+    if let Ok(mut bg) = bg_q.single_mut() {
+        bg.0.set_alpha(1.0 - progress * 0.25);
     }
 
-    // texte : opacité 0 → 1, zoom 0.3 → 1.0
-    for (mut text, mut transform) in text_q.iter_mut() {
-        for section in text.sections.iter_mut() {
-            section.style.color.set_a(progress);
-        }
-        let scale = 0.3 + progress * 0.7;
-        transform.scale = Vec3::splat(scale);
+    // texte : opacité 0 → 1, zoom 0.3 → 1.0 (via font_size puisque Transform.scale
+    // ne s'applique pas aux entités UI en Bevy 0.17)
+    for mut text_color in text_q.iter_mut() {
+        text_color.0.set_alpha(progress);
+    }
+    let scale = 0.3 + progress * 0.7;
+    for (mut font, base) in text_font_q.iter_mut() {
+        font.font_size = base.0 * scale;
     }
 }
 
@@ -302,8 +294,8 @@ fn animate_gameover(
 
 fn cleanup_gameover_ui(mut commands: Commands, query: Query<Entity, With<GameOverUI>>) {
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
 }
@@ -322,20 +314,18 @@ fn handle_restart(
     play_mode: Option<Res<PlayMode>>,
     confirm: Option<ResMut<ConfirmPopup>>,
     confirm_ui_q: Query<Entity, With<ConfirmPopupUI>>,
-    mut confirm_text_q: Query<(&mut Text, &ConfirmOptionMarker)>,
+    mut confirm_text_q: Query<(&mut TextColor, &ConfirmOptionMarker)>,
 ) {
     // ─── Popup de confirmation active ───────────────────────────
     if let Some(mut popup) = confirm {
         // Mise à jour des couleurs Oui/Non
-        for (mut text, marker) in confirm_text_q.iter_mut() {
+        for (mut text_color, marker) in confirm_text_q.iter_mut() {
             let is_sel = marker.0 == popup.selected;
-            for section in text.sections.iter_mut() {
-                if is_sel {
-                    section.style.color = Color::rgba(1.0, 0.85, 0.0, 1.0);
-                } else {
-                    section.style.color = Color::rgba(0.6, 0.6, 0.6, 1.0);
-                }
-            }
+            text_color.0 = if is_sel {
+                Color::srgba(1.0, 0.85, 0.0, 1.0)
+            } else {
+                Color::srgba(0.6, 0.6, 0.6, 1.0)
+            };
         }
 
         if keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyQ) {
@@ -373,8 +363,8 @@ fn handle_restart(
     // ─── R = rejouer le niveau (hors campagne uniquement) ──────
     if !is_campaign && keyboard.just_pressed(KeyCode::KeyR) {
         for entity in gameover_music_q.iter() {
-            if let Some(mut e) = commands.get_entity(entity) {
-                e.despawn();
+            if let Ok(mut e) = commands.get_entity(entity) {
+                e.try_despawn();
             }
         }
         next_state.set(GameState::Playing);
@@ -384,8 +374,8 @@ fn handle_restart(
     if !is_campaign && keyboard.just_pressed(KeyCode::Escape) {
         commands.remove_resource::<PlayMode>();
         for entity in gameover_music_q.iter() {
-            if let Some(mut e) = commands.get_entity(entity) {
-                e.despawn();
+            if let Ok(mut e) = commands.get_entity(entity) {
+                e.try_despawn();
             }
         }
         next_state.set(GameState::MainMenu);

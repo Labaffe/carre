@@ -127,7 +127,7 @@ fn setup_player(
     windows: Query<&Window>,
     config: Res<LevelConfig>,
 ) {
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let half_h = window.height() / 2.0;
     spawn_player(
         &mut commands,
@@ -144,15 +144,7 @@ pub fn spawn_player(
     ship_sprite: &'static str,
 ) {
     commands.spawn((
-        SpriteBundle {
-            texture: asset_server.load(ship_sprite),
-            sprite: Sprite {
-                custom_size: Some(Vec2::new(128.0, 128.0)),
-                ..default()
-            },
-            transform: Transform::from_xyz(0.0, start_y, 0.5),
-            ..default()
-        },
+        (Sprite { image: asset_server.load(ship_sprite), custom_size: Some(Vec2::new(128.0, 128.0)), ..default() }, Transform::from_xyz(0.0, start_y, 0.5)),
         Player,
         Health::new(PLAYER_MAX_LIVES),
         Weapon::default(),
@@ -179,14 +171,14 @@ fn update_ship_phase1_texture(
 fn update_player_phase(
     difficulty: Res<Difficulty>,
     textures: Res<ShipTextures>,
-    mut query: Query<(&mut Handle<Image>, &mut ShipPhase), With<Player>>,
+    mut query: Query<(&mut Sprite, &mut ShipPhase), With<Player>>,
 ) {
     let boss_rotation_active = match difficulty.boss_music_start_time {
         Some(start) => difficulty.elapsed >= start + 3.0,
         None => false,
     };
 
-    for (mut texture, mut ship) in query.iter_mut() {
+    for (mut sprite, mut ship) in query.iter_mut() {
         let target_phase = if boss_rotation_active {
             PlayerPhase::Phase3
         } else if difficulty.elapsed >= 10.0 {
@@ -203,15 +195,15 @@ fn update_player_phase(
             match target_phase {
                 PlayerPhase::Phase1 => {
                     ship.speed = PHASE_1_SPEED;
-                    *texture = textures.phase_1.clone();
+                    sprite.image = textures.phase_1.clone();
                 }
                 PlayerPhase::Phase2 => {
                     ship.speed = PHASE_2_SPEED;
-                    *texture = textures.phase_2[0].clone();
+                    sprite.image = textures.phase_2[0].clone();
                 }
                 PlayerPhase::Phase3 => {
                     ship.speed = PHASE_3_SPEED;
-                    *texture = textures.phase_3[0].clone();
+                    sprite.image = textures.phase_3[0].clone();
                 }
             }
         }
@@ -232,11 +224,11 @@ fn movement(
         return;
     }
 
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let half_w = window.width() / 2.0 - PLAYER_MARGIN;
     let half_h = window.height() / 2.0 - PLAYER_MARGIN;
 
-    let (mut transform, ship) = query.single_mut();
+    let Ok((mut transform, ship)) = query.single_mut() else { return; };
     let mut direction = Vec3::ZERO;
 
     if keyboard.pressed(KeyCode::KeyW) {
@@ -263,9 +255,9 @@ fn movement(
 fn animate_ship(
     time: Res<Time>,
     textures: Res<ShipTextures>,
-    mut query: Query<(&mut Handle<Image>, &mut ShipPhase), With<Player>>,
+    mut query: Query<(&mut Sprite, &mut ShipPhase), With<Player>>,
 ) {
-    for (mut texture, mut ship) in query.iter_mut() {
+    for (mut sprite, mut ship) in query.iter_mut() {
         if ship.phase == PlayerPhase::Phase1 {
             continue;
         }
@@ -278,7 +270,7 @@ fn animate_ship(
                 PlayerPhase::Phase3 => &textures.phase_3,
             };
             ship.current_frame = (ship.current_frame + 1) % frames.len();
-            *texture = frames[ship.current_frame].clone();
+            sprite.image = frames[ship.current_frame].clone();
         }
     }
 }
@@ -289,8 +281,8 @@ fn rotate_towards_crosshair(
     crosshair_q: Query<&Transform, (With<Crosshair>, Without<Player>)>,
     mut player_q: Query<&mut Transform, (With<Player>, Without<Crosshair>)>,
 ) {
-    let crosshair_pos = crosshair_q.single().translation;
-    let mut player_transform = player_q.single_mut();
+    let crosshair_pos = crosshair_q.single().unwrap().translation;
+    let mut player_transform = player_q.single_mut().unwrap();
 
     let direction = crosshair_pos - player_transform.translation;
     let angle = direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2;
@@ -301,7 +293,7 @@ fn rotate_towards_crosshair(
 
 fn boom_flash_trigger(
     mut commands: Commands,
-    mut boom_events: EventReader<BoomEvent>,
+    mut boom_events: MessageReader<BoomEvent>,
     player_q: Query<Entity, With<Player>>,
 ) {
     if boom_events.read().next().is_none() {
@@ -309,7 +301,7 @@ fn boom_flash_trigger(
     }
     boom_events.read().for_each(drop);
 
-    if let Ok(entity) = player_q.get_single() {
+    if let Ok(entity) = player_q.single() {
         commands
             .entity(entity)
             .insert(BoomFlash(Timer::from_seconds(
@@ -328,12 +320,12 @@ fn boom_flash_update(
         flash.0.tick(time.delta());
         let t = flash.0.fraction();
 
-        if flash.0.finished() {
+        if flash.0.is_finished() {
             sprite.color = Color::WHITE;
             commands.entity(entity).remove::<BoomFlash>();
         } else {
             let intensity = 1.0 + (1.0 - t) * 8.0;
-            sprite.color = Color::rgba(intensity, intensity, intensity, 1.0);
+            sprite.color = Color::srgba(intensity, intensity, intensity, 1.0);
         }
     }
 }
@@ -348,7 +340,7 @@ fn update_invincibility(
     for (entity, mut sprite, mut inv) in query.iter_mut() {
         inv.0.tick(time.delta());
 
-        if inv.0.finished() {
+        if inv.0.is_finished() {
             sprite.color = Color::WHITE;
             commands.entity(entity).remove::<Invincible>();
         } else {
@@ -356,7 +348,7 @@ fn update_invincibility(
             let blink =
                 (inv.0.elapsed_secs() * INVINCIBLE_BLINK_RATE * std::f32::consts::TAU).sin();
             let alpha = if blink > 0.0 { 1.0 } else { 0.0 };
-            sprite.color = Color::rgba(1.0, 1.0, 1.0, alpha);
+            sprite.color = Color::srgba(1.0, 1.0, 1.0, alpha);
         }
     }
 }
@@ -384,7 +376,7 @@ fn last_life_blink(
         if health.current == 1 && invincible.is_none() {
             let t = (difficulty.elapsed * LAST_LIFE_BLINK_RATE * std::f32::consts::TAU).sin();
             let v = 1.0 + (t * 0.5 + 0.5) * 2.0; // pulse entre 1.0 et 3.0
-            sprite.color = Color::rgba(v, v, v, 1.0);
+            sprite.color = Color::srgba(v, v, v, 1.0);
         }
     }
 }
@@ -400,28 +392,24 @@ fn setup_lives_ui(
 
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
+            (
+            Node {
                     position_type: PositionType::Absolute,
                     top: Val::Px(20.0),
                     left: Val::Px(20.0),
                     column_gap: Val::Px(12.0),
                     ..default()
                 },
-                ..default()
-            },
+        ),
             LivesUI,
         ))
         .with_children(|parent| {
             for i in 0..PLAYER_MAX_LIVES {
                 parent.spawn((
-                    ImageBundle {
-                        image: UiImage::new(texture.clone()),
-                        style: Style {
-                            width: Val::Px(64.0),
-                            height: Val::Px(64.0),
-                            ..default()
-                        },
+                    ImageNode::new(texture.clone()),
+                    Node {
+                        width: Val::Px(64.0),
+                        height: Val::Px(64.0),
                         ..default()
                     },
                     LifeIcon(i),
@@ -434,7 +422,7 @@ fn update_lives_ui(
     player_q: Query<&Health, With<Player>>,
     mut icons: Query<(&LifeIcon, &mut Visibility)>,
 ) {
-    let current_lives = player_q.get_single().map(|h| h.current).unwrap_or(0);
+    let current_lives = player_q.single().map(|h| h.current).unwrap_or(0);
     for (icon, mut vis) in icons.iter_mut() {
         if icon.0 < current_lives {
             *vis = Visibility::Visible;
@@ -446,8 +434,8 @@ fn update_lives_ui(
 
 fn cleanup_lives_ui(mut commands: Commands, query: Query<Entity, With<LivesUI>>) {
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
 }

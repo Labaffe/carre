@@ -1,4 +1,4 @@
-use bevy::{prelude::*, utils::hashbrown::HashMap};
+use bevy::{prelude::*, platform::collections::HashMap};
 use std::{ time::Duration};
 
 use crate::enemy::enemy_register::EnemyRegister;
@@ -84,14 +84,14 @@ pub fn preload_frames(
 pub fn animate(
     time: Res<Time>,
     anim_bank:Res<AnimBank>,
-    mut query: Query<(&mut Handle<Image>, &mut Animation)>
+    mut query: Query<(&mut Sprite, &mut Animation)>
 ) {
-    for (mut texture, mut anim) in query.iter_mut() {
+    for (mut sprite, mut anim) in query.iter_mut() {
         if !anim.init {
             let frames = anim_bank.get(&anim.name);
             if let Some(f) = frames {
                 anim.current_frame = 0;
-                *texture = f[anim.current_frame].clone();
+                sprite.image = f[anim.current_frame].clone();
             }
             anim.init = true;
         }
@@ -100,7 +100,7 @@ pub fn animate(
             let frames = anim_bank.get(&anim.name);
             if let Some(f) = frames {
                 anim.current_frame = (anim.current_frame + 1) % f.len();
-                *texture = f[anim.current_frame].clone();
+                sprite.image = f[anim.current_frame].clone();
             }
         }
     }

@@ -18,6 +18,7 @@ mod ui;
 mod weapon;
 mod editor;
 mod movement;
+mod geometry;
 // ─── Imports ───────────────────────────────────────────────────────
 use game_manager::state::GameState;
 use game_manager::game::{GamePlugin, MusicOutro};
@@ -37,7 +38,7 @@ use enemy::{enemy::Enemy, EnemyPlugin};
 use enemy::boss::{ MusicBoss};
 use enemy::asteroid::{Asteroid};
 
-use crate::enemy::despawn_zone::DespawnZonePlugin;
+use crate::movement::despawn_off_screen::DespawnOffScreenPlugin;
 use fx::explosion::{Explosion, ExplosionPlugin};
 use item::item::{Droppable, ItemPlugin};
 
@@ -53,6 +54,7 @@ use ui::countdown::CountdownPlugin;
 use environment::background::{Background, BackgroundPlugin, Planet};
 use physic::collision::CollisionPlugin;
 use physic::health::HealthPlugin;
+use physic::player_detection::PlayerDetectionPlugin;
 
 use debug::debug::DebugPlugin;
 use deckbuilding::card_hand::CardHandPlugin;
@@ -64,8 +66,8 @@ fn main() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Carré".to_string(),
-                mode: bevy::window::WindowMode::BorderlessFullscreen,
-                visible: false,
+                mode: bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
+                visible: true,
                 ..default()
             }),
             ..default()
@@ -99,11 +101,12 @@ fn main() {
             CrosshairPlugin,
             CollisionPlugin,
             HealthPlugin,
+            PlayerDetectionPlugin,
         ))
         // Ennemis
         .add_plugins((
             EnemyPlugin,
-            DespawnZonePlugin
+            DespawnOffScreenPlugin
         ))
         // Entités & effets
         .add_plugins((
@@ -127,7 +130,6 @@ fn main() {
             DebugPlugin,
         ))
         .add_systems(Startup, setup)
-        .add_systems(Update, show_window_after_render.run_if(run_once()))
         .add_systems(OnExit(GameState::Playing), cleanup_playing)
         .run();
 }
@@ -151,15 +153,10 @@ pub struct MusicMain;
 pub struct MusicGameOver;
 
 fn setup(mut commands: Commands, settings: Res<GameSettings>) {
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn(Camera2d);
     commands.insert_resource(GlobalVolume {
-        volume: bevy::audio::Volume::new(settings.master_volume),
+        volume: bevy::audio::Volume::Linear(settings.master_volume),
     });
-}
-
-/// Affiche la fenêtre après la première frame (évite le flash blanc Windows).
-fn show_window_after_render(mut windows: Query<&mut Window>) {
-    windows.single_mut().visible = true;
 }
 
 /// Nettoyage de toutes les entités de jeu quand on quitte l'état Playing.
@@ -190,8 +187,8 @@ fn cleanup_playing(
         .chain(droppables.iter());
 
     for entity in all_entities {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
 }

@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy::render::view::window;
-use bevy::utils::HashMap;
+use bevy::platform::collections::HashMap;
 use crate::game_manager::difficulty::{Difficulty, SpawnPosition};
 use crate::enemy::anim_bank;
 

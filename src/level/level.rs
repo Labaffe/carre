@@ -58,19 +58,19 @@ pub struct LevelSetupSet;
 ///
 /// Exemple depuis un système boss :
 /// ```ignore
-/// level_events.send(LevelActionEvent(vec![
+/// level_events.write(LevelActionEvent(vec![
 ///     Action::SpawnEnemy("green_ufo", 8),
 ///     Action::PlaySound("audio/alert.ogg"),
 /// ]));
 /// ```
-#[derive(Event)]
+#[derive(Message)]
 pub struct LevelActionEvent(pub Vec<Action>);
 
 pub struct LevelPlugin;
 
 impl Plugin for LevelPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<LevelActionEvent>()
+        app.add_message::<LevelActionEvent>()
             .add_systems(
                 OnEnter(GameState::Playing),
                 setup_level.in_set(LevelSetupSet),
@@ -484,6 +484,19 @@ pub fn build_level_2() -> Vec<LevelStep> {
     ]
 }
 
+/// Ressource d'éditeur : si présente au moment de `setup_level`, override
+/// le niveau normal par une timeline minimale qui spawn juste cet ennemi.
+#[derive(Resource)]
+pub struct EditorTestEnemy(pub &'static str);
+
+/// Niveau de test : spawn un seul ennemi du type demandé, rien d'autre.
+pub fn build_level_test_enemy(enemy_name: &'static str) -> Vec<LevelStep> {
+    vec![
+        LevelStep::at(0.0, "test_spawn")
+            .with(Action::SpawnEnemy(enemy_name, 1, SpawnPosition::At(0.0, 50.0))),
+    ]
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Systèmes
 // ═══════════════════════════════════════════════════════════════════════
@@ -492,6 +505,7 @@ fn setup_level(
     mut commands: Commands,
     progress: Res<crate::game_manager::game::GameProgress>,
     mut config: ResMut<LevelConfig>,
+    editor_test: Option<Res<EditorTestEnemy>>,
 ) {
     // Mettre à jour la config visuelle du niveau (immédiat via ResMut)
     let def = crate::level::levels::level_def(progress.current_level);
@@ -499,10 +513,14 @@ fn setup_level(
     config.background_tile = def.background_tile;
     config.scroll_direction = def.scroll_direction;
 
-    let steps = match progress.current_level {
-        1 => build_level_1(),
-        2 => build_level_2(),
-        _ => build_level_1(), // fallback
+    let steps = if let Some(test) = editor_test.as_ref() {
+        build_level_test_enemy(test.0)
+    } else {
+        match progress.current_level {
+            1 => build_level_1(),
+            2 => build_level_2(),
+            _ => build_level_1(), // fallback
+        }
     };
     commands.insert_resource(LevelRunner::new(steps));
 
@@ -528,8 +546,8 @@ fn run_level(
     asset_server: Res<AssetServer>,
     runner: Option<ResMut<LevelRunner>>,
     mut difficulty: ResMut<Difficulty>,
-    mut boom_events: EventWriter<BoomEvent>,
-    mut countdown_events: EventWriter<crate::ui::countdown::CountdownEvent>,
+    mut boom_events: MessageWriter<BoomEvent>,
+    mut countdown_events: MessageWriter<crate::ui::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
     level_phase: Option<Res<crate::game_manager::game::LevelPhase>>,
 ) {
@@ -542,7 +560,7 @@ fn run_level(
         return;
     }
     let Some(mut runner) = runner else { return };
-    runner.elapsed += time.delta_seconds();
+    runner.elapsed += time.delta_secs();
 
     // Exécuter toutes les étapes dont le déclencheur est atteint
     loop {
@@ -594,8 +612,8 @@ pub(crate) fn execute_action(
     action: &Action,
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
-    boom_events: &mut EventWriter<BoomEvent>,
-    countdown_events: &mut EventWriter<crate::ui::countdown::CountdownEvent>,
+    boom_events: &mut MessageWriter<BoomEvent>,
+    countdown_events: &mut MessageWriter<crate::ui::countdown::CountdownEvent>,
     difficulty: &mut ResMut<Difficulty>,
     music_q: &Query<Entity, With<crate::MusicMain>>,
 ) {
@@ -604,35 +622,30 @@ pub(crate) fn execute_action(
             difficulty.factor = *factor;
         }
         Action::PlaySound(path) => {
-            commands.spawn(AudioBundle {
-                source: asset_server.load(*path),
-                settings: PlaybackSettings::DESPAWN,
-            });
+            commands.spawn((AudioPlayer::new(asset_server.load(*path)), PlaybackSettings::DESPAWN));
         }
         Action::StartMusic(path) => {
             commands.spawn((
-                AudioBundle {
-                    source: asset_server.load(*path),
-                    settings: PlaybackSettings {
-                        mode: bevy::audio::PlaybackMode::Once,
-                        ..default()
-                    },
+                AudioPlayer::new(asset_server.load(*path)),
+                PlaybackSettings {
+                    mode: bevy::audio::PlaybackMode::Once,
+                    ..default()
                 },
                 crate::MusicMain,
             ));
         }
         Action::StopMainMusic => {
             for entity in music_q.iter() {
-                if let Some(e) = commands.get_entity(entity) {
-                    e.despawn_recursive();
+                if let Ok(mut e) = commands.get_entity(entity) {
+                    e.try_despawn();
                 }
             }
         }
         Action::StartCountdown => {
-            countdown_events.send(crate::ui::countdown::CountdownEvent);
+            countdown_events.write(crate::ui::countdown::CountdownEvent);
         }
         Action::SendBoom => {
-            boom_events.send(BoomEvent);
+            boom_events.write(BoomEvent);
         }
         Action::SpawnEnemy(name, count, pos) => {
             difficulty.spawn_requests.push((name, *count, *pos));
@@ -670,10 +683,10 @@ pub(crate) fn execute_action(
 fn process_level_action_events(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut events: EventReader<LevelActionEvent>,
+    mut events: MessageReader<LevelActionEvent>,
     mut difficulty: ResMut<Difficulty>,
-    mut boom_events: EventWriter<BoomEvent>,
-    mut countdown_events: EventWriter<crate::ui::countdown::CountdownEvent>,
+    mut boom_events: MessageWriter<BoomEvent>,
+    mut countdown_events: MessageWriter<crate::ui::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
 ) {
     for event in events.read() {
@@ -694,4 +707,5 @@ fn process_level_action_events(
 
 fn cleanup_level(mut commands: Commands) {
     commands.remove_resource::<LevelRunner>();
+    commands.remove_resource::<EditorTestEnemy>();
 }

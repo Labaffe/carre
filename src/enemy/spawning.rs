@@ -13,7 +13,7 @@ fn spawn_green_ufos_oneshot(
     };
     let (_name, count, spawn_pos) = difficulty.spawn_requests.remove(pos);
 
-    let window = windows.single();
+    let window = windows.single().unwrap();
     for _ in 0..count {
         spawn_one(&mut commands, &frames, window, spawn_pos);
     }
@@ -42,7 +42,7 @@ fn spawn_green_ufos(
         return;
     }
 
-    let window = windows.single();
+    let window = windows.single().unwrap();
     for _ in 0..wave_size {
         spawn_one(&mut commands, &frames, window, spawn_pos);
     }

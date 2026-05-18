@@ -7,14 +7,14 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use bevy::prelude::*;
-use bevy::utils::hashbrown::HashMap;
+use bevy::platform::collections::HashMap;
 
 use crate::behavior::*;
 use crate::behavior::behavior::BehaviorComponent;
 use crate::enemy::anim_bank::Animation;
 
 use crate::enemy::death::DespawnSelf;
-use crate::enemy::despawn_zone::DespawnZone;
+use crate::movement::despawn_off_screen::DespawnOffScreen;
 
 use crate::enemy::enemies::GREEN_UFO;
 use crate::enemy::enemy::Enemy;
@@ -107,26 +107,14 @@ impl EnemyBuilder for GreenUFOBuilder {
             .with(dying)
             .add_transition(0,1,"die");
         commands.spawn((
-            SpriteBundle {
-                //texture: first_frame,
-                sprite: Sprite {
-                    custom_size: Some(Vec2::splat(GREEN_UFO.config.sprite_size)),
-                    ..default()
-                },
-                transform: Transform::from_xyz(pos.x, pos.y, 0.5),
-                ..default()
-            },
+            Sprite { custom_size: Some(Vec2::splat(GREEN_UFO.config.sprite_size)), ..default() },
+            Transform::from_xyz(pos.x, pos.y, 0.5),
             TransitionMessages::new(),
             Enemy::new(GREEN_UFO),
             Health::new(GREEN_UFO.total_hp),
             HitFlash (Timer::new(Duration::from_secs_f32(1.0), TimerMode::Once) ),
             Animation::new("green_ufo",Duration::from_secs_f32(1.0 / GREEN_UFO_ANIM_FPS)),
-            DespawnZone {
-                x:-window.width(),
-                y:-window.height(),
-                width: window.width() * 2.0,
-                height:window.height() * 0.25
-            }, //todo make it more precise
+            DespawnOffScreen,
             BehaviorComponent::new(behavior),
             DropTable {
                 drops: &GREEN_UFO_DROP_TABLE,

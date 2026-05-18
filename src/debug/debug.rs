@@ -6,7 +6,7 @@
 use crate::MusicMain;
 use crate::behavior::behavior::BehaviorComponent;
 use crate::enemy::asteroid::Asteroid;
-use crate::enemy::boss::{BossCharge, BossMarker};
+use crate::enemy::boss::BossMarker;
 use crate::enemy::enemy::Enemy;
 //use crate::enemy::green_ufo::GreenUFOMarker;
 use crate::game_manager::difficulty::Difficulty;
@@ -15,10 +15,11 @@ use crate::level::level::{LevelRunner, Trigger};
 use crate::menu::pause::PauseState;
 use crate::physic::collision::Hittable;
 use crate::physic::health::Health;
+use crate::physic::player_detection::PlayerDetection;
 use crate::player::player::Player;
 use crate::ui::score::Score;
 use crate::weapon::projectile::Projectile;
-use crate::weapon::weapon::HitboxShape;
+use crate::geometry::shape::Shape;
 use bevy::prelude::*;
 
 pub struct DebugPlugin;
@@ -65,73 +66,49 @@ struct DebugLevelUI;
 fn setup_debug_ui(mut commands: Commands) {
     // Panneau gauche : infos générales
     commands.spawn((
-        TextBundle {
-            text: Text::from_sections([TextSection::new(
-                "",
-                TextStyle {
-                    font_size: 16.0,
-                    color: Color::WHITE,
-                    ..default()
-                },
-            )]),
-            style: Style {
-                position_type: PositionType::Absolute,
-                top: Val::Px(10.0),
-                left: Val::Px(10.0),
-                ..default()
-            },
-            visibility: Visibility::Hidden,
-            z_index: ZIndex::Global(100),
+        Text::new(""),
+        TextFont { font_size: 16.0, ..default() },
+        TextColor(Color::WHITE),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(10.0),
+            left: Val::Px(10.0),
             ..default()
         },
+        Visibility::Hidden,
+        GlobalZIndex(100),
         DebugUI,
     ));
 
     // Coordonnées souris (en bas à gauche)
     commands.spawn((
-        TextBundle {
-            text: Text::from_sections([TextSection::new(
-                "Mouse: (0, 0)",
-                TextStyle {
-                    font_size: 16.0,
-                    color: Color::rgba(0.0, 1.0, 1.0, 1.0),
-                    ..default()
-                },
-            )]),
-            style: Style {
-                position_type: PositionType::Absolute,
-                bottom: Val::Px(10.0),
-                left: Val::Px(10.0),
-                ..default()
-            },
-            visibility: Visibility::Hidden,
-            z_index: ZIndex::Global(100),
+        Text::new("Mouse: (0, 0)"),
+        TextFont { font_size: 16.0, ..default() },
+        TextColor(Color::srgba(0.0, 1.0, 1.0, 1.0)),
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(10.0),
+            left: Val::Px(10.0),
             ..default()
         },
+        Visibility::Hidden,
+        GlobalZIndex(100),
         DebugMouseUI,
     ));
 
     // Panneau droit : timeline du niveau
     commands.spawn((
-        TextBundle {
-            text: Text::from_sections([TextSection::new(
-                "",
-                TextStyle {
-                    font_size: 14.0,
-                    color: Color::WHITE,
-                    ..default()
-                },
-            )]),
-            style: Style {
-                position_type: PositionType::Absolute,
-                top: Val::Px(10.0),
-                right: Val::Px(10.0),
-                ..default()
-            },
-            visibility: Visibility::Hidden,
-            z_index: ZIndex::Global(100),
+        Text::new(""),
+        TextFont { font_size: 14.0, ..default() },
+        TextColor(Color::WHITE),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(10.0),
+            right: Val::Px(10.0),
             ..default()
         },
+        Visibility::Hidden,
+        GlobalZIndex(100),
         DebugLevelUI,
     ));
 }
@@ -148,17 +125,17 @@ fn toggle_debug(
     music_q: Query<Entity, With<MusicMain>>,
     asteroid_q: Query<Entity, With<Asteroid>>,
     //green_ufo_q: Query<Entity, With<GreenUFOMarker>>,
-    mut boom_events: EventWriter<crate::game_manager::difficulty::BoomEvent>,
-    mut countdown_events: EventWriter<crate::ui::countdown::CountdownEvent>,
+    mut boom_events: MessageWriter<crate::game_manager::difficulty::BoomEvent>,
+    mut countdown_events: MessageWriter<crate::ui::countdown::CountdownEvent>,
     asset_server: Res<AssetServer>,
 ) {
     if keyboard.just_pressed(KeyCode::F2) {
         // Nettoyer les entités en jeu
         for entity in asteroid_q.iter() {
-            if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+            if let Ok(mut e) = commands.get_entity(entity) { e.try_despawn(); }
         }
         //for entity in green_ufo_q.iter() {
-        //    if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+        //    if let Ok(mut e) = commands.get_entity(entity) { e.try_despawn(); }
         //}
 
         // Avancer le LevelRunner jusqu'à "planet_appear" (juste avant le boss)
@@ -195,13 +172,13 @@ fn toggle_debug(
         } else {
             Visibility::Hidden
         };
-        if let Ok(mut vis) = ui_q.get_single_mut() {
+        if let Ok(mut vis) = ui_q.single_mut() {
             *vis = new_vis;
         }
-        if let Ok(mut vis) = level_ui_q.get_single_mut() {
+        if let Ok(mut vis) = level_ui_q.single_mut() {
             *vis = new_vis;
         }
-        if let Ok(mut vis) = mouse_ui_q.get_single_mut() {
+        if let Ok(mut vis) = mouse_ui_q.single_mut() {
             *vis = new_vis;
         }
     }
@@ -230,7 +207,7 @@ fn update_debug_ui(
         return;
     }
 
-    let fps = 1.0 / time.delta_seconds();
+    let fps = 1.0 / time.delta_secs();
     let elapsed = difficulty.elapsed;
     let factor = difficulty.factor;
 
@@ -238,7 +215,7 @@ fn update_debug_ui(
     let seconds = (elapsed % 60.0) as u32;
 
     let (player_pos, player_hp) = player_q
-        .get_single()
+        .single()
         .map(|(t, h)| {
             (
                 format!("({:.0}, {:.0})", t.translation.x, t.translation.y),
@@ -263,8 +240,8 @@ fn update_debug_ui(
     let asteroid_count = asteroid_q.iter().count();
     let missile_count = projectile_q.iter().count();
 
-    if let Ok(mut text) = ui_q.get_single_mut() {
-        text.sections[0].value = format!(
+    if let Ok(mut text) = ui_q.single_mut() {
+        **text = format!(
             "[DEBUG] GOD MODE\n\
              FPS        : {:.0}\n\
              Timer      : {:02}:{:02}\n\
@@ -436,8 +413,8 @@ fn update_debug_level_ui(
         lines.push_str("(en attente de MarkLevelComplete)\n");
     }
 
-    if let Ok(mut text) = ui_q.get_single_mut() {
-        text.sections[0].value = lines;
+    if let Ok(mut text) = ui_q.single_mut() {
+        **text = lines;
     }
 }
 
@@ -452,7 +429,7 @@ fn manage_asteroid_labels(
 ) {
     for (label_entity, label, _, _) in label_q.iter() {
         if asteroid_q.get(label.0).is_err() {
-            if let Some(mut e) = commands.get_entity(label_entity) { e.despawn(); }
+            if let Ok(mut e) = commands.get_entity(label_entity) { e.try_despawn(); }
         }
     }
 
@@ -487,15 +464,57 @@ fn manage_asteroid_labels(
     }
 }
 
+/// Dessine la zone de détection joueur via gizmos. Couleur : magenta normalement,
+/// rouge si le joueur est dedans, gris si en cooldown.
+fn draw_player_detection(
+    gizmos: &mut Gizmos,
+    query: &Query<(&Transform, &PlayerDetection)>,
+) {
+    for (transform, detection) in query.iter() {
+        let pos = transform.translation.truncate();
+        let color = if detection.inside {
+            Color::srgb(1.0, 0.2, 0.2)
+        } else if detection.cooldown_remaining > 0.0 {
+            Color::srgb(0.5, 0.5, 0.5)
+        } else {
+            Color::srgb(1.0, 0.0, 1.0)
+        };
+        match &detection.shape {
+            Shape::Circle(r) => {
+                gizmos.circle_2d(pos, *r, color);
+            }
+            Shape::Rect {
+                half_length,
+                half_width,
+            } => {
+                let angle = transform.rotation.to_euler(EulerRot::ZYX).0;
+                let cos = angle.cos();
+                let sin = angle.sin();
+                let ax = Vec2::new(cos, sin);
+                let ay = Vec2::new(-sin, cos);
+                let corners = [
+                    pos + ax * *half_width + ay * *half_length,
+                    pos - ax * *half_width + ay * *half_length,
+                    pos - ax * *half_width - ay * *half_length,
+                    pos + ax * *half_width - ay * *half_length,
+                ];
+                for i in 0..4 {
+                    gizmos.line_2d(corners[i], corners[(i + 1) % 4], color);
+                }
+            }
+        }
+    }
+}
+
 /// Dessine la hitbox d'un Hittable via gizmos.
 fn draw_hittable<T: Hittable>(gizmos: &mut Gizmos, query: &Query<(&Transform, &T)>, color: Color) {
     for (transform, hittable) in query.iter() {
         let pos = transform.translation.truncate();
         match hittable.hitbox_shape() {
-            HitboxShape::Circle(r) => {
+            Shape::Circle(r) => {
                 gizmos.circle_2d(pos, r, color);
             }
-            HitboxShape::Rect {
+            Shape::Rect {
                 half_length,
                 half_width,
             } => {
@@ -531,13 +550,13 @@ fn debug_mouse_coords(
         return;
     }
 
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let Some(cursor_pos) = window.cursor_position() else {
         return;
     };
 
     // Convertir en coordonnées world
-    let world_pos = if let Ok((camera, cam_transform)) = camera_q.get_single() {
+    let world_pos = if let Ok((camera, cam_transform)) = camera_q.single() {
         camera
             .viewport_to_world_2d(cam_transform, cursor_pos)
             .unwrap_or(Vec2::ZERO)
@@ -548,8 +567,8 @@ fn debug_mouse_coords(
     mouse_pos.0 = world_pos;
 
     // Mettre à jour l'UI
-    if let Ok(mut text) = mouse_ui_q.get_single_mut() {
-        text.sections[0].value = format!(
+    if let Ok(mut text) = mouse_ui_q.single_mut() {
+        **text = format!(
             "Mouse: ({:.0}, {:.0})  |  Screen: ({:.0}, {:.0})",
             world_pos.x, world_pos.y, cursor_pos.x, cursor_pos.y,
         );
@@ -609,7 +628,7 @@ fn debug_kill_player(
     if keyboard.just_pressed(KeyCode::F5) && *state.get() == crate::game_manager::state::GameState::Playing {
         for (entity, mut health) in player_q.iter_mut() {
             health.current = 0;
-            if let Some(e) = commands.get_entity(entity) { e.despawn_recursive(); }
+            if let Ok(mut e) = commands.get_entity(entity) { e.try_despawn(); }
         }
         next_state.set(crate::game_manager::state::GameState::GameOver);
     }
@@ -622,17 +641,90 @@ fn draw_hitboxes(
     asteroid_q: Query<(&Transform, &Asteroid)>,
     projectile_q: Query<(&Transform, &Projectile)>,
     enemy_q: Query<(&Transform, &Enemy)>,
+    detection_q: Query<(&Transform, &PlayerDetection)>,
+    zone_q: Query<(
+        &crate::movement::movement_zone::MovementZone,
+        Option<&crate::movement::bounding_radius::BoundingRadius>,
+    )>,
+    sprite_q: Query<(&Transform, &Sprite)>,
+    windows: Query<&Window>,
+    camera_q: Query<&Projection>,
 ) {
     if !debug.0 {
         return;
     }
 
-    draw_hittable(&mut gizmos, &player_q, Color::GREEN);
-    draw_hittable(&mut gizmos, &asteroid_q, Color::RED);
-    draw_hittable(&mut gizmos, &enemy_q, Color::CYAN);
+    draw_hittable(&mut gizmos, &player_q, Color::srgb(0.0, 1.0, 0.0));
+    draw_hittable(&mut gizmos, &asteroid_q, Color::srgb(1.0, 0.0, 0.0));
+    draw_hittable(&mut gizmos, &enemy_q, Color::srgb(0.0, 1.0, 1.0));
+    draw_player_detection(&mut gizmos, &detection_q);
     // Projectiles : jaune pour le joueur, orange pour les ennemis (la couleur
     // est uniforme ici — si besoin on peut séparer selon projectile.team).
-    draw_hittable(&mut gizmos, &projectile_q, Color::YELLOW);
+    draw_hittable(&mut gizmos, &projectile_q, Color::srgb(1.0, 1.0, 0.0));
+
+    // Boîtes blanches semi-transparentes : taille effective des sprites
+    // (Sprite.custom_size). Utile pour comparer la taille rendue avec le
+    // BoundingRadius et la MovementZone.
+    for (transform, sprite) in sprite_q.iter() {
+        if let Some(size) = sprite.custom_size {
+            gizmos.rect_2d(
+                Isometry2d::from_translation(transform.translation.truncate()),
+                size,
+                Color::srgba(1.0, 1.0, 1.0, 0.6),
+            );
+        }
+    }
+
+    // MovementZones : magenta = zone brute (centre clampé), rose = zone effective
+    // (rétrécie par BoundingRadius, là où le bord du sprite vient s'arrêter).
+    let Ok(window) = windows.single() else { return; };
+    let w = window.physical_width() as f32;
+    let h = window.physical_height() as f32;
+
+    // Rectangle de référence vert : ce que la caméra voit réellement (projection.area).
+    // À comparer avec le magenta : s'ils ne coïncident pas, il y a un décalage
+    // entre window.width() et la taille rendue (DPI / scale factor).
+    for projection in camera_q.iter() {
+        if let Projection::Orthographic(ortho) = projection {
+            let area = ortho.area;
+            let cam_center = Vec2::new(
+                (area.min.x + area.max.x) * 0.5,
+                (area.min.y + area.max.y) * 0.5,
+            );
+            let cam_size = Vec2::new(area.max.x - area.min.x, area.max.y - area.min.y);
+            gizmos.rect_2d(
+                Isometry2d::from_translation(cam_center),
+                cam_size,
+                Color::srgb(0.0, 1.0, 0.0),
+            );
+        }
+    }
+    for (zone, bounding) in zone_q.iter() {
+        let min_x_raw = (zone.margin.x - 0.5) * w;
+        let max_x_raw = (0.5 - zone.margin.x) * w;
+        let min_y_raw = (zone.margin.y - 0.5) * h;
+        let max_y_raw = (0.5 - zone.margin.y) * h;
+        let size_raw = Vec2::new(max_x_raw - min_x_raw, max_y_raw - min_y_raw);
+        let center = Vec2::new((min_x_raw + max_x_raw) * 0.5, (min_y_raw + max_y_raw) * 0.5);
+        gizmos.rect_2d(
+            Isometry2d::from_translation(center),
+            size_raw,
+            Color::srgb(1.0, 0.0, 1.0),
+        );
+
+        if let Some(b) = bounding {
+            let r = b.0;
+            let size_eff = Vec2::new(size_raw.x - 2.0 * r, size_raw.y - 2.0 * r);
+            if size_eff.x > 0.0 && size_eff.y > 0.0 {
+                gizmos.rect_2d(
+                    Isometry2d::from_translation(center),
+                    size_eff,
+                    Color::srgb(1.0, 0.5, 0.8),
+                );
+            }
+        }
+    }
+    let _ = (w, h);
 }
 
 // Dessin debug des tourelles/mothership retiré avec la suppression des

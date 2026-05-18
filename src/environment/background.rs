@@ -71,13 +71,10 @@ fn setup_background(
         };
 
         commands.spawn((
-            SpriteBundle {
-                texture: bg.clone(),
-                transform: Transform {
-                    translation: pos,
-                    rotation: tile_rot,
-                    ..default()
-                },
+            Sprite { image: bg.clone(), ..default() },
+            Transform {
+                translation: pos,
+                rotation: tile_rot,
                 ..default()
             },
             Background,
@@ -113,11 +110,8 @@ fn scroll_background(
             let bg = asset_server.load(config.background_tile);
             for row in [-2_i32, -1, 2, 3] {
                 commands.spawn((
-                    SpriteBundle {
-                        texture: bg.clone(),
-                        transform: Transform::from_xyz(0.0, row as f32 * BG_TILE_HEIGHT, -1.0),
-                        ..default()
-                    },
+                    Sprite { image: bg.clone(), ..default() },
+                    Transform::from_xyz(0.0, row as f32 * BG_TILE_HEIGHT, -1.0),
                     Background,
                 ));
             }
@@ -132,7 +126,7 @@ fn scroll_background(
         let grid_h = BOSS_TILE_COUNT * BG_TILE_HEIGHT;
         let half_grid_h = grid_h / 2.0;
 
-        let window = windows.single();
+        let window = windows.single().unwrap();
         let half_h = window.height() / 2.0;
         let planet_x = (difficulty.elapsed * 0.3).sin() * 15.0;
         let planet_y = -(half_h + 700.0) + (difficulty.elapsed * 0.2).cos() * 10.0;
@@ -161,7 +155,7 @@ fn scroll_background(
             base_speed * (1.0 + difficulty.factor * 3.0)
         };
 
-        let delta = speed * time.delta_seconds();
+        let delta = speed * time.delta_secs();
 
         for (_, mut transform) in query.iter_mut() {
             match config.scroll_direction {
@@ -203,21 +197,18 @@ const PLANET_ANIM_DURATION: f32 = 10.0;
 const PLANETE_BOSS_ROTATION_SPEED: f32 = 0.50;
 
 fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let half_h = window.height() / 2.0;
 
     commands.spawn((
-        SpriteBundle {
-            texture: asset_server.load("images/backgrounds/planete.png"),
-            sprite: Sprite {
-                color: Color::WHITE,
-                ..default()
-            },
-            transform: Transform {
-                translation: Vec3::new(0.0, -(half_h + 900.0), -0.5),
-                scale: Vec3::splat(1.0),
-                ..default()
-            },
+        Sprite {
+            image: asset_server.load("images/backgrounds/planete.png"),
+            color: Color::WHITE,
+            ..default()
+        },
+        Transform {
+            translation: Vec3::new(0.0, -(half_h + 900.0), -0.5),
+            scale: Vec3::splat(1.0),
             ..default()
         },
         Planet,
@@ -241,17 +232,14 @@ fn animate_planet(
     let landing_time = planet_appear_time + PLANET_ANIM_DURATION - 6.3;
     if difficulty.elapsed >= landing_time && !difficulty.landing_played {
         difficulty.landing_played = true;
-        commands.spawn(AudioBundle {
-            source: asset_server.load("audio/sfx/landing.ogg"),
-            settings: PlaybackSettings::DESPAWN,
-        });
+        commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/landing.ogg")), PlaybackSettings::DESPAWN));
     }
 
     if difficulty.elapsed < planet_appear_time {
         return;
     }
 
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let half_h = window.height() / 2.0;
 
     let progress =

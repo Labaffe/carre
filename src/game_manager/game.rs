@@ -225,7 +225,7 @@ fn level_phase_system(
             spawn_ratio,
             initialized,
         } => {
-            let window = windows.single();
+            let window = windows.single().unwrap();
             let half_w = window.width() / 2.0;
             let half_h = window.height() / 2.0;
 
@@ -262,7 +262,7 @@ fn level_phase_system(
                     ScrollDirection::Right => std::f32::consts::FRAC_PI_2, // pointe vers la gauche
                 };
 
-                if let Ok(mut transform) = player_q.get_single_mut() {
+                if let Ok(mut transform) = player_q.single_mut() {
                     transform.translation.x = start_pos.x;
                     transform.translation.y = start_pos.y;
                     transform.rotation = Quat::from_rotation_z(ship_angle);
@@ -278,10 +278,7 @@ fn level_phase_system(
             if !*sound_played {
                 *sound_played = true;
                 commands.spawn((
-                    AudioBundle {
-                        source: asset_server.load(*sound),
-                        settings: PlaybackSettings::DESPAWN,
-                    },
+                    (AudioPlayer::new(asset_server.load(*sound)), PlaybackSettings::DESPAWN),
                     IntroSound,
                 ));
             }
@@ -291,13 +288,13 @@ fn level_phase_system(
                 *sound_finished = true;
             }
 
-            *elapsed += time.delta_seconds();
+            *elapsed += time.delta_secs();
             let anim_t = (*elapsed / *duration).clamp(0.0, 1.0);
 
             // Ease-out quadratique
             let eased = 1.0 - (1.0 - anim_t).powi(2);
 
-            if let Ok(mut transform) = player_q.get_single_mut() {
+            if let Ok(mut transform) = player_q.single_mut() {
                 let pos = *start_pos + (*target_pos - *start_pos) * eased;
                 transform.translation.x = pos.x;
                 transform.translation.y = pos.y;
@@ -305,7 +302,7 @@ fn level_phase_system(
 
             // Intro terminée quand l'animation ET le son sont finis
             if anim_t >= 1.0 && *sound_finished {
-                if let Ok(mut transform) = player_q.get_single_mut() {
+                if let Ok(mut transform) = player_q.single_mut() {
                     transform.translation.x = target_pos.x;
                     transform.translation.y = target_pos.y;
                 }
@@ -387,7 +384,7 @@ pub(crate) fn do_skip_intro(
         if *initialized {
             *target_pos
         } else {
-            let window = windows.single();
+            let window = windows.single().unwrap();
             let half_w = window.width() / 2.0;
             let half_h = window.height() / 2.0;
             match config.scroll_direction {
@@ -402,15 +399,15 @@ pub(crate) fn do_skip_intro(
     };
 
     // Placer le joueur à sa position cible
-    if let Ok(mut transform) = player_q.get_single_mut() {
+    if let Ok(mut transform) = player_q.single_mut() {
         transform.translation.x = final_pos.x;
         transform.translation.y = final_pos.y;
     }
 
     // Despawn le son d'intro
     for entity in intro_sound_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
 
@@ -425,7 +422,7 @@ pub(crate) fn do_skip_intro(
 fn detect_boss_death(
     mut difficulty: ResMut<Difficulty>,
     boss_q: Query<&Enemy, With<BossMarker>>,
-    mut level_events: EventWriter<crate::level::level::LevelActionEvent>,
+    mut level_events: MessageWriter<crate::level::level::LevelActionEvent>,
 ) {
     // Marquer qu'on a vu un boss vivant (évite la race condition avec Commands différées).
     if !difficulty.boss_seen_alive && !boss_q.is_empty() {
@@ -435,7 +432,7 @@ fn detect_boss_death(
     // Le boss a été vu vivant, toutes les entités boss ont disparu (fin d'anim de mort),
     // et le niveau n'est pas encore marqué comme terminé.
     if difficulty.boss_seen_alive && boss_q.is_empty() && !difficulty.level_complete {
-        level_events.send(crate::level::level::LevelActionEvent(vec![
+        level_events.write(crate::level::level::LevelActionEvent(vec![
             crate::level::level::Action::MarkLevelComplete,
         ]));
     }
@@ -468,7 +465,7 @@ fn detect_level_complete(
             };
         }
         LevelPhaseKind::OutroCountdown { timer } => {
-            if timer.finished() {
+            if timer.is_finished() {
                 // OutroCountdown → Outro
                 start_outro(
                     &mut commands,
@@ -502,13 +499,13 @@ fn start_outro(
 
     // Couper les musiques
     for entity in music_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
     for entity in boss_music_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
 
@@ -542,15 +539,12 @@ fn level_outro_animate(
         return;
     };
 
-    *elapsed += time.delta_seconds();
+    *elapsed += time.delta_secs();
 
     if !*music_spawned {
         *music_spawned = true;
         commands.spawn((
-            AudioBundle {
-                source: asset_server.load("audio/music/stage_clear.ogg"),
-                settings: PlaybackSettings::ONCE,
-            },
+            (AudioPlayer::new(asset_server.load("audio/music/stage_clear.ogg")), PlaybackSettings::ONCE),
             MusicOutro,
         ));
     }
@@ -581,8 +575,8 @@ fn level_outro_input(
 
     if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
         for entity in music_q.iter() {
-            if let Some(e) = commands.get_entity(entity) {
-                e.despawn_recursive();
+            if let Ok(mut e) = commands.get_entity(entity) {
+                e.try_despawn();
             }
         }
         pause.outro_active = false;
@@ -643,8 +637,8 @@ fn debug_skip_to_outro(
 
     // Despawn tous les astéroïdes
     for entity in asteroid_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
 
@@ -680,8 +674,8 @@ fn spawn_outro_ui(
 
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
+            (
+            Node {
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     align_items: AlignItems::Center,
@@ -690,47 +684,27 @@ fn spawn_outro_ui(
                     row_gap: Val::Px(30.0),
                     ..default()
                 },
-                background_color: Color::rgba(0.0, 0.0, 0.0, 0.6).into(),
-                z_index: ZIndex::Global(90),
-                ..default()
-            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.6)),
+                GlobalZIndex(90),
+        ),
             OutroUI,
         ))
         .with_children(|parent| {
             // Nom du niveau
             parent.spawn((
-                TextBundle::from_section(
-                    name.to_uppercase(),
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 36.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 1.0),
-                    },
-                ),
+                (Text::new(name.to_uppercase()), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 1.0))),
                 OutroUI,
             ));
             // Titre
             parent.spawn((
-                TextBundle::from_section(
-                    "NIVEAU TERMINE",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 64.0,
-                        color: Color::rgba(1.0, 0.85, 0.0, 1.0),
-                    },
-                ),
+                (Text::new("NIVEAU TERMINE"), TextFont { font: font.clone(), font_size: 64.0, ..default() }, TextColor(Color::srgba(1.0, 0.85, 0.0, 1.0))),
                 OutroUI,
             ));
             // Instruction
             parent.spawn((
-                TextBundle::from_section(
-                    "Appuyez sur Entree pour continuer",
-                    TextStyle {
-                        font,
-                        font_size: 24.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 1.0),
-                    },
-                ),
+                Text::new("Appuyez sur Entree pour continuer"),
+                TextFont { font, font_size: 24.0, ..default() },
+                TextColor(Color::srgba(1.0, 1.0, 1.0, 1.0)),
                 OutroUI,
             ));
         });
@@ -755,23 +729,23 @@ fn cleanup_playing(
     commands.remove_resource::<LevelPhase>();
     commands.remove_resource::<ConfirmPopup>();
     for entity in intro_sound_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
     for entity in outro_ui_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
     for entity in music_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
     for entity in confirm_ui_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
 }
@@ -781,13 +755,13 @@ fn cleanup_playing(
 /// Spawne la popup de confirmation "Votre progression sera perdue."
 pub(crate) fn spawn_confirm_popup(commands: &mut Commands, asset_server: &Res<AssetServer>) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
-    let ui_yellow = Color::rgba(1.0, 0.85, 0.0, 1.0);
+    let ui_yellow = Color::srgba(1.0, 0.85, 0.0, 1.0);
 
     // Fond opaque plein écran
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
+            (
+            Node {
                     position_type: PositionType::Absolute,
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
@@ -795,30 +769,28 @@ pub(crate) fn spawn_confirm_popup(commands: &mut Commands, asset_server: &Res<As
                     justify_content: JustifyContent::Center,
                     ..default()
                 },
-                background_color: Color::rgba(0.0, 0.0, 0.0, 1.0).into(),
-                z_index: ZIndex::Global(200),
-                ..default()
-            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.0)),
+                GlobalZIndex(200),
+        ),
             ConfirmPopupUI,
         ))
         .with_children(|overlay| {
             // Bordure jaune (padding = épaisseur du bord)
             overlay
-                .spawn(NodeBundle {
-                    style: Style {
+                .spawn((
+            Node {
                         padding: UiRect::all(Val::Px(4.0)),
                         justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
                         ..default()
                     },
-                    background_color: ui_yellow.into(),
-                    ..default()
-                })
+            BackgroundColor(ui_yellow),
+        ))
                 .with_children(|border| {
                     // Panneau noir intérieur
                     border
-                        .spawn(NodeBundle {
-                            style: Style {
+                        .spawn((
+            Node {
                                 flex_direction: FlexDirection::Column,
                                 align_items: AlignItems::Center,
                                 padding: UiRect::new(
@@ -830,72 +802,50 @@ pub(crate) fn spawn_confirm_popup(commands: &mut Commands, asset_server: &Res<As
                                 row_gap: Val::Px(25.0),
                                 ..default()
                             },
-                            background_color: Color::rgba(0.0, 0.0, 0.0, 1.0).into(),
-                            ..default()
-                        })
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.0)),
+        ))
                         .with_children(|panel| {
                             // Question
                             panel.spawn((
-                                TextBundle::from_section(
-                                    "Votre progression sera perdue.",
-                                    TextStyle {
-                                        font: font.clone(),
-                                        font_size: 22.0,
-                                        color: Color::WHITE,
-                                    },
-                                ),
+                                Text::new("Votre progression sera perdue."),
+                                TextFont { font: font.clone(), font_size: 22.0, ..default() },
+                                TextColor(Color::WHITE),
                                 ConfirmPopupUI,
                             ));
 
                             // Avertissement
                             panel.spawn((
-                                TextBundle::from_section(
-                                    "Etes-vous sur de vouloir quitter ?",
-                                    TextStyle {
-                                        font: font.clone(),
-                                        font_size: 18.0,
-                                        color: ui_yellow,
-                                    },
-                                ),
+                                Text::new("Etes-vous sur de vouloir quitter ?"),
+                                TextFont { font: font.clone(), font_size: 18.0, ..default() },
+                                TextColor(ui_yellow),
                                 ConfirmPopupUI,
                             ));
 
                             // Options côte à côte
                             panel
                                 .spawn((
-                                    NodeBundle {
-                                        style: Style {
+                                    (
+            Node {
                                             flex_direction: FlexDirection::Row,
                                             column_gap: Val::Px(80.0),
                                             margin: UiRect::top(Val::Px(10.0)),
                                             ..default()
                                         },
-                                        ..default()
-                                    },
+        ),
                                     ConfirmPopupUI,
                                 ))
                                 .with_children(|row| {
                                     row.spawn((
-                                        TextBundle::from_section(
-                                            "Non",
-                                            TextStyle {
-                                                font: font.clone(),
-                                                font_size: 32.0,
-                                                color: ui_yellow,
-                                            },
-                                        ),
+                                        Text::new("Non"),
+                                        TextFont { font: font.clone(), font_size: 32.0, ..default() },
+                                        TextColor(ui_yellow),
                                         ConfirmPopupUI,
                                         ConfirmOptionMarker(0),
                                     ));
                                     row.spawn((
-                                        TextBundle::from_section(
-                                            "Oui",
-                                            TextStyle {
-                                                font,
-                                                font_size: 32.0,
-                                                color: Color::rgba(0.6, 0.6, 0.6, 1.0),
-                                            },
-                                        ),
+                                        Text::new("Oui"),
+                                        TextFont { font, font_size: 32.0, ..default() },
+                                        TextColor(Color::srgba(0.6, 0.6, 0.6, 1.0)),
                                         ConfirmPopupUI,
                                         ConfirmOptionMarker(1),
                                     ));
@@ -911,8 +861,8 @@ pub(crate) fn despawn_confirm_popup(
     confirm_ui_q: &Query<Entity, With<ConfirmPopupUI>>,
 ) {
     for entity in confirm_ui_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
 }
@@ -927,8 +877,8 @@ fn setup_credits(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
+            (
+            Node {
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     align_items: AlignItems::Center,
@@ -937,32 +887,21 @@ fn setup_credits(mut commands: Commands, asset_server: Res<AssetServer>) {
                     row_gap: Val::Px(40.0),
                     ..default()
                 },
-                background_color: Color::rgba(0.0, 0.0, 0.0, 1.0).into(),
-                ..default()
-            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.0)),
+        ),
             CreditsUI,
         ))
         .with_children(|parent| {
             parent.spawn((
-                TextBundle::from_section(
-                    "MERCI D'AVOIR JOUE",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 48.0,
-                        color: Color::WHITE,
-                    },
-                ),
+                Text::new("MERCI D'AVOIR JOUE"),
+                TextFont { font: font.clone(), font_size: 48.0, ..default() },
+                TextColor(Color::WHITE),
                 CreditsUI,
             ));
             parent.spawn((
-                TextBundle::from_section(
-                    "Appuyez sur Entree",
-                    TextStyle {
-                        font,
-                        font_size: 24.0,
-                        color: Color::rgba(0.5, 0.5, 0.5, 1.0),
-                    },
-                ),
+                Text::new("Appuyez sur Entree"),
+                TextFont { font, font_size: 24.0, ..default() },
+                TextColor(Color::srgba(0.5, 0.5, 0.5, 1.0)),
                 CreditsUI,
             ));
         });
@@ -979,8 +918,8 @@ fn handle_credits_input(
 
 fn cleanup_credits(mut commands: Commands, ui_q: Query<Entity, With<CreditsUI>>) {
     for entity in ui_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
 }

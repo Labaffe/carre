@@ -77,11 +77,11 @@ const CARD_SLOTS: [(f32, f32, f32, f32); 4] = [
 ];
 
 /// Couleur de la bordure sélectionnée (cyan néon).
-const SELECTED_BORDER: Color = Color::rgba(0.0, 1.0, 1.0, 1.0);
+const SELECTED_BORDER: Color = Color::srgba(0.0, 1.0, 1.0, 1.0);
 /// Couleur de la bordure non sélectionnée.
-const NORMAL_BORDER: Color = Color::rgba(0.3, 0.4, 0.5, 0.6);
+const NORMAL_BORDER: Color = Color::srgba(0.3, 0.4, 0.5, 0.6);
 /// Couleur de la bordure d'un niveau complété.
-const COMPLETED_BORDER: Color = Color::rgba(0.2, 0.2, 0.2, 0.6);
+const COMPLETED_BORDER: Color = Color::srgba(0.2, 0.2, 0.2, 0.6);
 
 // ─── Setup ──────────────────────────────────────────────────────────
 
@@ -115,18 +115,15 @@ fn setup_level_select(
         .unwrap_or(0);
 
     // ── Background (sprite world-space) ─────────────────────────
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let img_w = 1536.0_f32;
     let img_h = 672.0_f32;
     let scale = (window.width() / img_w).max(window.height() / img_h);
     commands.spawn((
-        SpriteBundle {
-            texture: asset_server.load("images/backgrounds/prime_selection_background_2.png"),
-            transform: Transform {
-                translation: Vec3::new(0.0, 0.0, 5.0),
-                scale: Vec3::splat(scale),
-                ..default()
-            },
+        Sprite { image: asset_server.load("images/backgrounds/prime_selection_background_2.png"), ..default() },
+        Transform {
+            translation: Vec3::new(0.0, 0.0, 5.0),
+            scale: Vec3::splat(scale),
             ..default()
         },
         LevelSelectUI,
@@ -135,10 +132,7 @@ fn setup_level_select(
     // ── Musique du menu (relancer si elle ne tourne pas) ──────────
     if existing_music.is_empty() {
         commands.spawn((
-            AudioBundle {
-                source: asset_server.load("audio/music/main_menu.ogg"),
-                settings: PlaybackSettings::LOOP,
-            },
+            (AudioPlayer::new(asset_server.load("audio/music/main_menu.ogg")), PlaybackSettings::LOOP),
             MainMenuMusic,
         ));
     }
@@ -168,8 +162,8 @@ fn setup_level_select(
         // Carte
         commands
             .spawn((
-                NodeBundle {
-                    style: Style {
+                (
+            Node {
                         position_type: PositionType::Absolute,
                         left: Val::Px(left),
                         top: Val::Px(top),
@@ -180,25 +174,21 @@ fn setup_level_select(
                         align_items: AlignItems::Center,
                         ..default()
                     },
-                    background_color: Color::NONE.into(),
-                    ..default()
-                },
+            BackgroundColor(Color::NONE),
+        ),
                 LevelSelectUI,
                 CardBorder(i),
             ))
             .with_children(|slot| {
                 slot.spawn((
-                    ImageBundle {
-                        image: UiImage::new(if i == first_available {
-                            selected_textures[i].clone()
-                        } else {
-                            normal_textures[i].clone()
-                        }),
-                        style: Style {
-                            width: Val::Px(w),
-                            height: Val::Px(h),
-                            ..default()
-                        },
+                    ImageNode::new(if i == first_available {
+                        selected_textures[i].clone()
+                    } else {
+                        normal_textures[i].clone()
+                    }),
+                    Node {
+                        width: Val::Px(w),
+                        height: Val::Px(h),
                         ..default()
                     },
                     LevelSelectUI,
@@ -208,23 +198,15 @@ fn setup_level_select(
 
         // Label sous la carte
         commands.spawn((
-            TextBundle {
-                text: Text::from_section(
-                    name,
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 10.0,
-                        color: Color::rgba(0.7, 0.8, 0.8, 0.9),
-                    },
-                ),
-                style: Style {
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(left + 3.0),
-                    top: Val::Px(top + h + 3.0),
-                    width: Val::Px(w),
-                    justify_self: JustifySelf::Center,
-                    ..default()
-                },
+            Text::new(name),
+            TextFont { font: font.clone(), font_size: 10.0, ..default() },
+            TextColor(Color::srgba(0.7, 0.8, 0.8, 0.9)),
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(left + 3.0),
+                top: Val::Px(top + h + 3.0),
+                width: Val::Px(w),
+                justify_self: JustifySelf::Center,
                 ..default()
             },
             LevelSelectUI,
@@ -234,23 +216,15 @@ fn setup_level_select(
 
     // ── Footer (en bas, centré) — masqué pour calibrage ─────────
     commands.spawn((
-        TextBundle {
-            text: Text::from_section(
-                footer,
-                TextStyle {
-                    font: font.clone(),
-                    font_size: 14.0,
-                    color: Color::rgba(0.5, 0.6, 0.6, 0.8),
-                },
-            ),
-            style: Style {
-                position_type: PositionType::Absolute,
-                bottom: Val::Px(40.0),
-                left: Val::Px(0.0),
-                right: Val::Px(0.0),
-                justify_self: JustifySelf::Center,
-                ..default()
-            },
+        Text::new(footer),
+        TextFont { font: font.clone(), font_size: 14.0, ..default() },
+        TextColor(Color::srgba(0.5, 0.6, 0.6, 0.8)),
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(40.0),
+            left: Val::Px(0.0),
+            right: Val::Px(0.0),
+            justify_self: JustifySelf::Center,
             ..default()
         },
         LevelSelectUI,
@@ -276,11 +250,11 @@ fn animate_level_select(
     play_mode: Option<Res<PlayMode>>,
     campaign: Option<Res<CampaignProgress>>,
     mut border_q: Query<(&CardBorder, &mut BackgroundColor), Without<PrimeCard>>,
-    mut label_q: Query<(&CardLabel, &mut Text)>,
-    mut card_q: Query<(&PrimeCard, &mut UiImage, &mut BackgroundColor), Without<CardBorder>>,
+    mut label_q: Query<(&CardLabel, &mut TextColor)>,
+    mut card_q: Query<(&PrimeCard, &mut ImageNode, &mut BackgroundColor), Without<CardBorder>>,
     textures: Res<CardTextures>,
 ) {
-    state.elapsed += time.delta_seconds();
+    state.elapsed += time.delta_secs();
     let mode = play_mode.map(|m| *m).unwrap_or(PlayMode::Primes);
 
     let completed: std::collections::HashSet<usize> = match mode {
@@ -299,11 +273,11 @@ fn animate_level_select(
         let has_level = idx < state.total;
 
         if !has_level {
-            bg.0 = Color::rgba(0.1, 0.1, 0.1, 0.3);
+            bg.0 = Color::srgba(0.1, 0.1, 0.1, 0.3);
         } else if is_completed {
             bg.0 = COMPLETED_BORDER;
         } else if is_selected {
-            bg.0 = Color::rgba(0.0, pulse, pulse, 1.0);
+            bg.0 = Color::srgba(0.0, pulse, pulse, 1.0);
         } else {
             bg.0 = NORMAL_BORDER;
         }
@@ -316,32 +290,30 @@ fn animate_level_select(
         let is_completed = completed.contains(&level_num);
 
         if is_selected {
-            image.texture = textures.selected[card.index].clone();
+            image.image = textures.selected[card.index].clone();
         } else {
-            image.texture = textures.normal[card.index].clone();
+            image.image = textures.normal[card.index].clone();
         }
 
         if is_completed {
-            bg.0 = Color::rgba(0.6, 0.6, 0.6, 1.0);
+            bg.0 = Color::srgba(0.6, 0.6, 0.6, 1.0);
         } else {
             bg.0 = Color::WHITE;
         }
     }
 
     // Couleur du label selon l'état
-    for (label, mut text) in label_q.iter_mut() {
+    for (label, mut text_color) in label_q.iter_mut() {
         let level_num = label.0 + 1;
         let is_selected = label.0 == state.selected;
         let is_completed = completed.contains(&level_num);
-        for section in text.sections.iter_mut() {
-            section.style.color = if is_completed {
-                Color::rgba(0.18, 0.541, 0.525, 1.0)
-            } else if is_selected {
-                Color::rgba(0.659, 1.0, 0.984, 1.0)
-            } else {
-                Color::rgba(0.31, 0.949, 0.933, 1.0)
-            };
-        }
+        text_color.0 = if is_completed {
+            Color::srgba(0.4, 0.4, 0.4, 0.7)
+        } else if is_selected {
+            Color::srgba(1.0, 0.85, 0.0, 1.0)
+        } else {
+            Color::srgba(0.7, 0.8, 0.8, 0.9)
+        };
     }
 }
 
@@ -358,7 +330,7 @@ fn handle_level_select_input(
     menu_music_q: Query<Entity, With<MainMenuMusic>>,
     mut confirm: Option<ResMut<ConfirmPopup>>,
     confirm_ui_q: Query<Entity, With<ConfirmPopupUI>>,
-    mut confirm_options_q: Query<(&ConfirmOptionMarker, &mut Text)>,
+    mut confirm_options_q: Query<(&ConfirmOptionMarker, &mut TextColor)>,
     asset_server: Res<AssetServer>,
 ) {
     let Some(ref mut state) = state else { return };
@@ -372,7 +344,7 @@ fn handle_level_select_input(
 
     // ── Popup de confirmation active ────────────────────────────
     if let Some(ref mut confirm) = confirm {
-        let ui_yellow = Color::rgba(1.0, 0.85, 0.0, 1.0);
+        let ui_yellow = Color::srgba(1.0, 0.85, 0.0, 1.0);
 
         // Navigation gauche/droite
         if keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyQ) {
@@ -383,14 +355,13 @@ fn handle_level_select_input(
         }
 
         // Mise à jour des couleurs
-        for (marker, mut text) in confirm_options_q.iter_mut() {
-            for section in text.sections.iter_mut() {
-                if marker.0 == confirm.selected {
-                    section.style.color = ui_yellow;
-                } else {
-                    section.style.color = Color::rgba(0.6, 0.6, 0.6, 1.0);
-                }
-            }
+        for (marker, mut text_color) in confirm_options_q.iter_mut() {
+            let is_sel = marker.0 == confirm.selected;
+            text_color.0 = if is_sel {
+                ui_yellow
+            } else {
+                Color::srgba(0.6, 0.6, 0.6, 1.0)
+            };
         }
 
         if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
@@ -467,8 +438,8 @@ fn handle_level_select_input(
         if level_num <= total && !completed.contains(&level_num) {
             // Arrêter la musique du menu
             for entity in menu_music_q.iter() {
-                if let Some(e) = commands.get_entity(entity) {
-                    e.despawn_recursive();
+                if let Ok(mut e) = commands.get_entity(entity) {
+                    e.try_despawn();
                 }
             }
             progress.current_level = level_num;
@@ -502,15 +473,15 @@ fn handle_level_select_input(
 
 fn cleanup_level_select(
     mut commands: Commands,
-    ui_q: Query<(Entity, Option<&Parent>), With<LevelSelectUI>>,
+    ui_q: Query<(Entity, Option<&ChildOf>), With<LevelSelectUI>>,
 ) {
     commands.remove_resource::<LevelSelectState>();
     commands.remove_resource::<CardTextures>();
     // Ne despawn que les entités racine — les enfants suivent via despawn_recursive
     for (entity, parent) in ui_q.iter() {
         if parent.is_none() {
-            if let Some(e) = commands.get_entity(entity) {
-                e.despawn_recursive();
+            if let Ok(mut e) = commands.get_entity(entity) {
+                e.try_despawn();
             }
         }
     }

@@ -7,7 +7,7 @@ use crate::behavior::indexed_node_list:: NodeListDriver;
 use crate::behavior::component_container::ComponentContainer;
 use bevy::ecs::system::EntityCommands;
 use bevy::prelude::*;
-use bevy::utils::HashMap;
+use bevy::platform::collections::HashMap;
 use std::time::Duration;
 
 pub trait Behavior:Send + Sync + 'static{

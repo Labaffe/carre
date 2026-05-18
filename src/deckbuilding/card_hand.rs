@@ -46,12 +46,12 @@ fn animate_hand(
     mut commands: Commands,
     visible: Res<HandVisible>,
     windows: Query<&Window>,
-    query: Query<(Entity, &CardUI, &Style)>,
+    query: Query<(Entity, &CardUI, &Node)>,
 ) {
     if !visible.is_changed() {
         return;
     }
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let center_x = window.width() / 2.0;
     let y = window.height() * 0.5;
 
@@ -77,17 +77,17 @@ fn animate_hand(
                 Tween::new(target_x, target_x-50.0, 3.5, Ease::OutQuad)
             ).then(
                 Tween::new(from_x, target_x, 0.5, Ease::OutQuad)
-            )
-        );
+            ),
+        ));
     }
 }
 // In animate_hand or a new system
 fn hover_card(
     mut commands: Commands,
-    mut interaction_query: Query<(Entity, &Interaction, &Style, &CardUI), (Changed<Interaction>, With<CardUI>)>,
+    mut interaction_query: Query<(Entity, &Interaction, &Node, &CardUI), (Changed<Interaction>, With<CardUI>)>,
     windows: Query<&Window>,
 ) {
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let base_y = window.height() * 0.5;
 
     for (entity, interaction, style,card_ui) in interaction_query.iter_mut() {

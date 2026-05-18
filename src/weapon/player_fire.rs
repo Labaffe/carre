@@ -14,8 +14,9 @@ use crate::physic::health::Health;
 use crate::player::player::Player;
 use crate::ui::crosshair::Crosshair;
 use crate::ui::score::Score;
+use crate::geometry::shape::shape_hits_circle;
 use crate::weapon::projectile::{
-    projectile_hits_circle, spawn_projectile, Projectile, ProjectileSpawn, ProjectileSprite, Team,
+    spawn_projectile, Projectile, ProjectileSpawn, ProjectileSprite, Team,
 };
 use crate::weapon::weapon::Weapon;
 use bevy::prelude::*;
@@ -65,10 +66,10 @@ fn shoot(
         return;
     }
 
-    let Ok((player_transform, weapon)) = player_q.get_single() else {
+    let Ok((player_transform, weapon)) = player_q.single() else {
         return;
     };
-    let Ok(crosshair_transform) = crosshair_q.get_single() else {
+    let Ok(crosshair_transform) = crosshair_q.single() else {
         return;
     };
 
@@ -115,10 +116,7 @@ fn shoot(
         );
     }
 
-    commands.spawn(AudioBundle {
-        source: asset_server.load("audio/sfx/projectile.ogg"),
-        settings: PlaybackSettings::DESPAWN,
-    });
+    commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/projectile.ogg")), PlaybackSettings::DESPAWN));
 }
 
 // ─── Collision projectile joueur → astéroïde ────────────────────────
@@ -130,7 +128,7 @@ fn projectile_asteroid_collision(
     asset_server: Res<AssetServer>,
     mut score: ResMut<Score>,
     difficulty: Res<Difficulty>,
-    mut drop_events: EventWriter<DropEvent>,
+    mut drop_events: MessageWriter<DropEvent>,
 ) {
     let mut despawned_projectiles = std::collections::HashSet::new();
     let mut despawned_asteroids = std::collections::HashSet::new();
@@ -150,7 +148,7 @@ fn projectile_asteroid_collision(
                 continue;
             }
 
-            let hit = projectile_hits_circle(
+            let hit = shape_hits_circle(
                 projectile_transform.translation.truncate(),
                 projectile_transform.rotation,
                 &projectile.hitbox,
@@ -165,8 +163,8 @@ fn projectile_asteroid_collision(
                     projectile_transform.translation,
                     projectile.death_folder,
                 );
-                if let Some(mut e) = commands.get_entity(projectile_entity) {
-                    e.despawn();
+                if let Ok(mut e) = commands.get_entity(projectile_entity) {
+                    e.try_despawn();
                 }
                 despawned_projectiles.insert(projectile_entity);
                 health.take_damage(projectile.damage);
@@ -175,18 +173,15 @@ fn projectile_asteroid_collision(
                 if health.is_dead() {
                     if !despawned_asteroids.contains(&asteroid_entity) {
 
-                        commands.spawn(AudioBundle {
-                            source: asset_server.load("audio/sfx/asteroid_die.ogg"),
-                            settings: PlaybackSettings::DESPAWN,
-                        });
+                        commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/asteroid_die.ogg")), PlaybackSettings::DESPAWN));
                         if let Some(table) = drop_table {
-                            drop_events.send(DropEvent {
+                            drop_events.write(DropEvent {
                                 position: asteroid_transform.translation,
                                 table: table.drops,
                             });
                         }
-                        if let Some(mut e) = commands.get_entity(asteroid_entity) {
-                            e.despawn();
+                        if let Ok(mut e) = commands.get_entity(asteroid_entity) {
+                            e.try_despawn();
                         }
                         despawned_asteroids.insert(asteroid_entity);
                     }
@@ -194,10 +189,7 @@ fn projectile_asteroid_collision(
                     commands
                         .entity(asteroid_entity)
                         .insert(HitFlash(Timer::from_seconds(0.06, TimerMode::Once)));
-                    commands.spawn(AudioBundle {
-                        source: asset_server.load("audio/sfx/asteroid_hit.ogg"),
-                        settings: PlaybackSettings::DESPAWN,
-                    });
+                    commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/asteroid_hit.ogg")), PlaybackSettings::DESPAWN));
                 }
                 break;
             }

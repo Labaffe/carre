@@ -12,7 +12,7 @@ pub struct CountdownPlugin;
 
 impl Plugin for CountdownPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<CountdownEvent>()
+        app.add_message::<CountdownEvent>()
             .add_systems(
                 Update,
                 (start_countdown, update_countdown, animate_countdown_text)
@@ -23,7 +23,7 @@ impl Plugin for CountdownPlugin {
 }
 
 /// Événement pour déclencher un countdown.
-#[derive(Event)]
+#[derive(Message)]
 pub struct CountdownEvent;
 
 /// Durée totale du countdown (secondes).
@@ -57,6 +57,10 @@ struct CountdownPop {
     duration: f32,
 }
 
+/// Taille de police de référence pour le zoom dynamique du countdown.
+#[derive(Component)]
+struct BaseFontSize(f32);
+
 #[derive(Resource)]
 struct CountdownState {
     timer: f32,
@@ -66,7 +70,7 @@ struct CountdownState {
 
 fn start_countdown(
     mut commands: Commands,
-    mut events: EventReader<CountdownEvent>,
+    mut events: MessageReader<CountdownEvent>,
     asset_server: Res<AssetServer>,
     existing_q: Query<Entity, With<CountdownUI>>,
 ) {
@@ -77,8 +81,8 @@ fn start_countdown(
 
     // Nettoyer un countdown précédent
     for entity in existing_q.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
 
@@ -87,8 +91,8 @@ fn start_countdown(
     // Container centré plein écran
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
+            (
+            Node {
                     position_type: PositionType::Absolute,
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
@@ -96,25 +100,16 @@ fn start_countdown(
                     align_items: AlignItems::Center,
                     ..default()
                 },
-                ..default()
-            },
+        ),
             CountdownUI,
         ))
         .with_children(|parent| {
             parent.spawn((
-                TextBundle {
-                    text: Text::from_section(
-                        "READY",
-                        TextStyle {
-                            font,
-                            font_size: 80.0,
-                            color: Color::WHITE,
-                        },
-                    ),
-                    style: Style { ..default() },
-                    transform: Transform::from_scale(Vec3::splat(0.0)),
-                    ..default()
-                },
+                Text::new("READY"),
+                TextFont { font, font_size: 0.0, ..default() },
+                TextColor(Color::WHITE),
+                Node::default(),
+                BaseFontSize(80.0),
                 CountdownPop {
                     timer: 0.0,
                     duration: POP_DURATION,
@@ -123,10 +118,7 @@ fn start_countdown(
         });
 
     // Son READY
-    commands.spawn(AudioBundle {
-        source: asset_server.load(STEPS[0].2),
-        settings: PlaybackSettings::DESPAWN,
-    });
+    commands.spawn((AudioPlayer::new(asset_server.load(STEPS[0].2)), PlaybackSettings::DESPAWN));
 
     commands.insert_resource(CountdownState {
         timer: 0.0,
@@ -140,20 +132,20 @@ fn update_countdown(
     time: Res<Time>,
     asset_server: Res<AssetServer>,
     mut state: Option<ResMut<CountdownState>>,
-    mut text_q: Query<(&mut Text, &mut CountdownPop), With<Parent>>,
+    mut text_q: Query<(&mut Text, &mut TextColor, &mut BaseFontSize, &mut CountdownPop), With<ChildOf>>,
     ui_q: Query<Entity, With<CountdownUI>>,
-    mut boom_events: EventWriter<BoomEvent>,
+    mut boom_events: MessageWriter<BoomEvent>,
 ) {
     let Some(ref mut state) = state else {
         return;
     };
 
     if state.finished {
-        state.timer += time.delta_seconds();
+        state.timer += time.delta_secs();
         if state.timer >= COUNTDOWN_DURATION + GO_LINGER {
             for entity in ui_q.iter() {
-                if let Some(e) = commands.get_entity(entity) {
-                    e.despawn_recursive();
+                if let Ok(mut e) = commands.get_entity(entity) {
+                    e.try_despawn();
                 }
             }
             commands.remove_resource::<CountdownState>();
@@ -161,35 +153,32 @@ fn update_countdown(
         return;
     }
 
-    state.timer += time.delta_seconds();
+    state.timer += time.delta_secs();
 
     let next_step = state.current_step + 1;
     if next_step < STEPS.len() && state.timer >= STEPS[next_step].0 {
         state.current_step = next_step;
         let (_, label, sound) = STEPS[next_step];
 
-        for (mut text, mut pop) in text_q.iter_mut() {
-            text.sections[0].value = label.to_string();
+        for (mut text, mut text_color, mut base, mut pop) in text_q.iter_mut() {
+            **text = label.to_string();
 
             if label == "GO!" {
-                text.sections[0].style.color = Color::rgba(1.0, 0.85, 0.0, 1.0);
-                text.sections[0].style.font_size = 120.0;
+                text_color.0 = Color::srgba(1.0, 0.85, 0.0, 1.0);
+                base.0 = 120.0;
             } else {
-                text.sections[0].style.color = Color::WHITE;
-                text.sections[0].style.font_size = 100.0;
+                text_color.0 = Color::WHITE;
+                base.0 = 100.0;
             }
 
             // Reset l'animation de pop
             pop.timer = 0.0;
         }
 
-        commands.spawn(AudioBundle {
-            source: asset_server.load(sound),
-            settings: PlaybackSettings::DESPAWN,
-        });
+        commands.spawn((AudioPlayer::new(asset_server.load(sound)), PlaybackSettings::DESPAWN));
 
         if label == "GO!" {
-            boom_events.send(BoomEvent);
+            boom_events.write(BoomEvent);
             state.finished = true;
             state.timer = COUNTDOWN_DURATION;
         }
@@ -197,49 +186,49 @@ fn update_countdown(
 }
 
 /// Anime le texte du countdown : zoom-in avec overshoot puis stabilisation + léger fade-out en fin.
+/// Le zoom se fait via TextFont.font_size = BaseFontSize * scale, car Transform.scale
+/// ne s'applique pas aux entités UI en Bevy 0.17+.
 fn animate_countdown_text(
     time: Res<Time>,
-    mut query: Query<(&mut Transform, &mut Text, &mut CountdownPop)>,
+    mut query: Query<(&mut TextFont, &BaseFontSize, &mut TextColor, &mut CountdownPop)>,
 ) {
-    for (mut transform, mut text, mut pop) in query.iter_mut() {
-        pop.timer += time.delta_seconds();
+    for (mut text_font, base, mut text_color, mut pop) in query.iter_mut() {
+        pop.timer += time.delta_secs();
         let t = (pop.timer / pop.duration).clamp(0.0, 1.0);
 
-        // Courbe d'animation : overshoot élastique
-        // Phase 1 (0→0.5) : scale 0 → POP_OVERSHOOT (ease-out)
-        // Phase 2 (0.5→1.0) : scale POP_OVERSHOOT → 1.0 (ease-in-out)
         let scale = if t < 0.5 {
             let t2 = t / 0.5;
-            let ease = 1.0 - (1.0 - t2).powi(3); // ease-out cubic
+            let ease = 1.0 - (1.0 - t2).powi(3);
             ease * POP_OVERSHOOT
         } else {
             let t2 = (t - 0.5) / 0.5;
-            let ease = t2 * t2 * (3.0 - 2.0 * t2); // smoothstep
+            let ease = t2 * t2 * (3.0 - 2.0 * t2);
             POP_OVERSHOOT + (1.0 - POP_OVERSHOOT) * ease
         };
 
-        transform.scale = Vec3::splat(scale);
+        text_font.font_size = base.0 * scale;
 
-        // Fade-out léger après la fin de l'animation de pop (entre les étapes)
         let alpha = if pop.timer > pop.duration + 0.2 {
             let fade_t = ((pop.timer - pop.duration - 0.2) / 0.15).clamp(0.0, 1.0);
-            1.0 - fade_t * 0.3 // fade partiel, pas complètement invisible
+            1.0 - fade_t * 0.3
         } else {
             1.0
         };
 
-        let base_color = text.sections[0].style.color;
-        let r = base_color.r();
-        let g = base_color.g();
-        let b = base_color.b();
-        text.sections[0].style.color = Color::rgba(r, g, b, alpha);
+        let base_srgba = text_color.0.to_srgba();
+        text_color.0 = Color::srgba(
+            base_srgba.red,
+            base_srgba.green,
+            base_srgba.blue,
+            alpha,
+        );
     }
 }
 
 fn cleanup_countdown(mut commands: Commands, query: Query<Entity, With<CountdownUI>>) {
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
     commands.remove_resource::<CountdownState>();

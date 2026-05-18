@@ -32,15 +32,17 @@ use crate::game_manager::state::GameState;
 use crate::item::item::{DropEvent, DropTable};
 use crate::menu::pause::not_paused;
 use crate::physic::health::Health;
+use crate::physic::invulnerable::Invulnerable;
 use crate::ui::score::Score;
-use crate::weapon::projectile::{projectile_hits_circle, Projectile, Team};
+use crate::geometry::shape::shape_hits_circle;
+use crate::weapon::projectile::{Projectile, Team};
 
 
 pub struct EnemyPlugin;
 
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<EnemyDeathEvent>()
+        app.add_message::<EnemyDeathEvent>()
             .add_systems(
                 Update,
                 (
@@ -113,7 +115,7 @@ pub struct EnemyDeathAnchor(pub Vec3);
 /// Événement émis quand un ennemi atteint PV=0 pour la première fois.
 /// Permet aux systèmes spécifiques (drop d'items, etc.) de réagir sans
 /// être couplés au moteur de phases.
-#[derive(Event)]
+#[derive(Message)]
 pub struct EnemyDeathEvent {
     pub entity: Entity,
     pub position: Vec3,
@@ -140,10 +142,10 @@ pub fn projectile_enemy_collision(
     asset_server: Res<AssetServer>,
     mut score: ResMut<Score>,
     projectile_q: Query<(Entity, &Transform, &Projectile)>,
-    mut enemy_q: Query<(Entity, &Transform, &Enemy, &mut Health)>,
+    mut enemy_q: Query<(Entity, &Transform, &Enemy, &mut Health, Option<&Invulnerable>)>,
 ) {
     let mut despawned_projectiles = std::collections::HashSet::new();
-    for (enemy_entity, enemy_transform, enemy, mut health) in enemy_q.iter_mut() {
+    for (enemy_entity, enemy_transform, enemy, mut health, invulnerable) in enemy_q.iter_mut() {
 
         for (projectile_entity, projectile_transform, projectile) in projectile_q.iter() {
              
@@ -153,7 +155,7 @@ pub fn projectile_enemy_collision(
             if despawned_projectiles.contains(&projectile_entity) {
                 continue;
             }
-            let hit = projectile_hits_circle(
+            let hit = shape_hits_circle(
                 projectile_transform.translation.truncate(),
                 projectile_transform.rotation,
                 &projectile.hitbox,
@@ -164,16 +166,16 @@ pub fn projectile_enemy_collision(
                 continue;
             }
             // Le projectile est détruit même contre un ennemi invulnérable.
-            if let Some(mut e) = commands.get_entity(projectile_entity) {
-                e.despawn();
+            if let Ok(mut e) = commands.get_entity(projectile_entity) {
+                e.try_despawn();
             }
             despawned_projectiles.insert(projectile_entity);
 
-            if enemy.is_vulnerable() {
+            if enemy.is_vulnerable() && invulnerable.is_none() {
                 health.take_damage(projectile.damage);
                 score.add(1);
 
-                if let Some(mut ent) = commands.get_entity(enemy_entity) {
+                if let Ok(mut ent) = commands.get_entity(enemy_entity) {
                     ent.insert(HitFlash(Timer::from_seconds(
                         HIT_FLASH_DURATION,
                         TimerMode::Once,

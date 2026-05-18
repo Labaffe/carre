@@ -63,7 +63,7 @@ impl Health {
 /// Événement émis quand une entité reçoit des dégâts. Peut être utilisé
 /// pour déclencher des FX (flash, son, etc.) sans que le code de collision
 /// ne connaisse ces FX.
-#[derive(Event, Debug)]
+#[derive(Message, Debug)]
 pub struct DamageEvent {
     pub target: Entity,
     pub amount: i32,
@@ -74,6 +74,6 @@ pub struct HealthPlugin;
 
 impl Plugin for HealthPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<DamageEvent>();
+        app.add_message::<DamageEvent>();
     }
 }

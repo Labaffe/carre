@@ -64,7 +64,7 @@ impl Default for SpawnPosition {
 }
 
 /// Événement envoyé à chaque boom (palier de difficulté).
-#[derive(Event)]
+#[derive(Message)]
 pub struct BoomEvent;
 
 pub struct DifficultyPlugin;
@@ -72,7 +72,7 @@ pub struct DifficultyPlugin;
 impl Plugin for DifficultyPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(Difficulty::default())
-            .add_event::<BoomEvent>()
+            .add_message::<BoomEvent>()
             .add_systems(OnEnter(GameState::Playing), reset_difficulty)
             .add_systems(
                 Update,
@@ -175,16 +175,16 @@ fn reset_difficulty(mut difficulty: ResMut<Difficulty>) {
 fn update_difficulty(
     mut difficulty: ResMut<Difficulty>,
     time: Res<Time>,
-    mut countdown_events: EventWriter<CountdownEvent>,
+    mut countdown_events: MessageWriter<CountdownEvent>,
 ) {
-    difficulty.elapsed += time.delta_seconds();
+    difficulty.elapsed += time.delta_secs();
 
     // Countdown phase 3 : dès que la musique boss démarre
     if let Some(_start) = difficulty.boss_music_start_time {
         if !difficulty.phase3_charging_played {
             difficulty.phase3_charging_played = true;
             difficulty.phase3_boom_played = true;
-            countdown_events.send(CountdownEvent);
+            countdown_events.write(CountdownEvent);
         }
     }
 

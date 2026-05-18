@@ -8,7 +8,9 @@
 use crate::GameSettings;
 use crate::game_manager::game::{CampaignProgress, PlayMode};
 use crate::game_manager::state::GameState;
+use crate::level::level::EditorTestEnemy;
 use bevy::app::AppExit;
+use bevy::color::Alpha;
 use bevy::prelude::*;
 
 pub struct MainMenuPlugin;
@@ -17,9 +19,11 @@ impl Plugin for MainMenuPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(GameState::MainMenu), setup_main_menu)
             .add_systems(OnExit(GameState::MainMenu), cleanup_main_menu)
+            .add_systems(OnEnter(GameState::Playing), stop_main_menu_music)
             .add_systems(
                 Update,
-                (animate_main_menu, handle_menu_input).run_if(in_state(GameState::MainMenu)),
+                (animate_main_menu, animate_editor_submenu, handle_menu_input)
+                    .run_if(in_state(GameState::MainMenu)),
             );
     }
 }
@@ -50,6 +54,7 @@ struct MenuOptionsContainer;
 
 #[derive(Component)]
 struct MenuOption {
+    index: usize,
     action: MenuAction,
 }
 
@@ -58,12 +63,17 @@ enum MenuAction {
     Play,
     Primes,
     Settings,
+    Editor,
     Quit,
 }
 
 /// Marqueur pour les éléments du sous-menu Paramètres.
 #[derive(Component)]
 struct SettingsUI;
+
+/// Marqueur pour les éléments du sous-menu Éditeur (toutes vues).
+#[derive(Component)]
+struct EditorSubmenuUI;
 
 /// Texte affichant la valeur du volume.
 #[derive(Component)]
@@ -74,6 +84,8 @@ struct VolumeText;
 enum MenuView {
     Main,
     Settings,
+    EditorMain,
+    EditorEnemies,
 }
 
 #[derive(Resource)]
@@ -99,17 +111,17 @@ fn setup_main_menu(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     windows: Query<&Window>,
-    camera_q: Query<(&Camera, &GlobalTransform, &OrthographicProjection)>,
+    camera_q: Query<(&Camera, &GlobalTransform, &Projection)>,
     existing_music: Query<Entity, With<MainMenuMusic>>,
 ) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     let tile_texture = asset_server.load("images/backgrounds/space_tile_1.png");
 
     // ── Tiles de fond (world-space sprites) ───────────────────────
-    let (half_w, half_h) = if let Ok((_cam, _gt, proj)) = camera_q.get_single() {
+    let (half_w, half_h) = if let Ok((_cam, _gt, Projection::Orthographic(proj))) = camera_q.single() {
         (proj.area.max.x, proj.area.max.y)
     } else {
-        let window = windows.single();
+        let window = windows.single().unwrap();
         (window.width() / 2.0, window.height() / 2.0)
     };
 
@@ -134,18 +146,15 @@ fn setup_main_menu(
             }
 
             commands.spawn((
-                SpriteBundle {
-                    texture: tile_texture.clone(),
-                    sprite: Sprite {
-                        custom_size: Some(Vec2::splat(TILE_SIZE)),
-                        color: Color::rgba(1.0, 1.0, 1.0, 0.0),
-                        ..default()
-                    },
-                    transform: Transform {
-                        translation: Vec3::new(x, y, 0.0),
-                        rotation: Quat::from_rotation_z(angle_rad),
-                        ..default()
-                    },
+                Sprite {
+                    image: tile_texture.clone(),
+                    custom_size: Some(Vec2::splat(TILE_SIZE)),
+                    color: Color::srgba(1.0, 1.0, 1.0, 0.0),
+                    ..default()
+                },
+                Transform {
+                    translation: Vec3::new(x, y, 0.0),
+                    rotation: Quat::from_rotation_z(angle_rad),
                     ..default()
                 },
                 MainMenuTile,
@@ -157,10 +166,7 @@ fn setup_main_menu(
     // Musique du menu (ne pas re-spawner si elle tourne déjà)
     if existing_music.is_empty() {
         commands.spawn((
-            AudioBundle {
-                source: asset_server.load("audio/music/main_menu.ogg"),
-                settings: PlaybackSettings::LOOP,
-            },
+            (AudioPlayer::new(asset_server.load("audio/music/main_menu.ogg")), PlaybackSettings::LOOP),
             MainMenuMusic,
         ));
     }
@@ -168,33 +174,30 @@ fn setup_main_menu(
     // UI racine (fond noir, recouvre tout l'écran)
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    flex_direction: FlexDirection::Column,
-                    ..default()
-                },
-                background_color: Color::rgba(0.0, 0.0, 0.0, 1.0).into(),
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                flex_direction: FlexDirection::Column,
                 ..default()
             },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.0)),
             MainMenuUI,
             MainMenuRoot,
         ))
         .with_children(|parent| {
             // Logo (centré indépendamment)
             parent.spawn((
-                ImageBundle {
-                    image: UiImage::new(asset_server.load("images/ui/main_menu_title.png")),
-                    style: Style {
-                        width: Val::Px(750.0),
-                        height: Val::Auto,
-                        margin: UiRect::bottom(Val::Px(200.0)),
-                        ..default()
-                    },
-                    background_color: Color::rgba(1.0, 1.0, 1.0, 0.0).into(),
+                ImageNode {
+                    image: asset_server.load("images/ui/main_menu_title.png"),
+                    color: Color::srgba(1.0, 1.0, 1.0, 0.0),
+                    ..default()
+                },
+                Node {
+                    width: Val::Px(750.0),
+                    height: Val::Auto,
+                    margin: UiRect::bottom(Val::Px(200.0)),
                     ..default()
                 },
                 MainMenuUI,
@@ -204,14 +207,11 @@ fn setup_main_menu(
             // Conteneur des options du menu (décalé vers le haut)
             parent
                 .spawn((
-                    NodeBundle {
-                        style: Style {
-                            flex_direction: FlexDirection::Column,
-                            align_items: AlignItems::Center,
-                            bottom:Val::Px(300.0),
-                            row_gap: Val::Px(10.0),
-                            ..default()
-                        },
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        bottom: Val::Px(300.0),
+                        row_gap: Val::Px(10.0),
                         ..default()
                     },
                     MainMenuUI,
@@ -220,78 +220,33 @@ fn setup_main_menu(
                 .with_children(|menu| {
                     // Option : Commencer
                     menu.spawn((
-                        TextBundle::from_section(
-                            "Commencer",
-                            TextStyle {
-                                font: font.clone(),
-                                font_size: 36.0,
-                                color: Color::rgba(1.0, 1.0, 1.0, 0.0),
-                            },
-                        ),
-                        MenuOption {
-                            action: MenuAction::Play,
-                        },
+                        (Text::new("Commencer"), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 0.0))),
+                        MenuOption { index: 0, action: MenuAction::Play },
                         MainMenuUI,
                     ));
 
                     // Option : Primes
                     menu.spawn((
-                        TextBundle::from_section(
-                            "Primes",
-                            TextStyle {
-                                font: font.clone(),
-                                font_size: 36.0,
-                                color: Color::rgba(1.0, 1.0, 1.0, 0.0),
-                            },
-                        ),
-                        MenuOption {
-                            action: MenuAction::Primes,
-                        },
+                        (Text::new("Primes"), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 0.0))),
+                        MenuOption { index: 1, action: MenuAction::Primes },
                         MainMenuUI,
                     ));
 
                     // Option : Paramètres
                     menu.spawn((
-                        TextBundle::from_section(
-                            "Paramètres",
-                            TextStyle {
-                                font: font.clone(),
-                                font_size: 36.0,
-                                color: Color::rgba(1.0, 1.0, 1.0, 0.0),
-                            },
-                        ),
-                        MenuOption {
-                            action: MenuAction::Settings,
-                        },
+                        (Text::new("Paramètres"), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 0.0))),
+                        MenuOption { index: 2, action: MenuAction::Settings },
                         MainMenuUI,
                     ));
                     menu.spawn((
-                        TextBundle::from_section(
-                            "Editeur",
-                            TextStyle {
-                                font: font.clone(),
-                                font_size: 36.0,
-                                color: Color::rgba(1.0, 1.0, 1.0, 0.0),
-                            },
-                        ),
-                        MenuOption {
-                            action: MenuAction::Settings,
-                        },
+                        (Text::new("Editeur"), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 0.0))),
+                        MenuOption { index: 3, action: MenuAction::Editor },
                         MainMenuUI,
                     ));
                     // Option : Quitter
                     menu.spawn((
-                        TextBundle::from_section(
-                            "Quitter",
-                            TextStyle {
-                                font: font.clone(),
-                                font_size: 36.0,
-                                color: Color::rgba(1.0, 1.0, 1.0, 0.0),
-                            },
-                        ),
-                        MenuOption {
-                            action: MenuAction::Quit,
-                        },
+                        (Text::new("Quitter"), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 0.0))),
+                        MenuOption { index: 4, action: MenuAction::Quit },
                         MainMenuUI,
                     ));
                 });
@@ -299,21 +254,13 @@ fn setup_main_menu(
 
     // Indication F1 en haut à droite
     commands.spawn((
-        TextBundle {
-            text: Text::from_section(
-                "F1 : Debug Mode",
-                TextStyle {
-                    font,
-                    font_size: 14.0,
-                    color: Color::rgba(0.4, 0.4, 0.4, 1.0),
-                },
-            ),
-            style: Style {
-                position_type: PositionType::Absolute,
-                top: Val::Px(15.0),
-                right: Val::Px(15.0),
-                ..default()
-            },
+        Text::new("F1 : Debug Mode"),
+        TextFont { font, font_size: 14.0, ..default() },
+        TextColor(Color::srgba(0.4, 0.4, 0.4, 1.0)),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(15.0),
+            right: Val::Px(15.0),
             ..default()
         },
         MainMenuUI,
@@ -333,19 +280,19 @@ fn animate_main_menu(
     time: Res<Time>,
     mut bg_root_q: Query<&mut BackgroundColor, With<MainMenuRoot>>,
     mut logo_q: Query<
-        (&mut BackgroundColor, &mut Style),
+        (&mut ImageNode, &mut Node),
         (With<MainMenuLogo>, Without<MainMenuRoot>),
     >,
-    mut container_q: Query<&mut Style, (With<MenuOptionsContainer>, Without<MainMenuLogo>)>,
+    mut container_q: Query<&mut Node, (With<MenuOptionsContainer>, Without<MainMenuLogo>)>,
     mut text_q: Query<
-        (&mut Text, &MenuOption, &mut Style),
+        (&mut TextColor, &MenuOption),
         (Without<MainMenuLogo>, Without<MenuOptionsContainer>),
     >,
     mut tile_q: Query<&mut Sprite, With<MainMenuTile>>,
     mut volume_text_q: Query<&mut Text, (With<VolumeText>, Without<MenuOption>)>,
     settings: Res<GameSettings>,
 ) {
-    anim.elapsed += time.delta_seconds();
+    anim.elapsed += time.delta_secs();
 
     let alpha = if anim.elapsed < FADE_DELAY {
         0.0
@@ -355,21 +302,21 @@ fn animate_main_menu(
 
     // Tiles
     for mut sprite in tile_q.iter_mut() {
-        sprite.color.set_a(alpha);
+        sprite.color.set_alpha(alpha);
     }
 
     // Fond noir du root
     for mut bg in bg_root_q.iter_mut() {
-        bg.0.set_a(1.0 - alpha);
+        bg.0.set_alpha(1.0 - alpha);
     }
 
-    // Logo — cacher dans les sous-menus
-    for (mut bg, mut style) in logo_q.iter_mut() {
+    // Logo — cacher dans les sous-menus, fade via tint de l'ImageNode
+    for (mut image_node, mut style) in logo_q.iter_mut() {
         if anim.view != MenuView::Main {
             style.display = Display::None;
         } else {
             style.display = Display::Flex;
-            bg.0.set_a(alpha);
+            image_node.color.set_alpha(alpha);
         }
     }
 
@@ -382,26 +329,22 @@ fn animate_main_menu(
         }
     }
 
-    // Menu options — couleurs de sélection
-    let mut idx = 0;
-    for (mut text, _option, _style) in text_q.iter_mut() {
+    // Menu options — couleurs de sélection (utilise option.index, pas l'ordre de la query)
+    for (mut text_color, option) in text_q.iter_mut() {
         if anim.view == MenuView::Main {
-            let is_selected = idx == anim.selected;
-            for section in text.sections.iter_mut() {
-                if is_selected {
-                    section.style.color = Color::rgba(1.0, 0.85, 0.0, alpha);
-                } else {
-                    section.style.color = Color::rgba(0.6, 0.6, 0.6, alpha);
-                }
-            }
+            let is_selected = option.index == anim.selected;
+            text_color.0 = if is_selected {
+                Color::srgba(1.0, 0.85, 0.0, alpha)
+            } else {
+                Color::srgba(0.6, 0.6, 0.6, alpha)
+            };
         }
-        idx += 1;
     }
 
     // Mettre à jour le texte du volume dans le sous-menu
     for mut text in volume_text_q.iter_mut() {
         let pct = (settings.master_volume * 100.0).round() as i32;
-        text.sections[0].value = format!("< Volume : {} % >", pct);
+        **text = format!("< Volume : {} % >", pct);
     }
 }
 
@@ -413,11 +356,12 @@ fn handle_menu_input(
     mouse: Res<ButtonInput<MouseButton>>,
     mut anim: ResMut<MainMenuAnim>,
     mut next_state: ResMut<NextState<GameState>>,
-    mut exit: EventWriter<AppExit>,
+    mut exit: MessageWriter<AppExit>,
     mut settings: ResMut<GameSettings>,
     mut global_volume: ResMut<GlobalVolume>,
     asset_server: Res<AssetServer>,
     settings_ui_q: Query<Entity, With<SettingsUI>>,
+    editor_ui_q: Query<Entity, With<EditorSubmenuUI>>,
     root_q: Query<Entity, With<MainMenuRoot>>,
 ) {
     if anim.elapsed < FADE_DELAY {
@@ -448,6 +392,27 @@ fn handle_menu_input(
                 &settings_ui_q,
             );
         }
+        MenuView::EditorMain => {
+            handle_editor_main_view(
+                &keyboard,
+                &mut anim,
+                &mut commands,
+                &asset_server,
+                &editor_ui_q,
+                &root_q,
+            );
+        }
+        MenuView::EditorEnemies => {
+            handle_editor_enemies_view(
+                &keyboard,
+                &mut anim,
+                &mut next_state,
+                &mut commands,
+                &asset_server,
+                &editor_ui_q,
+                &root_q,
+            );
+        }
     }
 }
 
@@ -456,7 +421,7 @@ fn handle_main_view(
     mouse: &Res<ButtonInput<MouseButton>>,
     anim: &mut ResMut<MainMenuAnim>,
     next_state: &mut ResMut<NextState<GameState>>,
-    exit: &mut EventWriter<AppExit>,
+    exit: &mut MessageWriter<AppExit>,
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
     settings: &ResMut<GameSettings>,
@@ -498,11 +463,13 @@ fn handle_main_view(
                 spawn_settings_ui(commands, asset_server, settings, root_q);
             }
             3 => {
-                // Ouvrir l'éditeur'
-                next_state.set(GameState::Editor);
+                // Ouvrir le sous-menu Éditeur
+                anim.view = MenuView::EditorMain;
+                anim.selected = 0;
+                spawn_editor_main_ui(commands, asset_server, root_q);
             }
             4 => {
-                exit.send(AppExit);
+                exit.write(AppExit::Success);
             }
             _ => {}
         }
@@ -520,11 +487,11 @@ fn handle_settings_view(
     // Gauche/Droite pour ajuster le volume
     if keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyA) {
         settings.master_volume = (settings.master_volume - VOLUME_STEP).max(0.0);
-        global_volume.volume = bevy::audio::Volume::new(settings.master_volume);
+        global_volume.volume = bevy::audio::Volume::Linear(settings.master_volume);
     }
     if keyboard.just_pressed(KeyCode::ArrowRight) || keyboard.just_pressed(KeyCode::KeyD) {
         settings.master_volume = (settings.master_volume + VOLUME_STEP).min(1.0);
-        global_volume.volume = bevy::audio::Volume::new(settings.master_volume);
+        global_volume.volume = bevy::audio::Volume::Linear(settings.master_volume);
     }
 
     // Retour au menu principal
@@ -536,8 +503,8 @@ fn handle_settings_view(
         anim.selected = 1; // Reselect "Paramètres"
         // Despawn le sous-menu
         for entity in settings_ui_q.iter() {
-            if let Some(e) = commands.get_entity(entity) {
-                e.despawn_recursive();
+            if let Ok(mut e) = commands.get_entity(entity) {
+                e.try_despawn();
             }
         }
     }
@@ -553,7 +520,7 @@ fn spawn_settings_ui(
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     let pct = (settings.master_volume * 100.0).round() as i32;
 
-    let Ok(root_entity) = root_q.get_single() else {
+    let Ok(root_entity) = root_q.single() else {
         return;
     };
 
@@ -561,60 +528,248 @@ fn spawn_settings_ui(
         // Conteneur du sous-menu
         parent
             .spawn((
-                NodeBundle {
-                    style: Style {
+                (
+            Node {
                         flex_direction: FlexDirection::Column,
                         align_items: AlignItems::Center,
                         row_gap: Val::Px(40.0),
                         ..default()
                     },
-                    ..default()
-                },
+        ),
                 SettingsUI,
             ))
             .with_children(|parent| {
                 // Titre
-                parent.spawn(TextBundle::from_section(
-                    "PARAMÈTRES",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 48.0,
-                        color: Color::WHITE,
-                    },
-                ));
+                parent.spawn((Text::new("PARAMÈTRES"), TextFont { font: font.clone(), font_size: 48.0, ..default() }, TextColor(Color::WHITE)));
 
                 // Volume
                 parent.spawn((
-                    TextBundle::from_section(
-                        format!("< Volume : {} % >", pct),
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 32.0,
-                            color: Color::rgba(1.0, 0.85, 0.0, 1.0),
-                        },
-                    ),
+                    (Text::new(format!("< Volume : {} % >", pct)), TextFont { font: font.clone(), font_size: 32.0, ..default() }, TextColor(Color::srgba(1.0, 0.85, 0.0, 1.0))),
                     VolumeText,
                 ));
 
                 // Instruction
-                parent.spawn(TextBundle::from_section(
-                    "Entrée pour revenir",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 20.0,
-                        color: Color::rgba(0.5, 0.5, 0.5, 1.0),
-                    },
-                ));
+                parent.spawn((Text::new("Entrée pour revenir"), TextFont { font: font.clone(), font_size: 20.0, ..default() }, TextColor(Color::srgba(0.5, 0.5, 0.5, 1.0))));
             });
     });
 }
 
+// ─── Sous-menus Éditeur ──────────────────────────────────────────────
+
+#[derive(Component)]
+struct EditorMenuOption(usize);
+
+fn spawn_editor_options(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    root_q: &Query<Entity, With<MainMenuRoot>>,
+    title: &str,
+    options: &[&str],
+) {
+    let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
+    let Ok(root_entity) = root_q.single() else {
+        return;
+    };
+
+    commands.entity(root_entity).with_children(|parent| {
+        parent
+            .spawn((
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    row_gap: Val::Px(20.0),
+                    ..default()
+                },
+                EditorSubmenuUI,
+            ))
+            .with_children(|parent| {
+                parent.spawn((
+                    Text::new(title),
+                    TextFont { font: font.clone(), font_size: 48.0, ..default() },
+                    TextColor(Color::WHITE),
+                ));
+                for (i, label) in options.iter().enumerate() {
+                    let color = if i == 0 {
+                        Color::srgba(1.0, 0.85, 0.0, 1.0)
+                    } else {
+                        Color::srgba(0.6, 0.6, 0.6, 1.0)
+                    };
+                    parent.spawn((
+                        Text::new(*label),
+                        TextFont { font: font.clone(), font_size: 32.0, ..default() },
+                        TextColor(color),
+                        EditorMenuOption(i),
+                    ));
+                }
+            });
+    });
+}
+
+fn spawn_editor_main_ui(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    root_q: &Query<Entity, With<MainMenuRoot>>,
+) {
+    spawn_editor_options(
+        commands,
+        asset_server,
+        root_q,
+        "EDITEUR",
+        &["Enemies", "Retour"],
+    );
+}
+
+fn spawn_editor_enemies_ui(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    root_q: &Query<Entity, With<MainMenuRoot>>,
+) {
+    spawn_editor_options(
+        commands,
+        asset_server,
+        root_q,
+        "ENEMIES",
+        &["Green UFO", "Boss", "Retour"],
+    );
+}
+
+fn despawn_editor_submenu(
+    commands: &mut Commands,
+    editor_ui_q: &Query<Entity, With<EditorSubmenuUI>>,
+) {
+    for entity in editor_ui_q.iter() {
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
+        }
+    }
+}
+
+fn handle_editor_main_view(
+    keyboard: &Res<ButtonInput<KeyCode>>,
+    anim: &mut ResMut<MainMenuAnim>,
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    editor_ui_q: &Query<Entity, With<EditorSubmenuUI>>,
+    root_q: &Query<Entity, With<MainMenuRoot>>,
+) {
+    let count = 2;
+    if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
+        if anim.selected > 0 {
+            anim.selected -= 1;
+        }
+    }
+    if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
+        if anim.selected < count - 1 {
+            anim.selected += 1;
+        }
+    }
+    if keyboard.just_pressed(KeyCode::Escape) {
+        despawn_editor_submenu(commands, editor_ui_q);
+        anim.view = MenuView::Main;
+        anim.selected = 3;
+        return;
+    }
+    if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
+        match anim.selected {
+            0 => {
+                despawn_editor_submenu(commands, editor_ui_q);
+                anim.view = MenuView::EditorEnemies;
+                anim.selected = 0;
+                spawn_editor_enemies_ui(commands, asset_server, root_q);
+            }
+            1 => {
+                despawn_editor_submenu(commands, editor_ui_q);
+                anim.view = MenuView::Main;
+                anim.selected = 3;
+            }
+            _ => {}
+        }
+    }
+}
+
+fn handle_editor_enemies_view(
+    keyboard: &Res<ButtonInput<KeyCode>>,
+    anim: &mut ResMut<MainMenuAnim>,
+    next_state: &mut ResMut<NextState<GameState>>,
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    editor_ui_q: &Query<Entity, With<EditorSubmenuUI>>,
+    root_q: &Query<Entity, With<MainMenuRoot>>,
+) {
+    let count = 3;
+    if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
+        if anim.selected > 0 {
+            anim.selected -= 1;
+        }
+    }
+    if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
+        if anim.selected < count - 1 {
+            anim.selected += 1;
+        }
+    }
+    if keyboard.just_pressed(KeyCode::Escape) {
+        despawn_editor_submenu(commands, editor_ui_q);
+        anim.view = MenuView::EditorMain;
+        anim.selected = 0;
+        spawn_editor_main_ui(commands, asset_server, root_q);
+        return;
+    }
+    if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
+        match anim.selected {
+            0 => {
+                commands.insert_resource(EditorTestEnemy("green_ufo"));
+                commands.insert_resource(PlayMode::Primes);
+                next_state.set(GameState::Playing);
+            }
+            1 => {
+                commands.insert_resource(EditorTestEnemy("boss"));
+                commands.insert_resource(PlayMode::Primes);
+                next_state.set(GameState::Playing);
+            }
+            2 => {
+                despawn_editor_submenu(commands, editor_ui_q);
+                anim.view = MenuView::EditorMain;
+                anim.selected = 0;
+                spawn_editor_main_ui(commands, asset_server, root_q);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn animate_editor_submenu(
+    anim: Res<MainMenuAnim>,
+    mut q: Query<(&mut TextColor, &EditorMenuOption)>,
+) {
+    if !matches!(anim.view, MenuView::EditorMain | MenuView::EditorEnemies) {
+        return;
+    }
+    for (mut text_color, opt) in q.iter_mut() {
+        text_color.0 = if opt.0 == anim.selected {
+            Color::srgba(1.0, 0.85, 0.0, 1.0)
+        } else {
+            Color::srgba(0.6, 0.6, 0.6, 1.0)
+        };
+    }
+}
+
 // ─── Cleanup ─────────────────────────────────────────────────────────
+
+fn stop_main_menu_music(
+    mut commands: Commands,
+    music_q: Query<Entity, With<MainMenuMusic>>,
+) {
+    for entity in music_q.iter() {
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
+        }
+    }
+}
 
 fn cleanup_main_menu(mut commands: Commands, query: Query<Entity, With<MainMenuUI>>) {
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
     commands.remove_resource::<MainMenuAnim>();

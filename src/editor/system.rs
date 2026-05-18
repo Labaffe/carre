@@ -1,8 +1,7 @@
 use bevy::input::keyboard::KeyboardInput;
 use bevy::prelude::*;
 use bevy::app::AppExit;
-use bevy::scene::ron::value::Float;
-use bevy::utils::Duration;
+use std::time::Duration;
 use bevy::time::Stopwatch;
 use std::{collections::btree_map::Range, f32::consts::*};
 use crate::{behavior::{behavior::*, indexed_node_list::*,component_container::*, ordered_list::*, parallel_node_list::ParallelNodeList}, movement::goto::Goto};
@@ -33,15 +32,7 @@ fn spawn(
         .then(Duration::from_secs(5),ComponentContainer::new( circle))
         .should_loop();
     commands.spawn((
-        SpriteBundle {
-            texture: frames,
-            sprite: Sprite {
-                custom_size: Some(Vec2::splat(50.0)),
-                ..default()
-            },
-            transform: Transform::from_xyz(shift, 0.0, 0.5),
-            ..default()
-        },
+        (Sprite { image: frames, custom_size: Some(Vec2::splat(50.0)), ..default() }, Transform::from_xyz(shift, 0.0, 0.5)),
         BehaviorComponent::new(behavior)
     ));
 }
@@ -56,8 +47,8 @@ pub fn init(
     }
 }
 
-pub fn pause(mut exit: EventWriter<AppExit>, keyboard: Res<ButtonInput<KeyCode>>,) {
+pub fn pause(mut exit: MessageWriter<AppExit>, keyboard: Res<ButtonInput<KeyCode>>,) {
     if keyboard.just_pressed(KeyCode::Escape) {
-        exit.send(AppExit);
+        exit.write(AppExit::Success);
     }
 }

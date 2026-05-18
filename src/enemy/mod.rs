@@ -7,13 +7,12 @@ pub mod enemy_builder;
 pub mod enemy_register;
 pub mod green_ufo;
 pub mod hit_flash;
-pub mod despawn_zone;
 //pub mod spawn;
 mod death;
 use bevy::prelude::*;
 use crate::enemy::anim_bank::*;
 use crate::enemy::asteroid::AsteroidBuilder;
-use crate::enemy::boss::BossBuilder;
+use crate::enemy::boss::{boss_hp_threshold_check, BossBuilder};
 use crate::enemy::death::despawn;
 use crate::enemy::death::detect_death;
 use crate::enemy::enemy::EnemyDeathEvent;
@@ -28,7 +27,7 @@ pub struct EnemyPlugin;
 
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<EnemyDeathEvent>()
+        app.add_message::<EnemyDeathEvent>()
             .insert_resource(
                 EnemyRegister::new()
                 .with(GreenUFOBuilder::new())
@@ -52,6 +51,7 @@ impl Plugin for EnemyPlugin {
                     // Framework phases+behaviors (exclusif, séquentiel)
                     // Systèmes réactifs (ordre après la machine à état)
                     projectile_enemy_collision,
+                    boss_hp_threshold_check,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing))

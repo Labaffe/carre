@@ -53,9 +53,9 @@ pub const BOSS: EnemyData = EnemyData {
         sprite_size: 256.0,
         hit_sound: "audio/sfx/asteroid_hit.ogg",
         death_explosion_sound: "audio/sfx/boss_explosion.ogg",
-        hit_flash_color: None, // défini à Color::rgba(2.5,2.5,2.5,1.0) dans boss.rs
+        hit_flash_color: None, // défini à Color::srgba(2.5,2.5,2.5,1.0) dans boss.rs
     },
-    total_hp: 300,
+    total_hp: 150,
 };
 
 pub const GREEN_UFO: EnemyData = EnemyData {

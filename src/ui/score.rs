@@ -1,5 +1,5 @@
 use crate::game_manager::state::GameState;
-use bevy::{prelude::*, scene::ron::value};
+use bevy::prelude::*;
 
 pub struct ScorePlugin;
 
@@ -26,6 +26,9 @@ struct ScoreUI;
 struct ScoreText;
 #[derive(Component)]
 struct LevelText;
+/// Taille de police de référence pour le zoom dynamique.
+#[derive(Component)]
+struct BaseFontSize(f32);
 #[derive(Resource)]
 pub struct Score {
     value: i32,
@@ -83,42 +86,32 @@ fn setup_score_ui(
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     commands
         .spawn((
-            NodeBundle {
-                style: Style {
+            (
+            Node {
                     position_type: PositionType::Absolute,
                     top: Val::Px(20.0),
                     right: Val::Px(20.0),
                     column_gap: Val::Px(12.0),
                     ..default()
                 },
-                // fond entièrement noir au départ
-                background_color: Color::rgba(0.0, 0.0, 0.0, 0.5).into(),
-                ..default()
-            },
+            // fond entièrement noir au départ
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+        ),
             ScoreUI,
         ))
         .with_children(|parent| {
-            // texte invisible au départ (alpha = 0, scale réduit via Transform)
             parent.spawn((
-                TextBundle::from_section(
-                    "OVER 9000",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 90.0,
-                        color: Color::rgba(1.0, 0.0, 0.0, 1.0),
-                    },
-                ),
+                Text::new("OVER 9000"),
+                TextFont { font: font.clone(), font_size: 90.0, ..default() },
+                TextColor(Color::srgba(1.0, 0.0, 0.0, 1.0)),
+                BaseFontSize(90.0),
                 ScoreText,
             ));
             parent.spawn((
-                TextBundle::from_section(
-                    "level",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 90.0,
-                        color: Color::rgba(1.0, 1.0, 1.0, 1.0),
-                    },
-                ),
+                Text::new("level"),
+                TextFont { font: font.clone(), font_size: 90.0, ..default() },
+                TextColor(Color::srgba(1.0, 1.0, 1.0, 1.0)),
+                BaseFontSize(90.0),
                 LevelText,
             ));
         });
@@ -126,54 +119,47 @@ fn setup_score_ui(
 
 fn cleanup_score_ui(mut commands: Commands, query: Query<Entity, With<ScoreUI>>) {
     for entity in query.iter() {
-        if let Some(e) = commands.get_entity(entity) {
-            e.despawn_recursive();
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
 }
 
 fn score_update(
     time: Res<Time>,
-    mut text_q: Query<(&mut Text, &mut Transform), With<ScoreText>>,
+    mut text_q: Query<&mut Text, With<ScoreText>>,
+    mut font_q: Query<(&mut TextFont, &BaseFontSize), With<ScoreText>>,
     mut score: ResMut<Score>,
 ) {
-    score.current_time += time.delta_seconds();
-
-    // texte : opacité 0 → 1, zoom 0.3 → 1.0
-    for (mut text, mut transform) in text_q.iter_mut() {
-        for section in text.sections.iter_mut() {
-            section.value = score.text();
-        }
-        let coef = score.get_size_coeff();
-        let scale = 0.3 * coef + 1.0 * (1.0 - coef);
-        transform.scale = Vec3::splat(scale);
+    score.current_time += time.delta_secs();
+    for mut text in text_q.iter_mut() {
+        **text = score.text();
+    }
+    let coef = score.get_size_coeff();
+    let scale = 0.3 * coef + 1.0 * (1.0 - coef);
+    for (mut font, base) in font_q.iter_mut() {
+        font.font_size = base.0 * scale;
     }
 }
 fn level_update(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     time: Res<Time>,
-    mut text_q: Query<(&mut Text, &mut Transform), With<LevelText>>,
+    mut text_q: Query<&mut Text, With<LevelText>>,
+    mut font_q: Query<(&mut TextFont, &BaseFontSize), With<LevelText>>,
     mut level: ResMut<Level>,
     score: Res<Score>,
 ) {
     let levelup = score.value > LEVELS[level.value] && LEVELS.len() > level.value + 1;
     if levelup {
         level.value += 1;
-        commands.spawn(AudioBundle {
-            source: asset_server.load("audio/sfx/level_up.ogg"),
-            settings: PlaybackSettings::DESPAWN,
-        });
+        commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/level_up.ogg")), PlaybackSettings::DESPAWN));
     }
-    // texte : opacité 0 → 1, zoom 0.3 → 1.0
-    for (mut text, mut transform) in text_q.iter_mut() {
-        for section in text.sections.iter_mut() {
-            section.value = (level.value + 1).to_string();
-        }
-        if levelup {
-            transform.scale = Vec3::splat(1.0);
-        } else {
-            transform.scale = Vec3::splat(0.3);
-        }
+    for mut text in text_q.iter_mut() {
+        **text = level.value.to_string();
+    }
+    let scale = if levelup { 1.0 } else { 0.3 };
+    for (mut font, base) in font_q.iter_mut() {
+        font.font_size = base.0 * scale;
     }
 }

@@ -1,6 +1,7 @@
 use bevy::prelude::*;
+use bevy::color::Alpha;
 pub trait TweenTarget: Send + Sync + 'static {
-    type Component: bevy::ecs::component::Component;
+    type Component: bevy::ecs::component::Component<Mutability = bevy::ecs::component::Mutable>;
 
     fn apply(value: f32, target: &mut Self::Component);
 }
@@ -13,7 +14,7 @@ pub trait TweenTarget: Send + Sync + 'static {
 pub struct TranslationX;
 pub struct TranslationY;
 
-// UI Style
+// UI Node
 pub struct StyleLeft;
 pub struct StyleTop;
 
@@ -42,20 +43,20 @@ impl TweenTarget for TranslationY {
     }
 }
 
-// -------- UI Style --------
+// -------- UI Node --------
 
 impl TweenTarget for StyleLeft {
-    type Component = Style;
+    type Component = Node;
 
-    fn apply(value: f32, target: &mut Style) {
+    fn apply(value: f32, target: &mut Node) {
         target.left = Val::Px(value);
     }
 }
 
 impl TweenTarget for StyleTop {
-    type Component = Style;
+    type Component = Node;
 
-    fn apply(value: f32, target: &mut Style) {
+    fn apply(value: f32, target: &mut Node) {
         target.top = Val::Px(value);
     }
 }
@@ -66,6 +67,21 @@ impl TweenTarget for UiOpacity {
     type Component = BackgroundColor;
 
     fn apply(value: f32, target: &mut BackgroundColor) {
-        target.0.set_a(value);
+        target.0.set_alpha(value);
+    }
+}
+
+// -------- Scale uniforme --------
+
+/// Tween cible : `Transform.scale = Vec3::splat(value)`. Scale uniforme sur
+/// les 3 axes. Utile pour les effets de zoom-in/zoom-out (apparition de boss,
+/// pop d'UI, etc.).
+pub struct Scale;
+
+impl TweenTarget for Scale {
+    type Component = Transform;
+
+    fn apply(value: f32, target: &mut Transform) {
+        target.scale = Vec3::splat(value);
     }
 }
