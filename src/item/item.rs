@@ -14,6 +14,7 @@ use crate::game_manager::state::GameState;
 use crate::menu::pause::not_paused;
 use crate::physic::collision::PLAYER_RADIUS;
 use crate::physic::health::Health;
+use crate::physic::invulnerable::Invulnerable;
 use crate::player::player::Player;
 use crate::ui::score::Score;
 use bevy::prelude::*;
@@ -343,7 +344,7 @@ fn bomb_apply_damage(
     asset_server: Res<AssetServer>,
     mut bomb_events: MessageReader<BombEvent>,
     mut asteroids: Query<(Entity, &Transform, &Asteroid, &mut Health, Option<&DropTable>)>,
-    mut enemies: Query<(&Enemy, &mut Health), Without<Asteroid>>,
+    mut enemies: Query<(&Enemy, &mut Health, Option<&Invulnerable>), Without<Asteroid>>,
     mut drop_events: MessageWriter<DropEvent>,
     difficulty: Res<crate::game_manager::difficulty::Difficulty>,
 ) {
@@ -379,8 +380,8 @@ fn bomb_apply_damage(
     }
 
     // Dégâts à tous les ennemis actifs (le framework enemy gère la mort automatiquement)
-    for (enemy, mut health) in enemies.iter_mut() {
-        if enemy.is_vulnerable() {
+    for (enemy, mut health, invulnerable) in enemies.iter_mut() {
+        if enemy.is_vulnerable() && invulnerable.is_none() {
             health.take_damage(BOMB_DAMAGE_ENEMY);
         }
     }

@@ -54,6 +54,7 @@ use crate::movement::sinusoid::Sinusoid;
 use crate::movement::spin::Spin;
 use crate::movement::translate::Translate;
 use crate::physic::health::Health;
+use crate::physic::invulnerable::Invulnerable;
 use crate::physic::player_detection::PlayerDetection;
 use crate::player::player::Player;
 use bevy::platform::collections::HashMap;
@@ -74,10 +75,30 @@ pub struct MusicBoss;
 /// d'entité quand on voudra changer dynamiquement au runtime.
 const PATROL_SPEED: f32 = 150.0;
 /// Vitesse de charge du boss (px/s). Idem patrol pour la dynamicité.
-const CHARGE_SPEED: f32 = 750.0;
+const CHARGE_SPEED: f32 = 500.0;
 /// Vitesse de rotation du boss pendant la charge (rad/s).
 /// `4π` ≈ 2 tours par seconde.
 const CHARGE_SPIN: f32 = 4.0 * std::f32::consts::PI;
+/// Durée de la phase de transition entre paliers de vie (secondes). Pendant
+/// cette durée, le boss est immobile et invulnérable.
+const TRANSITIONING_DURATION: f32 = 2.5;
+
+/// Suivi du palier de vie courant du boss. Démarre à 1.
+/// - `phase = 1` : tant que les PV sont au-dessus de 2/3.
+/// - `phase = 2` : entre 2/3 et 1/3 (après la 1re transition).
+/// - `phase = 3` : sous 1/3 (après la 2e transition).
+/// Incrémenté uniquement par `boss_hp_threshold_check` au franchissement,
+/// pas par les dégâts directs.
+#[derive(Component)]
+pub struct BossPhaseTracker {
+    pub phase: u8,
+}
+
+impl BossPhaseTracker {
+    pub fn new() -> Self {
+        Self { phase: 1 }
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Constantes
@@ -210,16 +231,36 @@ impl EnemyBuilder for BossBuilder {
                 Spin::new(CHARGE_SPIN).with_auto_reset(),
             ));
 
+        // Phase de transition entre paliers de vie : boss immobile + invulnérable
+        // pendant TRANSITIONING_DURATION, puis le timer du OrderedNodeList expire,
+        // `on_complete` pousse "transition_done", la choice retourne en patrol.
+        let transitioning = BehaviorBuilder::first(
+            Duration::from_secs_f32(TRANSITIONING_DURATION),
+            BehaviorBuilder::multiple()
+                .with(BehaviorBuilder::from_component(Movements::new()))
+                .with(BehaviorBuilder::from_component(Invulnerable)),
+        )
+        .on_complete("transition_done");
+
         // Ordre = priorité quand plusieurs transitions matchent dans la même
         // frame. player_charge déclaré AVANT wall_* pour qu'une charge gagne
         // sur un rebond mur (cas typique : boss en patrol_right plaqué au mur
         // droit, joueur entre dans la zone → on veut la charge, pas le rebond).
         // Les transitions wall_* depuis index 2 (charge) renvoient vers le
         // patrol qui s'éloigne du mur touché → bounce naturel.
+        // Ordre = priorité quand plusieurs transitions matchent dans la même
+        // frame. hp_threshold déclaré EN TÊTE pour gagner sur tout le reste
+        // (le boss doit toujours basculer en transitioning quand un seuil de
+        // vie est franchi, même au milieu d'un wall hit ou d'un player_charge).
         let alive = BehaviorBuilder::choice()
             .with(BehaviorBuilder::from_component(patrol_movement_left)) // 0
             .with(BehaviorBuilder::from_component(patrol_movement_right)) // 1
             .with(charge) // 2
+            .with(transitioning) // 3
+            .add_transition(0, 3, "hp_threshold")
+            .add_transition(1, 3, "hp_threshold")
+            .add_transition(2, 3, "hp_threshold")
+            .add_transition(3, 0, "transition_done")
             .add_transition(0, 2, "player_charge")
             .add_transition(1, 2, "player_charge")
             .add_transition(2, 1, "wall_left")
@@ -255,6 +296,7 @@ impl EnemyBuilder for BossBuilder {
             Enemy::new(BOSS),
             Health::new(BOSS.total_hp),
             BossMarker,
+            BossPhaseTracker::new(),
             TransitionMessages::new(),
             BoundingRadius(BOSS.config.sprite_size / 2.0),
             MovementZone::new(Vec2::new(0.0, 0.0))
@@ -277,5 +319,38 @@ impl EnemyBuilder for BossBuilder {
 
     fn name(&self) -> &str {
         "boss"
+    }
+}
+
+/// Surveille les PV du boss et pousse `"hp_threshold"` une fois lors du
+/// franchissement de chaque palier (2/3 puis 1/3). Skippé pendant la
+/// transitioning (présence du marker `Invulnerable`) → pas de re-push tant
+/// que la phase précédente n'est pas finie, donc même si le boss saute deux
+/// paliers en un seul gros hit, les deux transitionings se déclencheront en
+/// séquence.
+pub fn boss_hp_threshold_check(
+    invul_q: Query<(), With<Invulnerable>>,
+    mut q: Query<
+        (
+            Entity,
+            &Health,
+            &mut TransitionMessages,
+            &mut BossPhaseTracker,
+        ),
+        With<BossMarker>,
+    >,
+) {
+    for (entity, health, mut messages, mut tracker) in &mut q {
+        if invul_q.contains(entity) {
+            continue;
+        }
+        let f = health.fraction();
+        if tracker.phase == 1 && f <= 2.0 / 3.0 {
+            messages.messages.push("hp_threshold".to_string());
+            tracker.phase = 2;
+        } else if tracker.phase == 2 && f <= 1.0 / 3.0 {
+            messages.messages.push("hp_threshold".to_string());
+            tracker.phase = 3;
+        }
     }
 }

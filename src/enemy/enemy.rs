@@ -32,6 +32,7 @@ use crate::game_manager::state::GameState;
 use crate::item::item::{DropEvent, DropTable};
 use crate::menu::pause::not_paused;
 use crate::physic::health::Health;
+use crate::physic::invulnerable::Invulnerable;
 use crate::ui::score::Score;
 use crate::geometry::shape::shape_hits_circle;
 use crate::weapon::projectile::{Projectile, Team};
@@ -141,10 +142,10 @@ pub fn projectile_enemy_collision(
     asset_server: Res<AssetServer>,
     mut score: ResMut<Score>,
     projectile_q: Query<(Entity, &Transform, &Projectile)>,
-    mut enemy_q: Query<(Entity, &Transform, &Enemy, &mut Health)>,
+    mut enemy_q: Query<(Entity, &Transform, &Enemy, &mut Health, Option<&Invulnerable>)>,
 ) {
     let mut despawned_projectiles = std::collections::HashSet::new();
-    for (enemy_entity, enemy_transform, enemy, mut health) in enemy_q.iter_mut() {
+    for (enemy_entity, enemy_transform, enemy, mut health, invulnerable) in enemy_q.iter_mut() {
 
         for (projectile_entity, projectile_transform, projectile) in projectile_q.iter() {
              
@@ -170,7 +171,7 @@ pub fn projectile_enemy_collision(
             }
             despawned_projectiles.insert(projectile_entity);
 
-            if enemy.is_vulnerable() {
+            if enemy.is_vulnerable() && invulnerable.is_none() {
                 health.take_damage(projectile.damage);
                 score.add(1);
 

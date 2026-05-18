@@ -12,7 +12,7 @@ mod death;
 use bevy::prelude::*;
 use crate::enemy::anim_bank::*;
 use crate::enemy::asteroid::AsteroidBuilder;
-use crate::enemy::boss::BossBuilder;
+use crate::enemy::boss::{boss_hp_threshold_check, BossBuilder};
 use crate::enemy::death::despawn;
 use crate::enemy::death::detect_death;
 use crate::enemy::enemy::EnemyDeathEvent;
@@ -51,6 +51,7 @@ impl Plugin for EnemyPlugin {
                     // Framework phases+behaviors (exclusif, séquentiel)
                     // Systèmes réactifs (ordre après la machine à état)
                     projectile_enemy_collision,
+                    boss_hp_threshold_check,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing))
