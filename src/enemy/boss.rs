@@ -125,12 +125,14 @@ const INTRO_SPIRAL_TURNS: f32 = 0.5;
 /// `INTRO_SPIRAL_DURATION` pour que le boss arrive au centre PILE à la fin
 /// de la phase — pas de temps mort statique au centre.
 const INTRO_GOTO_SPEED: f32 = INTRO_SPAWN_Y / INTRO_SPIRAL_DURATION;
-/// Nombre de frames dans `assets/images/boss/idle/`. À mettre à jour
+/// Durée par frame de l'animation idle (secondes). Utilisée à la fois pendant
+/// la spirale d'intro et pendant tout `alive` (patrol/charge/transitioning).
+/// Avec 11 frames sur disque, cycle complet en 11 * 0.1 = 1.1s.
+const BOSS_IDLE_FRAME_DURATION: f32 = 0.1;
+/// Nombre de frames dans `assets/images/boss/flexing/`. À mettre à jour
 /// manuellement si on ajoute/retire des frames sur disque. Permet de
 /// calculer la durée par frame pour qu'un cycle complet rentre pile dans
-/// la phase spirale.
-const BOSS_IDLE_FRAME_COUNT: usize = 11;
-/// Nombre de frames dans `assets/images/boss/flexing/` (idem idle).
+/// la phase flexing.
 const BOSS_FLEXING_FRAME_COUNT: usize = 17;
 
 const PHASE1_PATROL_SPEED_X: f32 = 200.0;
@@ -191,12 +193,10 @@ impl EnemyBuilder for BossBuilder {
         let spiral = Movements::new()
             .with(RotateAround::new(Vec2::ZERO, INTRO_SPIRAL_TURNS))
             .with(Goto::new(Vec2::ZERO, INTRO_GOTO_SPEED));
-        // Frame durations alignées sur les durées de phase : un cycle complet
-        // d'animation joue pile pendant chaque phase. Anciennement "idle" avec
-        // 3s/frame (ne tournait jamais en 3s de phase + nom incorrect) et
-        // flexing à 0.1s/frame (cycle de 1.7s coupé à 1s).
-        let idle_frame_duration =
-            Duration::from_secs_f32(INTRO_SPIRAL_DURATION / BOSS_IDLE_FRAME_COUNT as f32);
+        // Idle : durée fixe (utilisée dans spirale ET alive). Cycle ~1.1s à
+        // 0.1s/frame. Flexing : dérivé pour que le cycle entier rentre pile
+        // dans la phase flexing (animation jouée une fois, pas coupée).
+        let idle_frame_duration = Duration::from_secs_f32(BOSS_IDLE_FRAME_DURATION);
         let flexing_frame_duration =
             Duration::from_secs_f32(INTRO_FLEXING_DURATION / BOSS_FLEXING_FRAME_COUNT as f32);
         let entering_sequence = BehaviorBuilder::first(
@@ -299,7 +299,7 @@ impl EnemyBuilder for BossBuilder {
         // frame. hp_threshold déclaré EN TÊTE pour gagner sur tout le reste
         // (le boss doit toujours basculer en transitioning quand un seuil de
         // vie est franchi, même au milieu d'un wall hit ou d'un player_charge).
-        let alive = BehaviorBuilder::choice()
+        let alive_choice = BehaviorBuilder::choice()
             .with(BehaviorBuilder::from_component(patrol_movement_left)) // 0
             .with(BehaviorBuilder::from_component(patrol_movement_right)) // 1
             .with(charge) // 2
@@ -314,6 +314,17 @@ impl EnemyBuilder for BossBuilder {
             .add_transition(2, 0, "wall_right")
             .add_transition(0, 1, "wall_left")
             .add_transition(1, 0, "wall_right");
+        // Wrap parallèle : l'animation idle tourne en boucle pendant tout
+        // `alive` (patrol/charge/transitioning). Le choice ne touche que les
+        // composants de mouvement, pas la Sprite — donc l'Animation reste
+        // continue à travers les transitions internes du choice.
+        let alive =
+            BehaviorBuilder::multiple()
+                .with(alive_choice)
+                .with(BehaviorBuilder::from_component(Animation::new(
+                    "boss_idle",
+                    idle_frame_duration,
+                )));
         let dying = BehaviorBuilder::first(
             Duration::from_secs_f32(0.4),
             BehaviorBuilder::from_component(Movements::new().with(Shake::new(100.0, 0.4))),
