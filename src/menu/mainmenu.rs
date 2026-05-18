@@ -429,16 +429,22 @@ fn handle_main_view(
     settings: &ResMut<GameSettings>,
     root_q: &Query<Entity, With<MainMenuRoot>>,
 ) {
-    // Navigation (4 options : Commencer, Primes, Paramètres, Quitter)
+    // Navigation (5 options : Commencer, Primes, Paramètres, Editeur, Quitter)
+    // Wrap circulaire : haut au 1er item → dernier, bas au dernier → premier.
+    const MAIN_OPTIONS: usize = 5;
     if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
-        if anim.selected > 0 {
-            anim.selected -= 1;
-        }
+        anim.selected = if anim.selected == 0 {
+            MAIN_OPTIONS - 1
+        } else {
+            anim.selected - 1
+        };
     }
     if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
-        if anim.selected < 4 {
-            anim.selected += 1;
-        }
+        anim.selected = if anim.selected + 1 >= MAIN_OPTIONS {
+            0
+        } else {
+            anim.selected + 1
+        };
     }
 
     // Validation
