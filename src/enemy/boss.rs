@@ -107,23 +107,31 @@ impl BossPhaseTracker {
 // ═══════════════════════════════════════════════════════════════════════
 
 const INTRO_DURATION: f32 = 7.0;
-/// Y de spawn du boss avant l'intro. Le boss tombe en spirale depuis ce point
-/// vers (0, 0).
-const INTRO_SPAWN_Y: f32 = 250.0;
-const INTRO_START_SCALE: f32 = 0.01;
-const INTRO_END_SCALE: f32 = 1.0;
-/// Vitesse de rotation pendant la spirale d'intro (tours/seconde).
-const INTRO_SPIRAL_TURNS: f32 = 1.0;
-/// Vitesse d'attraction du `Goto` qui ramène le boss au centre pendant la
-/// spirale (px/s). Calculé pour arriver à (0, 0) en ~1 seconde depuis
-/// `INTRO_SPAWN_Y` (= 250) avec un petit overhead pour la spirale.
-const INTRO_GOTO_SPEED: f32 = 250.0;
-const INTRO_SPIRAL_RADIUS: f32 = 150.0;
 /// Durée de la phase de spirale (secondes). Le scale tween dure pareil pour
 /// que le boss atteigne sa taille finale à la fin de la spirale.
 const INTRO_SPIRAL_DURATION: f32 = 3.0;
 /// Durée de la phase de flexing après la spirale (secondes).
-const INTRO_FLEXING_DURATION: f32 = 1.0;
+const INTRO_FLEXING_DURATION: f32 = 2.5;
+/// Y de spawn du boss avant l'intro. Le boss tombe en spirale depuis ce point
+/// vers (0, 0). Définit aussi le rayon initial de la spirale.
+const INTRO_SPAWN_Y: f32 = 400.0;
+const INTRO_START_SCALE: f32 = 0.01;
+const INTRO_END_SCALE: f32 = 1.0;
+/// Vitesse de rotation pendant la spirale d'intro (tours/seconde). À 0.5 et
+/// avec une durée de 3s on obtient 1.5 tours visuels — lisible sans tourner
+/// la tête au joueur.
+const INTRO_SPIRAL_TURNS: f32 = 0.5;
+/// Vitesse d'attraction du `Goto` (px/s). Dérivée de `INTRO_SPAWN_Y` et
+/// `INTRO_SPIRAL_DURATION` pour que le boss arrive au centre PILE à la fin
+/// de la phase — pas de temps mort statique au centre.
+const INTRO_GOTO_SPEED: f32 = INTRO_SPAWN_Y / INTRO_SPIRAL_DURATION;
+/// Nombre de frames dans `assets/images/boss/idle/`. À mettre à jour
+/// manuellement si on ajoute/retire des frames sur disque. Permet de
+/// calculer la durée par frame pour qu'un cycle complet rentre pile dans
+/// la phase spirale.
+const BOSS_IDLE_FRAME_COUNT: usize = 11;
+/// Nombre de frames dans `assets/images/boss/flexing/` (idem idle).
+const BOSS_FLEXING_FRAME_COUNT: usize = 17;
 
 const PHASE1_PATROL_SPEED_X: f32 = 200.0;
 const PHASE2_PATROL_SPEED_X: f32 = 270.0;
@@ -183,21 +191,26 @@ impl EnemyBuilder for BossBuilder {
         let spiral = Movements::new()
             .with(RotateAround::new(Vec2::ZERO, INTRO_SPIRAL_TURNS))
             .with(Goto::new(Vec2::ZERO, INTRO_GOTO_SPEED));
+        // Frame durations alignées sur les durées de phase : un cycle complet
+        // d'animation joue pile pendant chaque phase. Anciennement "idle" avec
+        // 3s/frame (ne tournait jamais en 3s de phase + nom incorrect) et
+        // flexing à 0.1s/frame (cycle de 1.7s coupé à 1s).
+        let idle_frame_duration =
+            Duration::from_secs_f32(INTRO_SPIRAL_DURATION / BOSS_IDLE_FRAME_COUNT as f32);
+        let flexing_frame_duration =
+            Duration::from_secs_f32(INTRO_FLEXING_DURATION / BOSS_FLEXING_FRAME_COUNT as f32);
         let entering_sequence = BehaviorBuilder::first(
             Duration::from_secs_f32(INTRO_SPIRAL_DURATION),
             BehaviorBuilder::multiple()
                 .with(BehaviorBuilder::from_component(spiral))
                 .with(BehaviorBuilder::from_component(Animation::new(
-                    "idle",
-                    Duration::from_secs(3),
+                    "boss_idle",
+                    idle_frame_duration,
                 ))),
         )
         .then(
             Duration::from_secs_f32(INTRO_FLEXING_DURATION),
-            BehaviorBuilder::from_component(Animation::new(
-                "boss_flexing",
-                Duration::from_secs_f32(0.1),
-            )),
+            BehaviorBuilder::from_component(Animation::new("boss_flexing", flexing_frame_duration)),
         );
         // Pendant toute la durée d'entering (spirale + flexing), le boss est
         // invulnérable ET inoffensif au contact. Les deux markers sont insérés
