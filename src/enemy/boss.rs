@@ -278,13 +278,17 @@ impl EnemyBuilder for BossBuilder {
                 Spin::new(CHARGE_SPIN).with_auto_reset(),
             ));
 
-        // Phase de transition entre paliers de vie : boss immobile + invulnérable
-        // pendant TRANSITIONING_DURATION, puis le timer du OrderedNodeList expire,
-        // `on_complete` pousse "transition_done", la choice retourne en patrol.
+        // Phase de transition entre paliers de vie : boss invulnérable +
+        // tremble pendant TRANSITIONING_DURATION. La Shake remplace l'ancien
+        // Movements vide ; le Shake garde le boss centré (offset random ±A
+        // chaque frame, pas de drift). À la fin, `on_complete` pousse
+        // "transition_done", la choice retourne en patrol.
         let transitioning = BehaviorBuilder::first(
             Duration::from_secs_f32(TRANSITIONING_DURATION),
             BehaviorBuilder::multiple()
-                .with(BehaviorBuilder::from_component(Movements::new()))
+                .with(BehaviorBuilder::from_component(
+                    Movements::new().with(Shake::new(TRANSITION_SHAKE, TRANSITIONING_DURATION)),
+                ))
                 .with(BehaviorBuilder::from_component(Invulnerable)),
         )
         .on_complete("transition_done");
@@ -325,9 +329,15 @@ impl EnemyBuilder for BossBuilder {
                     "boss_idle",
                     idle_frame_duration,
                 )));
+        // Phase de mort : tremblement intense pendant DYING_DURATION (4s),
+        // puis DespawnSelf. La const TRANSITION_DURATION vestigial à 2.0 n'est
+        // plus utilisée — la vraie source de vérité est TRANSITIONING_DURATION
+        // pour le shake côté transition de palier, DYING_DURATION pour la mort.
         let dying = BehaviorBuilder::first(
-            Duration::from_secs_f32(0.4),
-            BehaviorBuilder::from_component(Movements::new().with(Shake::new(100.0, 0.4))),
+            Duration::from_secs_f32(DYING_DURATION),
+            BehaviorBuilder::from_component(
+                Movements::new().with(Shake::new(DYING_SHAKE_MAX, DYING_DURATION)),
+            ),
         )
         .then(
             Duration::from_secs_f32(1.0),
