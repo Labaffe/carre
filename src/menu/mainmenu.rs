@@ -629,7 +629,7 @@ fn spawn_editor_enemies_ui(
         asset_server,
         root_q,
         "ENEMIES",
-        &["Green UFO", "Boss", "Retour"],
+        &["Green UFO", "Boss", "Mine", "Retour"],
     );
 }
 
@@ -696,7 +696,7 @@ fn handle_editor_enemies_view(
     editor_ui_q: &Query<Entity, With<EditorSubmenuUI>>,
     root_q: &Query<Entity, With<MainMenuRoot>>,
 ) {
-    let count = 3;
+    let count = 4;
     if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
         if anim.selected > 0 {
             anim.selected -= 1;
@@ -727,6 +727,11 @@ fn handle_editor_enemies_view(
                 next_state.set(GameState::Playing);
             }
             2 => {
+                commands.insert_resource(EditorTestEnemy("mine"));
+                commands.insert_resource(PlayMode::Primes);
+                next_state.set(GameState::Playing);
+            }
+            3 => {
                 despawn_editor_submenu(commands, editor_ui_q);
                 anim.view = MenuView::EditorMain;
                 anim.selected = 0;

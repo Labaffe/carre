@@ -79,3 +79,14 @@ pub const ASTEROID: EnemyData = EnemyData {
     ),
     total_hp: 1,
 };
+
+pub const MINE: EnemyData = EnemyData {
+    name: "Mine",
+    config: EnemyConfigData::new(
+        40.0,
+        80.0,
+        "audio/sfx/asteroid_hit.ogg",
+        "audio/sfx/asteroid_die.ogg",
+    ),
+    total_hp: 1,
+};
