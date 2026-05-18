@@ -58,6 +58,7 @@ use crate::physic::health::Health;
 use crate::physic::invulnerable::Invulnerable;
 use crate::physic::player_detection::PlayerDetection;
 use crate::player::player::Player;
+use crate::tweening::{Ease, Scale, Tween, TweenSequence};
 use bevy::platform::collections::HashMap;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -118,6 +119,11 @@ const INTRO_SPIRAL_TURNS: f32 = 1.0;
 /// `INTRO_SPAWN_Y` (= 250) avec un petit overhead pour la spirale.
 const INTRO_GOTO_SPEED: f32 = 250.0;
 const INTRO_SPIRAL_RADIUS: f32 = 150.0;
+/// Durée de la phase de spirale (secondes). Le scale tween dure pareil pour
+/// que le boss atteigne sa taille finale à la fin de la spirale.
+const INTRO_SPIRAL_DURATION: f32 = 3.0;
+/// Durée de la phase de flexing après la spirale (secondes).
+const INTRO_FLEXING_DURATION: f32 = 1.0;
 
 const PHASE1_PATROL_SPEED_X: f32 = 200.0;
 const PHASE2_PATROL_SPEED_X: f32 = 270.0;
@@ -178,7 +184,7 @@ impl EnemyBuilder for BossBuilder {
             .with(RotateAround::new(Vec2::ZERO, INTRO_SPIRAL_TURNS))
             .with(Goto::new(Vec2::ZERO, INTRO_GOTO_SPEED));
         let entering_sequence = BehaviorBuilder::first(
-            Duration::from_secs_f32(3.0),
+            Duration::from_secs_f32(INTRO_SPIRAL_DURATION),
             BehaviorBuilder::multiple()
                 .with(BehaviorBuilder::from_component(spiral))
                 .with(BehaviorBuilder::from_component(Animation::new(
@@ -187,7 +193,7 @@ impl EnemyBuilder for BossBuilder {
                 ))),
         )
         .then(
-            Duration::from_secs(1),
+            Duration::from_secs_f32(INTRO_FLEXING_DURATION),
             BehaviorBuilder::from_component(Animation::new(
                 "boss_flexing",
                 Duration::from_secs_f32(0.1),
@@ -197,10 +203,22 @@ impl EnemyBuilder for BossBuilder {
         // invulnérable ET inoffensif au contact. Les deux markers sont insérés
         // en parallèle de la séquence et retirés automatiquement quand le
         // wrapping `multiple()` se disable (fin de l'entering top-level).
+        // Le TweenSequence<Scale> fait grossir le boss de INTRO_START_SCALE
+        // à INTRO_END_SCALE sur la durée de la spirale (3s). Une fois fini,
+        // le tween_system retire automatiquement le composant — le boss reste
+        // à INTRO_END_SCALE pour le flexing puis l'active.
         let entering = BehaviorBuilder::multiple()
             .with(entering_sequence)
             .with(BehaviorBuilder::from_component(Invulnerable))
-            .with(BehaviorBuilder::from_component(Harmless));
+            .with(BehaviorBuilder::from_component(Harmless))
+            .with(BehaviorBuilder::from_component(
+                TweenSequence::<Scale>::new(Tween::new(
+                    INTRO_START_SCALE,
+                    INTRO_END_SCALE,
+                    INTRO_SPIRAL_DURATION,
+                    Ease::InQuad,
+                )),
+            ));
         //.with(BehaviorBuilder::from_component(AudioBundle {
         //    source: asset_server.load("audio/sfx/boss_start.ogg"),
         //    settings: PlaybackSettings::DESPAWN,
@@ -295,8 +313,15 @@ impl EnemyBuilder for BossBuilder {
             .with(alive)
             .with(dying)
             .add_transition(0, 1, "die");
-        let behavior = BehaviorBuilder::first(Duration::from_secs_f32(2.0), entering)
-            .then(Duration::from_secs_f32(10000.0), life);
+        // Durée totale de l'entering = somme des phases internes. DOIT matcher,
+        // sinon le ParallelNodeList wrapper coupe les composants avant la fin
+        // (TweenSequence<Scale>, Invulnerable, Harmless) et le boss reste à un
+        // scale intermédiaire pour tout le combat.
+        let behavior = BehaviorBuilder::first(
+            Duration::from_secs_f32(INTRO_SPIRAL_DURATION + INTRO_FLEXING_DURATION),
+            entering,
+        )
+        .then(Duration::from_secs_f32(10000.0), life);
         commands.spawn((
             Sprite {
                 image: asset_server.load("images/boss/idle/frame000.png"),
@@ -306,7 +331,7 @@ impl EnemyBuilder for BossBuilder {
             },
             Transform {
                 translation: Vec3::new(0.0, INTRO_SPAWN_Y, 0.0),
-                scale: Vec3::splat(INTRO_END_SCALE),
+                scale: Vec3::splat(INTRO_START_SCALE),
                 ..default()
             },
             Enemy::new(BOSS),

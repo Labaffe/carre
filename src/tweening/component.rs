@@ -70,3 +70,18 @@ impl TweenTarget for UiOpacity {
         target.0.set_alpha(value);
     }
 }
+
+// -------- Scale uniforme --------
+
+/// Tween cible : `Transform.scale = Vec3::splat(value)`. Scale uniforme sur
+/// les 3 axes. Utile pour les effets de zoom-in/zoom-out (apparition de boss,
+/// pop d'UI, etc.).
+pub struct Scale;
+
+impl TweenTarget for Scale {
+    type Component = Transform;
+
+    fn apply(value: f32, target: &mut Transform) {
+        target.scale = Vec3::splat(value);
+    }
+}
