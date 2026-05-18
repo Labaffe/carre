@@ -7,6 +7,7 @@ pub mod enemy_builder;
 pub mod enemy_register;
 pub mod green_ufo;
 pub mod hit_flash;
+pub mod mine;
 //pub mod spawn;
 mod death;
 use bevy::prelude::*;
@@ -21,6 +22,7 @@ use crate::enemy::enemy_register::EnemyRegister;
 use crate::enemy::enemy_register::spawn;
 use crate::enemy::hit_flash::*;
 use crate::enemy::green_ufo::*;
+use crate::enemy::mine::{blink_red_system, mine_countdown_audio, mine_explode_system, MineBuilder};
 use crate::GameState;
 use crate::menu::pause::not_paused;
 pub struct EnemyPlugin;
@@ -33,6 +35,7 @@ impl Plugin for EnemyPlugin {
                 .with(GreenUFOBuilder::new())
                 .with(BossBuilder::new())
                 .with(AsteroidBuilder::new())
+                .with(MineBuilder::new())
             )
             .insert_resource(AnimBank::new())
             .add_systems(Startup, preload_frames)
@@ -52,6 +55,9 @@ impl Plugin for EnemyPlugin {
                     // Systèmes réactifs (ordre après la machine à état)
                     projectile_enemy_collision,
                     boss_hp_threshold_check,
+                    mine_explode_system,
+                    mine_countdown_audio,
+                    blink_red_system,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing))

@@ -433,6 +433,15 @@ pub fn build_level_1() -> Vec<LevelStep> {
                 2,
                 4.0,
                 SpawnPosition::Top,
+            ))
+            // Mines sporadiques pendant la phase 2 — 1 mine toutes les 7s
+            // (≈ 2-3 mines sur la durée de phase 2). Spawn aléatoire en haut
+            // de l'écran, elles tombent verticalement comme les astéroïdes.
+            .with(Action::StartSpawning(
+                "mine",
+                1,
+                7.0,
+                SpawnPosition::Top,
             )),
         LevelStep::at(14.3, "boom_1")
             .with(Action::SetDifficulty(4.5))
@@ -450,6 +459,7 @@ pub fn build_level_1() -> Vec<LevelStep> {
         LevelStep::at(27.7, "pre_boss")
             .with(Action::StopSpawning("asteroid"))
             .with(Action::StopSpawning("green_ufo"))
+            .with(Action::StopSpawning("mine"))
             .with(Action::StartBgDeceleration {
                 duration: 9.0,
                 final_speed: 30.0,
