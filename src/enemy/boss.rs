@@ -1,32 +1,30 @@
-//! Boss — définition data-driven basée sur le framework `enemy/system.rs`.
+//! Boss — définition data-driven montée sur le framework de behaviors.
 //!
-//! ## Phases
+//! ## Flow général
 //! ```
-//! entering ──timer 7s──→ active_1 ──HP<66%──→ transitioning_1 ──timer 2s──→ active_2
-//!                                                                              │
-//!                                                                          HP<33%
-//!                                                                              ▼
-//!     dead ←──on_enter despawn── dying ←──HP<1%── active_3 ←──timer 2s── transitioning_2
+//! entering (spirale + flexing, 5.5s)
+//!     │ wrapper multiple : Invulnerable + Harmless + TweenSequence<Scale>
+//!     │ scale 0.01 → 1.0 sur la spirale (3s), boss arrive à (0,0)
+//!     ▼
+//! alive (multiple) ── die ──→ dying (Shake 4s) ──→ DespawnSelf
+//!     ├─ alive_choice :
+//!     │     0: patrol_left (Oscilate + Translate gauche)
+//!     │     1: patrol_right (idem droite)
+//!     │     2: charge (Rush::on_axis(X) + Spin auto_reset, ends on wall_left/right)
+//!     │     3: transitioning (immobile + Shake + Invulnerable, 2.5s, on_complete)
+//!     └─ Animation "boss_idle" en parallèle (continue à travers les transitions)
 //! ```
 //!
-//! ## Parités à valider en jeu (vs ancien boss.rs)
-//! - **Intro** : spirale + scaling — l'easing "progress²" matche
-//! - **Musique boss** : démarre sur `on_enter active_1` (pas de délai progressif
-//!   comme avant avec `boss_music_delayed`). Si tu veux le délai, ajouter une
-//!   phase `idle` intermédiaire de 0.5s entre intro et active_1.
-//! - **Charge** : `PatrolAndCharge` déclenche une charge tous les N secondes.
-//!   L'ancien boss synchronisait au pattern (patrol 5s → charge 0.1s → patrol).
-//!   La cadence est proche mais le timing peut différer de ±0.5s.
-//! - **Transitions** : shake + flash OK. Spawn d'UFOs idem.
-//! - **Mort** : DyingFx fait shake+flash, les **explosions aléatoires**
-//!   pendant la mort ne sont PAS spawnées (limitation des behaviors &mut World).
-//!   → flaggé en `TODO-VISUEL`.
-//! - **Animation idle** (cycle de frames sur le sprite boss) : pas encore
-//!   implémentée. Le boss reste sur `frame000.png` en Phase1/2/3.
-//!   → flaggé en `TODO-VISUEL`.
+//! ## Paliers de vie
+//! `boss_hp_threshold_check` surveille `Health.fraction()` et pousse
+//! `"hp_threshold"` quand le boss franchit 2/3 puis 1/3 (skip pendant
+//! transitioning grâce au check `With<Invulnerable>` → pas de re-push tant que
+//! la phase précédente n'est pas finie). `BossPhaseTracker` séquence les
+//! franchissements.
 
 use std::time::Duration;
 
+use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
 use crate::behavior::BehaviorBuilder;
@@ -38,52 +36,35 @@ use crate::enemy::enemies::BOSS;
 use crate::enemy::enemy::Enemy;
 use crate::enemy::enemy_builder::EnemyBuilder;
 use crate::game_manager::difficulty::{Difficulty, SpawnPosition};
-use crate::game_manager::state::GameState;
 use crate::geometry::shape::Shape;
-use crate::menu::pause::not_paused;
 use crate::movement::bounding_radius::BoundingRadius;
-use crate::movement::goto::{self, Goto};
-use crate::movement::movement::Movement;
+use crate::movement::goto::Goto;
 use crate::movement::movement_zone::{MovementZone, amplitude_for_zone};
 use crate::movement::movements::Movements;
 use crate::movement::oscilate::Oscilate;
 use crate::movement::rotate::RotateAround;
-use crate::movement::rush::{self, Rush};
+use crate::movement::rush::Rush;
 use crate::movement::shake::Shake;
-use crate::movement::sinusoid::Sinusoid;
 use crate::movement::spin::Spin;
 use crate::movement::translate::Translate;
 use crate::physic::harmless::Harmless;
 use crate::physic::health::Health;
 use crate::physic::invulnerable::Invulnerable;
 use crate::physic::player_detection::PlayerDetection;
-use crate::player::player::Player;
 use crate::tweening::{Ease, Scale, Tween, TweenSequence};
-use bevy::platform::collections::HashMap;
 
 // ═══════════════════════════════════════════════════════════════════════
-//  Marqueurs (utilisés par boss.rs pour le charge_movement + musique)
+//  Marqueurs
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Marqueur présent sur l'entité boss (utilisé pour la musique + charge).
+/// Marqueur présent sur l'entité boss. Sert au filtrage de queries (musique,
+/// HP threshold check, debug overlay, etc.).
 #[derive(Component)]
 pub struct BossMarker;
 
-/// Marqueur pour la musique du boss.
+/// Marqueur sur l'entité audio qui joue la musique du boss.
 #[derive(Component)]
 pub struct MusicBoss;
-
-/// Vitesse de patrol latérale du boss (px/s). À transformer en variable
-/// d'entité quand on voudra changer dynamiquement au runtime.
-const PATROL_SPEED: f32 = 150.0;
-/// Vitesse de charge du boss (px/s). Idem patrol pour la dynamicité.
-const CHARGE_SPEED: f32 = 500.0;
-/// Vitesse de rotation du boss pendant la charge (rad/s).
-/// `4π` ≈ 2 tours par seconde.
-const CHARGE_SPIN: f32 = 4.0 * std::f32::consts::PI;
-/// Durée de la phase de transition entre paliers de vie (secondes). Pendant
-/// cette durée, le boss est immobile et invulnérable.
-const TRANSITIONING_DURATION: f32 = 2.5;
 
 /// Suivi du palier de vie courant du boss. Démarre à 1.
 /// - `phase = 1` : tant que les PV sont au-dessus de 2/3.
@@ -106,7 +87,7 @@ impl BossPhaseTracker {
 //  Constantes
 // ═══════════════════════════════════════════════════════════════════════
 
-const INTRO_DURATION: f32 = 7.0;
+// ─── Intro (spirale + flexing) ──────────────────────────────────────────
 /// Durée de la phase de spirale (secondes). Le scale tween dure pareil pour
 /// que le boss atteigne sa taille finale à la fin de la spirale.
 const INTRO_SPIRAL_DURATION: f32 = 3.0;
@@ -125,6 +106,8 @@ const INTRO_SPIRAL_TURNS: f32 = 0.5;
 /// `INTRO_SPIRAL_DURATION` pour que le boss arrive au centre PILE à la fin
 /// de la phase — pas de temps mort statique au centre.
 const INTRO_GOTO_SPEED: f32 = INTRO_SPAWN_Y / INTRO_SPIRAL_DURATION;
+
+// ─── Animations (durées par frame) ──────────────────────────────────────
 /// Durée par frame de l'animation idle (secondes). Utilisée à la fois pendant
 /// la spirale d'intro et pendant tout `alive` (patrol/charge/transitioning).
 /// Avec 11 frames sur disque, cycle complet en 11 * 0.1 = 1.1s.
@@ -135,23 +118,24 @@ const BOSS_IDLE_FRAME_DURATION: f32 = 0.1;
 /// la phase flexing.
 const BOSS_FLEXING_FRAME_COUNT: usize = 17;
 
-const PHASE1_PATROL_SPEED_X: f32 = 200.0;
-const PHASE2_PATROL_SPEED_X: f32 = 270.0;
-const PHASE3_PATROL_SPEED_X: f32 = 270.0;
-const PATROL_SINE_AMPLITUDE: f32 = 0.85;
-const PATROL_SINE_FREQ: f32 = 4.5;
-const PATROL_MARGIN: f32 = 80.0;
-
-const CHARGE_SPEED_P1: f32 = 1500.0;
-const CHARGE_SPEED_P2: f32 = 2000.0;
-const CHARGE_SPEED_P3: f32 = 2500.0;
-
-const TRANSITION_DURATION: f32 = 2.0;
+// ─── Combat (alive) ─────────────────────────────────────────────────────
+/// Vitesse de patrol latérale du boss (px/s).
+const PATROL_SPEED: f32 = 150.0;
+/// Vitesse de charge du boss (px/s).
+const CHARGE_SPEED: f32 = 500.0;
+/// Vitesse de rotation du boss pendant la charge (rad/s). `4π` ≈ 2 tours/s.
+const CHARGE_SPIN: f32 = 4.0 * std::f32::consts::PI;
+/// Durée d'une transition entre paliers de vie (secondes). Le boss est
+/// immobile, invulnérable, et tremble pendant cette durée.
+const TRANSITIONING_DURATION: f32 = 2.5;
+/// Amplitude max du shake pendant la transitioning (px, atteinte à la fin
+/// — croissance quadratique depuis 0).
 const TRANSITION_SHAKE: f32 = 12.0;
-const TRANSITION_UFO_COUNT_1: usize = 2;
-const TRANSITION_UFO_COUNT_2: usize = 4;
 
+// ─── Mort ───────────────────────────────────────────────────────────────
+/// Durée du shake de mort avant DespawnSelf (secondes).
 const DYING_DURATION: f32 = 4.0;
+/// Amplitude max du shake de mort (px, atteinte en fin de phase).
 const DYING_SHAKE_MAX: f32 = 20.0;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -185,11 +169,10 @@ impl EnemyBuilder for BossBuilder {
         &self,
         mut commands: Commands,
         window: &Window,
-        difficulty: &ResMut<Difficulty>,
-        spawn_pos: SpawnPosition,
+        _difficulty: &ResMut<Difficulty>,
+        _spawn_pos: SpawnPosition,
         asset_server: &Res<AssetServer>,
     ) {
-        println!("going to spawn boss");
         let spiral = Movements::new()
             .with(RotateAround::new(Vec2::ZERO, INTRO_SPIRAL_TURNS))
             .with(Goto::new(Vec2::ZERO, INTRO_GOTO_SPEED));
@@ -232,16 +215,6 @@ impl EnemyBuilder for BossBuilder {
                     Ease::InQuad,
                 )),
             ));
-        //.with(BehaviorBuilder::from_component(AudioBundle {
-        //    source: asset_server.load("audio/sfx/boss_start.ogg"),
-        //    settings: PlaybackSettings::DESPAWN,
-        //}));
-        let boss_anim_behavior =
-            BehaviorBuilder::from_component(Animation::new("boss", Duration::from_secs_f32(0.1)));
-        let boss_idle_anim_behavior = BehaviorBuilder::from_component(Animation::new(
-            "boss_idle",
-            Duration::from_secs_f32(0.1),
-        ));
 
         // Amplitude verticale : pile la hauteur de la zone effective (margin y + radius),
         // pour que l'oscillation ne pousse jamais contre le clamp du movement_driver.
@@ -293,16 +266,14 @@ impl EnemyBuilder for BossBuilder {
         )
         .on_complete("transition_done");
 
-        // Ordre = priorité quand plusieurs transitions matchent dans la même
-        // frame. player_charge déclaré AVANT wall_* pour qu'une charge gagne
-        // sur un rebond mur (cas typique : boss en patrol_right plaqué au mur
-        // droit, joueur entre dans la zone → on veut la charge, pas le rebond).
-        // Les transitions wall_* depuis index 2 (charge) renvoient vers le
-        // patrol qui s'éloigne du mur touché → bounce naturel.
-        // Ordre = priorité quand plusieurs transitions matchent dans la même
-        // frame. hp_threshold déclaré EN TÊTE pour gagner sur tout le reste
-        // (le boss doit toujours basculer en transitioning quand un seuil de
-        // vie est franchi, même au milieu d'un wall hit ou d'un player_charge).
+        // Ordre des transitions = priorité quand plusieurs matchent dans la
+        // même frame :
+        // - `hp_threshold` EN TÊTE : le palier de vie gagne toujours, même
+        //   au milieu d'un wall hit ou d'un player_charge.
+        // - `player_charge` avant les `wall_*` : un boss plaqué au mur qui
+        //   détecte le joueur doit charger, pas rebondir.
+        // - `wall_*` depuis charge (index 2) renvoie au patrol qui s'éloigne
+        //   du mur touché → bounce naturel.
         let alive_choice = BehaviorBuilder::choice()
             .with(BehaviorBuilder::from_component(patrol_movement_left)) // 0
             .with(BehaviorBuilder::from_component(patrol_movement_right)) // 1
@@ -329,10 +300,8 @@ impl EnemyBuilder for BossBuilder {
                     "boss_idle",
                     idle_frame_duration,
                 )));
-        // Phase de mort : tremblement intense pendant DYING_DURATION (4s),
-        // puis DespawnSelf. La const TRANSITION_DURATION vestigial à 2.0 n'est
-        // plus utilisée — la vraie source de vérité est TRANSITIONING_DURATION
-        // pour le shake côté transition de palier, DYING_DURATION pour la mort.
+        // Phase de mort : shake pendant DYING_DURATION (amplitude qui croît
+        // quadratiquement de 0 à DYING_SHAKE_MAX), puis DespawnSelf.
         let dying = BehaviorBuilder::first(
             Duration::from_secs_f32(DYING_DURATION),
             BehaviorBuilder::from_component(
