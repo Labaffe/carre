@@ -84,9 +84,23 @@ struct VolumeText;
 enum MenuView {
     Main,
     Settings,
-    EditorMain,
     EditorEnemies,
 }
+
+/// Liste des ennemis testables dans l'éditeur. Chaque entrée :
+/// `(nom enregistré dans EnemyRegister, chemin sprite, nom d'affichage UI)`.
+const EDITOR_ENEMIES: &[(&str, &str, &str)] = &[
+    ("green_ufo", "images/green_ufo.png", "Green UFO"),
+    ("boss", "images/boss/idle/frame000.png", "Boss"),
+    ("mine", "images/mine/frame000.png", "Mine"),
+];
+
+/// Nombre de colonnes de la grille de sélection d'ennemis.
+const EDITOR_GRID_COLS: usize = 5;
+/// Taille d'une case (px).
+const EDITOR_GRID_CELL_SIZE: f32 = 96.0;
+/// Espacement entre les cases (px).
+const EDITOR_GRID_GAP: f32 = 12.0;
 
 #[derive(Resource)]
 struct MainMenuAnim {
@@ -392,25 +406,13 @@ fn handle_menu_input(
                 &settings_ui_q,
             );
         }
-        MenuView::EditorMain => {
-            handle_editor_main_view(
-                &keyboard,
-                &mut anim,
-                &mut commands,
-                &asset_server,
-                &editor_ui_q,
-                &root_q,
-            );
-        }
         MenuView::EditorEnemies => {
             handle_editor_enemies_view(
                 &keyboard,
                 &mut anim,
                 &mut next_state,
                 &mut commands,
-                &asset_server,
                 &editor_ui_q,
-                &root_q,
             );
         }
     }
@@ -463,10 +465,10 @@ fn handle_main_view(
                 spawn_settings_ui(commands, asset_server, settings, root_q);
             }
             3 => {
-                // Ouvrir le sous-menu Éditeur
-                anim.view = MenuView::EditorMain;
+                // Ouvrir directement la grille de sélection d'ennemis
+                anim.view = MenuView::EditorEnemies;
                 anim.selected = 0;
-                spawn_editor_main_ui(commands, asset_server, root_q);
+                spawn_editor_enemies_ui(commands, asset_server, root_q);
             }
             4 => {
                 exit.write(AppExit::Success);
@@ -554,22 +556,30 @@ fn spawn_settings_ui(
     });
 }
 
-// ─── Sous-menus Éditeur ──────────────────────────────────────────────
+// ─── Sous-menu Éditeur — grille d'ennemis ────────────────────────────
 
+/// Index de la case dans la grille (= index dans `EDITOR_ENEMIES`).
 #[derive(Component)]
-struct EditorMenuOption(usize);
+struct EditorEnemyCell(usize);
 
-fn spawn_editor_options(
+/// Marqueur sur le Text qui affiche le nom d'affichage de l'ennemi sélectionné.
+#[derive(Component)]
+struct EditorSelectedNameText;
+
+fn spawn_editor_enemies_ui(
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
     root_q: &Query<Entity, With<MainMenuRoot>>,
-    title: &str,
-    options: &[&str],
 ) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     let Ok(root_entity) = root_q.single() else {
         return;
     };
+
+    // Largeur du grid = exactement `EDITOR_GRID_COLS` cases + leurs gaps.
+    let grid_width =
+        EDITOR_GRID_COLS as f32 * EDITOR_GRID_CELL_SIZE
+            + (EDITOR_GRID_COLS as f32 - 1.0) * EDITOR_GRID_GAP;
 
     commands.entity(root_entity).with_children(|parent| {
         parent
@@ -577,60 +587,82 @@ fn spawn_editor_options(
                 Node {
                     flex_direction: FlexDirection::Column,
                     align_items: AlignItems::Center,
-                    row_gap: Val::Px(20.0),
+                    row_gap: Val::Px(24.0),
                     ..default()
                 },
                 EditorSubmenuUI,
             ))
-            .with_children(|parent| {
-                parent.spawn((
-                    Text::new(title),
+            .with_children(|root| {
+                // Titre
+                root.spawn((
+                    Text::new("EDITEUR"),
                     TextFont { font: font.clone(), font_size: 48.0, ..default() },
                     TextColor(Color::WHITE),
                 ));
-                for (i, label) in options.iter().enumerate() {
-                    let color = if i == 0 {
-                        Color::srgba(1.0, 0.85, 0.0, 1.0)
-                    } else {
-                        Color::srgba(0.6, 0.6, 0.6, 1.0)
-                    };
-                    parent.spawn((
-                        Text::new(*label),
-                        TextFont { font: font.clone(), font_size: 32.0, ..default() },
-                        TextColor(color),
-                        EditorMenuOption(i),
-                    ));
-                }
+
+                // Grille : flex Row + wrap → autant de lignes que nécessaire.
+                root.spawn(Node {
+                    width: Val::Px(grid_width),
+                    flex_direction: FlexDirection::Row,
+                    flex_wrap: FlexWrap::Wrap,
+                    row_gap: Val::Px(EDITOR_GRID_GAP),
+                    column_gap: Val::Px(EDITOR_GRID_GAP),
+                    justify_content: JustifyContent::FlexStart,
+                    ..default()
+                })
+                .with_children(|grid| {
+                    for (i, (_name, sprite_path, _display)) in EDITOR_ENEMIES.iter().enumerate() {
+                        let selected = i == 0;
+                        grid.spawn((
+                            Node {
+                                width: Val::Px(EDITOR_GRID_CELL_SIZE),
+                                height: Val::Px(EDITOR_GRID_CELL_SIZE),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            BackgroundColor(cell_bg(selected)),
+                            EditorEnemyCell(i),
+                        ))
+                        .with_children(|cell| {
+                            cell.spawn((
+                                ImageNode::new(asset_server.load(*sprite_path)),
+                                Node {
+                                    width: Val::Px(EDITOR_GRID_CELL_SIZE - 12.0),
+                                    height: Val::Px(EDITOR_GRID_CELL_SIZE - 12.0),
+                                    ..default()
+                                },
+                            ));
+                        });
+                    }
+                });
+
+                // Nom de l'ennemi actuellement sélectionné (init sur le 1er).
+                let initial_name = EDITOR_ENEMIES.first().map(|e| e.2).unwrap_or("");
+                root.spawn((
+                    Text::new(initial_name),
+                    TextFont { font: font.clone(), font_size: 28.0, ..default() },
+                    TextColor(Color::srgba(1.0, 0.85, 0.0, 1.0)),
+                    EditorSelectedNameText,
+                ));
+
+                // Hint
+                root.spawn((
+                    Text::new("← → ↑ ↓  ENTREE  /  ECHAP"),
+                    TextFont { font: font.clone(), font_size: 14.0, ..default() },
+                    TextColor(Color::srgba(0.5, 0.5, 0.5, 0.9)),
+                ));
             });
     });
 }
 
-fn spawn_editor_main_ui(
-    commands: &mut Commands,
-    asset_server: &Res<AssetServer>,
-    root_q: &Query<Entity, With<MainMenuRoot>>,
-) {
-    spawn_editor_options(
-        commands,
-        asset_server,
-        root_q,
-        "EDITEUR",
-        &["Enemies", "Retour"],
-    );
-}
-
-fn spawn_editor_enemies_ui(
-    commands: &mut Commands,
-    asset_server: &Res<AssetServer>,
-    root_q: &Query<Entity, With<MainMenuRoot>>,
-) {
-    spawn_editor_options(
-        commands,
-        asset_server,
-        root_q,
-        "ENEMIES",
-        &["Green UFO", "Boss", "Mine", "Retour"],
-    );
+/// Couleur de fond d'une case selon son état sélectionné.
+fn cell_bg(selected: bool) -> Color {
+    if selected {
+        Color::srgba(1.0, 0.85, 0.0, 0.35)
+    } else {
+        Color::srgba(0.15, 0.15, 0.15, 0.35)
+    }
 }
 
 fn despawn_editor_submenu(
@@ -644,117 +676,76 @@ fn despawn_editor_submenu(
     }
 }
 
-fn handle_editor_main_view(
+fn handle_editor_enemies_view(
     keyboard: &Res<ButtonInput<KeyCode>>,
     anim: &mut ResMut<MainMenuAnim>,
+    next_state: &mut ResMut<NextState<GameState>>,
     commands: &mut Commands,
-    asset_server: &Res<AssetServer>,
     editor_ui_q: &Query<Entity, With<EditorSubmenuUI>>,
-    root_q: &Query<Entity, With<MainMenuRoot>>,
 ) {
-    let count = 2;
-    if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
-        if anim.selected > 0 {
+    let count = EDITOR_ENEMIES.len();
+    let cols = EDITOR_GRID_COLS;
+    let cur = anim.selected;
+    let col = cur % cols;
+    let row = cur / cols;
+    let max_row = if count == 0 { 0 } else { (count - 1) / cols };
+
+    // Navigation 2D : ←→ pour les colonnes, ↑↓ pour les lignes. Clamp aux bornes
+    // (pas de wrap) et au compte réel d'ennemis sur la dernière ligne partielle.
+    if keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyA) {
+        if col > 0 {
             anim.selected -= 1;
         }
     }
-    if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
-        if anim.selected < count - 1 {
+    if keyboard.just_pressed(KeyCode::ArrowRight) || keyboard.just_pressed(KeyCode::KeyD) {
+        if col + 1 < cols && cur + 1 < count {
             anim.selected += 1;
         }
     }
+    if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
+        if row > 0 {
+            anim.selected -= cols;
+        }
+    }
+    if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
+        if row < max_row {
+            let next = cur + cols;
+            anim.selected = if next < count { next } else { count - 1 };
+        }
+    }
+
     if keyboard.just_pressed(KeyCode::Escape) {
         despawn_editor_submenu(commands, editor_ui_q);
         anim.view = MenuView::Main;
         anim.selected = 3;
         return;
     }
-    if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
-        match anim.selected {
-            0 => {
-                despawn_editor_submenu(commands, editor_ui_q);
-                anim.view = MenuView::EditorEnemies;
-                anim.selected = 0;
-                spawn_editor_enemies_ui(commands, asset_server, root_q);
-            }
-            1 => {
-                despawn_editor_submenu(commands, editor_ui_q);
-                anim.view = MenuView::Main;
-                anim.selected = 3;
-            }
-            _ => {}
-        }
-    }
-}
 
-fn handle_editor_enemies_view(
-    keyboard: &Res<ButtonInput<KeyCode>>,
-    anim: &mut ResMut<MainMenuAnim>,
-    next_state: &mut ResMut<NextState<GameState>>,
-    commands: &mut Commands,
-    asset_server: &Res<AssetServer>,
-    editor_ui_q: &Query<Entity, With<EditorSubmenuUI>>,
-    root_q: &Query<Entity, With<MainMenuRoot>>,
-) {
-    let count = 4;
-    if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
-        if anim.selected > 0 {
-            anim.selected -= 1;
-        }
-    }
-    if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
-        if anim.selected < count - 1 {
-            anim.selected += 1;
-        }
-    }
-    if keyboard.just_pressed(KeyCode::Escape) {
-        despawn_editor_submenu(commands, editor_ui_q);
-        anim.view = MenuView::EditorMain;
-        anim.selected = 0;
-        spawn_editor_main_ui(commands, asset_server, root_q);
-        return;
-    }
     if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
-        match anim.selected {
-            0 => {
-                commands.insert_resource(EditorTestEnemy("green_ufo"));
-                commands.insert_resource(PlayMode::Primes);
-                next_state.set(GameState::Playing);
-            }
-            1 => {
-                commands.insert_resource(EditorTestEnemy("boss"));
-                commands.insert_resource(PlayMode::Primes);
-                next_state.set(GameState::Playing);
-            }
-            2 => {
-                commands.insert_resource(EditorTestEnemy("mine"));
-                commands.insert_resource(PlayMode::Primes);
-                next_state.set(GameState::Playing);
-            }
-            3 => {
-                despawn_editor_submenu(commands, editor_ui_q);
-                anim.view = MenuView::EditorMain;
-                anim.selected = 0;
-                spawn_editor_main_ui(commands, asset_server, root_q);
-            }
-            _ => {}
-        }
+        // Re-lit `anim.selected` au moment de l'action — il a pu changer par
+        // les navigations au-dessus dans la même frame.
+        let name = EDITOR_ENEMIES[anim.selected].0;
+        commands.insert_resource(EditorTestEnemy(name));
+        commands.insert_resource(PlayMode::Primes);
+        next_state.set(GameState::Playing);
     }
 }
 
 fn animate_editor_submenu(
     anim: Res<MainMenuAnim>,
-    mut q: Query<(&mut TextColor, &EditorMenuOption)>,
+    mut cells: Query<(&mut BackgroundColor, &EditorEnemyCell)>,
+    mut name_text: Query<&mut Text, With<EditorSelectedNameText>>,
 ) {
-    if !matches!(anim.view, MenuView::EditorMain | MenuView::EditorEnemies) {
+    if !matches!(anim.view, MenuView::EditorEnemies) {
         return;
     }
-    for (mut text_color, opt) in q.iter_mut() {
-        text_color.0 = if opt.0 == anim.selected {
-            Color::srgba(1.0, 0.85, 0.0, 1.0)
-        } else {
-            Color::srgba(0.6, 0.6, 0.6, 1.0)
-        };
+    for (mut bg, cell) in cells.iter_mut() {
+        *bg = BackgroundColor(cell_bg(cell.0 == anim.selected));
+    }
+    if let Ok(mut text) = name_text.single_mut() {
+        if let Some(entry) = EDITOR_ENEMIES.get(anim.selected) {
+            **text = entry.2.to_string();
+        }
     }
 }
 
