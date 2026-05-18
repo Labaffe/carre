@@ -503,7 +503,7 @@ pub struct EditorTestEnemy(pub &'static str);
 pub fn build_level_test_enemy(enemy_name: &'static str) -> Vec<LevelStep> {
     vec![
         LevelStep::at(0.0, "test_spawn")
-            .with(Action::SpawnEnemy(enemy_name, 1, SpawnPosition::At(0.0, 50.0))),
+            .with(Action::SpawnEnemy(enemy_name, 1, SpawnPosition::At(0.0, 200.0))),
     ]
 }
 
@@ -534,18 +534,23 @@ fn setup_level(
     };
     commands.insert_resource(LevelRunner::new(steps));
 
-    // Créer la LevelPhase : tous les niveaux commencent par une intro
-    let intro = crate::game_manager::game::level_intro(progress.current_level);
-    let phase = crate::game_manager::game::LevelPhaseKind::Intro {
-        elapsed: 0.0,
-        duration: intro.duration,
-        sound: intro.sound,
-        sound_played: false,
-        sound_finished: false,
-        start_pos: Vec2::ZERO,
-        target_pos: Vec2::ZERO,
-        spawn_ratio: intro.spawn_ratio,
-        initialized: false,
+    // En éditeur on saute l'intro (animation vaisseau + son) — l'ennemi spawn à
+    // t=0 et le joueur doit pouvoir bouger immédiatement pour tester.
+    let phase = if editor_test.is_some() {
+        crate::game_manager::game::LevelPhaseKind::Running
+    } else {
+        let intro = crate::game_manager::game::level_intro(progress.current_level);
+        crate::game_manager::game::LevelPhaseKind::Intro {
+            elapsed: 0.0,
+            duration: intro.duration,
+            sound: intro.sound,
+            sound_played: false,
+            sound_finished: false,
+            start_pos: Vec2::ZERO,
+            target_pos: Vec2::ZERO,
+            spawn_ratio: intro.spawn_ratio,
+            initialized: false,
+        }
     };
     commands.insert_resource(crate::game_manager::game::LevelPhase { phase });
 }

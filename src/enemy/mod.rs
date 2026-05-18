@@ -7,6 +7,7 @@ pub mod enemy_builder;
 pub mod enemy_register;
 pub mod green_ufo;
 pub mod hit_flash;
+pub mod kamikaze;
 pub mod mine;
 //pub mod spawn;
 mod death;
@@ -22,6 +23,7 @@ use crate::enemy::enemy_register::EnemyRegister;
 use crate::enemy::enemy_register::spawn;
 use crate::enemy::hit_flash::*;
 use crate::enemy::green_ufo::*;
+use crate::enemy::kamikaze::{kamikaze_explode_system, KamikazeBuilder};
 use crate::enemy::mine::{blink_red_system, mine_countdown_audio, mine_explode_system, MineBuilder};
 use crate::GameState;
 use crate::menu::pause::not_paused;
@@ -36,6 +38,7 @@ impl Plugin for EnemyPlugin {
                 .with(BossBuilder::new())
                 .with(AsteroidBuilder::new())
                 .with(MineBuilder::new())
+                .with(KamikazeBuilder::new())
             )
             .insert_resource(AnimBank::new())
             .add_systems(Startup, preload_frames)
@@ -58,6 +61,7 @@ impl Plugin for EnemyPlugin {
                     mine_explode_system,
                     mine_countdown_audio,
                     blink_red_system,
+                    kamikaze_explode_system,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing))

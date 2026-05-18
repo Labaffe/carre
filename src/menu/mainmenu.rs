@@ -93,6 +93,7 @@ const EDITOR_ENEMIES: &[(&str, &str, &str)] = &[
     ("green_ufo", "images/green_ufo.png", "Green UFO"),
     ("boss", "images/boss/idle/frame000.png", "Boss"),
     ("mine", "images/mine/frame000.png", "Mine"),
+    ("kamikaze", "images/kamikaze/frame000.png", "Kamikaze"),
 ];
 
 /// Nombre de colonnes de la grille de sélection d'ennemis.
