@@ -59,7 +59,7 @@ impl EnemyBuilder for GreenUFOBuilder {
     fn get_timer(&mut self) -> &mut Timer {
         &mut self.timer
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "green_ufo"
     }
     fn preload_anim(&self) -> HashMap<&str, &str> {

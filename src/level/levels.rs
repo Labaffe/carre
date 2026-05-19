@@ -70,10 +70,21 @@ pub const LEVEL_MOTHERSHIP: LevelDef = LevelDef {
     scroll_direction: ScrollDirection::Left,
 };
 
+/// Niveau 3 — Chaos
+/// Spawn aléatoire de toute la palette d'ennemis (boss exclu par défaut).
+/// Voir [`crate::level::chaos::ChaosConfig`] pour le paramétrage.
+pub const LEVEL_CHAOS: LevelDef = LevelDef {
+    name: "Chaos",
+    player_ship: "images/player_ship/ship_0.png",
+    background_tile: "images/backgrounds/space_background.png",
+    scroll_direction: ScrollDirection::Down,
+};
+
 /// Liste ordonnée de tous les niveaux (1-indexed via index+1).
 pub const ALL_LEVELS: &[&LevelDef] = &[
     &LEVEL_SPACE_INVADER, // Niveau 1
     &LEVEL_MOTHERSHIP,    // Niveau 2
+    &LEVEL_CHAOS,         // Niveau 3
 ];
 
 /// Retourne la définition d'un niveau (1-indexed).

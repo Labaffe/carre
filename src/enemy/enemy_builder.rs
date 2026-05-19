@@ -15,7 +15,7 @@ pub trait EnemyBuilder {
         difficulty: &ResMut<Difficulty>,
         spawn_pos: SpawnPosition,
         asset_server:&Res<AssetServer>);
-    fn name(&self)->&str;
+    fn name(&self) -> &'static str;
     fn spawns(
         &mut self,
         mut commands: Commands,

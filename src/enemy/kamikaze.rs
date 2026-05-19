@@ -128,7 +128,7 @@ impl EnemyBuilder for KamikazeBuilder {
     fn get_timer(&mut self) -> &mut Timer {
         &mut self.timer
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "kamikaze"
     }
     fn preload_anim(&self) -> HashMap<&str, &str> {

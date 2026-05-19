@@ -157,7 +157,7 @@ impl EnemyBuilder for AsteroidBuilder {
         ));
     }
 
-    fn name(&self)->&str {
+    fn name(&self) -> &'static str {
         "asteroid"
     }
 }

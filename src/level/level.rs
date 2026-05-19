@@ -81,6 +81,13 @@ impl Plugin for LevelPlugin {
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),
             )
+            .add_systems(
+                Update,
+                crate::level::chaos::chaos_spawner_system
+                    .run_if(in_state(GameState::Playing))
+                    .run_if(not_paused)
+                    .run_if(resource_exists::<crate::level::chaos::ChaosConfig>),
+            )
             .add_systems(OnExit(GameState::Playing), cleanup_level);
     }
 }
@@ -486,6 +493,25 @@ pub fn build_level_2() -> Vec<LevelStep> {
     ]
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  Définition du niveau 3 — Chaos
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Timeline du niveau Chaos : musique + difficulté légèrement élevée.
+/// Les spawns d'ennemis sont gérés par le `ChaosConfig` (inséré séparément
+/// dans `setup_level` car il a besoin d'un `Commands`).
+pub fn build_level_chaos() -> Vec<LevelStep> {
+    vec![
+        LevelStep::at(0.0, "chaos_start")
+            .with(Action::StartMusic("audio/music/gradius.ogg"))
+            .with(Action::SetDifficulty(2.0))
+            .with(Action::Log("Niveau Chaos — spawn al\u{e9}atoire d\u{e9}marr\u{e9}")),
+        LevelStep::at(7.0, "chaos_countdown")
+            .with(Action::PlaySound(crate::audio::Sfx::UiCountdownReady))
+            .with(Action::StartCountdown),
+    ]
+}
+
 /// Ressource d'éditeur : si présente au moment de `setup_level`, override
 /// le niveau normal par une timeline minimale qui spawn juste cet ennemi.
 #[derive(Resource)]
@@ -511,6 +537,7 @@ fn setup_level(
     progress: Res<crate::game_manager::game::GameProgress>,
     mut config: ResMut<LevelConfig>,
     editor_test: Option<Res<EditorTestEnemy>>,
+    enemy_register: Res<crate::enemy::enemy_register::EnemyRegister>,
 ) {
     // Mettre à jour la config visuelle du niveau (immédiat via ResMut)
     let def = crate::level::levels::level_def(progress.current_level);
@@ -524,6 +551,20 @@ fn setup_level(
         match progress.current_level {
             1 => build_level_1(),
             2 => build_level_2(),
+            3 => {
+                // Niveau Chaos : palette = tous les ennemis enregistrés sauf
+                // le boss. Auto-mise-à-jour quand un nouvel ennemi est ajouté
+                // au register. Pour personnaliser (intervalle, exclusions
+                // supplémentaires, position), chaîner les builders ici :
+                //   .with_interval(1.0).exclude("mine")...
+                commands.insert_resource(
+                    crate::level::chaos::ChaosConfig::from_register(
+                        &enemy_register,
+                        &["boss"],
+                    ),
+                );
+                build_level_chaos()
+            }
             _ => build_level_1(), // fallback
         }
     };
@@ -726,4 +767,5 @@ fn process_level_action_events(
 fn cleanup_level(mut commands: Commands) {
     commands.remove_resource::<LevelRunner>();
     commands.remove_resource::<EditorTestEnemy>();
+    commands.remove_resource::<crate::level::chaos::ChaosConfig>();
 }
