@@ -342,6 +342,7 @@ impl Action {
                     SpawnPosition::Bottom => " ↓",
                     SpawnPosition::Left => " ←",
                     SpawnPosition::Right => " →",
+                    SpawnPosition::UpperMid => " ⌃",
                     SpawnPosition::At(x, y) => {
                         return format!("Spawn({}×{} @{:.0},{:.0})", count, name, x, y);
                     }
@@ -358,6 +359,7 @@ impl Action {
                     SpawnPosition::Bottom => " ↓",
                     SpawnPosition::Left => " ←",
                     SpawnPosition::Right => " →",
+                    SpawnPosition::UpperMid => " ⌃",
                     SpawnPosition::At(x, y) => {
                         return format!(
                             "Start({}×{},{}s @{:.0},{:.0})",
@@ -490,11 +492,13 @@ pub fn build_level_2() -> Vec<LevelStep> {
 pub struct EditorTestEnemy(pub &'static str);
 
 /// Niveau de test : spawn un seul ennemi du type demandé, rien d'autre.
+/// Spawn à `UpperMid` (centré X, moitié haute) — résolution-indépendant et
+/// laisse de la place au joueur en bas pour réagir.
 pub fn build_level_test_enemy(enemy_name: &'static str) -> Vec<LevelStep> {
     vec![LevelStep::at(0.0, "test_spawn").with(Action::SpawnEnemy(
         enemy_name,
         1,
-        SpawnPosition::At(0.0, 200.0),
+        SpawnPosition::UpperMid,
     ))]
 }
 
