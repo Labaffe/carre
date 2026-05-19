@@ -59,8 +59,6 @@ Boss meurt → 3s OutroCountdown → Outro (freeze + musique + texte)
 Ressource `EditorTestEnemy(name)` insérée par le menu éditeur. Quand présente au moment de `setup_level` :
 - Timeline minimale : spawn 1 ennemi du type demandé à `SpawnPosition::At(0.0, 200.0)`
 - Phase `Intro` skippée → démarre direct en `Running`
-- Joueur démarre en Phase3 (vitesse 1000, projectiles bleus)
-- Gate `difficulty.elapsed < 1.0` du mouvement joueur bypassée
 
 ## Debug
 

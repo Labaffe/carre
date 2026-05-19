@@ -1,8 +1,11 @@
 //! Background spatial scrollant en boucle.
 //!
-//! **Phase normale** : 2 tiles verticales, scroll vers le bas.
-//! **Phase boss** (3 s après boss.ogg) : grille 3×3 qui scroll ET tourne
-//! en même temps que la planète, simulant une orbite.
+//! Scroll dans la direction du niveau (`LevelConfig.scroll_direction`).
+//! Vitesse dérivée de `difficulty.factor` ou override via `bg_speed_override`
+//! (utilisé par la décélération avant le boss).
+//!
+//! Note : l'ancien mode "arène boss" (grille 3×3 qui orbite autour de la
+//! planète) a été retiré avec le système de phases temporelles.
 
 use crate::audio::{Sfx, SfxPlayer};
 use crate::game_manager::difficulty::Difficulty;
@@ -38,10 +41,6 @@ pub struct Planet;
 const BG_TILE_WIDTH: f32 = 5796.0;
 /// Hauteur d'une tile de background (px).
 const BG_TILE_HEIGHT: f32 = 1534.0;
-/// Vitesse du scroll du background pendant le boss (px/s).
-const BOSS_BG_SCROLL_SPEED: f32 = 150.0;
-/// Vitesse de rotation du background pendant le boss (rad/s, = planète).
-const BOSS_BG_ROTATION_SPEED: f32 = 0.50;
 
 fn setup_background(
     mut commands: Commands,
@@ -83,107 +82,47 @@ fn setup_background(
     }
 }
 
-/// Fait défiler le background.
-/// - Avant le boss : 2 tiles, scroll dans la direction du niveau.
-/// - Pendant le boss (niveau 1) : grille qui scroll et tourne (orbite planétaire).
+/// Fait défiler le background dans la direction du niveau.
 fn scroll_background(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut query: Query<(Entity, &mut Transform), With<Background>>,
-    windows: Query<&Window>,
+    mut query: Query<&mut Transform, With<Background>>,
     time: Res<Time>,
-    mut difficulty: ResMut<Difficulty>,
+    difficulty: Res<Difficulty>,
     config: Res<LevelConfig>,
 ) {
-    let boss_bg_active = match difficulty.boss_music_start_time {
-        Some(start) => difficulty.elapsed - start >= 3.0,
-        None => false,
+    let base_speed = 150.0;
+    let speed = if let Some(override_speed) = difficulty.bg_speed_override {
+        override_speed
+    } else {
+        base_speed * (1.0 + difficulty.factor * 3.0)
     };
 
-    // Nombre total de tiles en mode boss (2 existantes + 4 ajoutées).
-    const BOSS_TILE_COUNT: f32 = 6.0;
+    let delta = speed * time.delta_secs();
 
-    if boss_bg_active {
-        // ── Mode boss : scroll + rotation (uniquement pour les niveaux verticaux) ──
-        if !difficulty.boss_bg_initialized {
-            difficulty.boss_bg_initialized = true;
-
-            let bg = asset_server.load(config.background_tile);
-            for row in [-2_i32, -1, 2, 3] {
-                commands.spawn((
-                    Sprite { image: bg.clone(), ..default() },
-                    Transform::from_xyz(0.0, row as f32 * BG_TILE_HEIGHT, -1.0),
-                    Background,
-                ));
+    for mut transform in query.iter_mut() {
+        match config.scroll_direction {
+            ScrollDirection::Down => {
+                transform.translation.y -= delta;
+                if transform.translation.y <= -BG_TILE_HEIGHT {
+                    transform.translation.y += BG_TILE_HEIGHT * 2.0;
+                }
             }
-            return;
-        }
-
-        let boss_bg_elapsed = difficulty.elapsed - difficulty.boss_music_start_time.unwrap() - 3.0;
-        let angle = boss_bg_elapsed * BOSS_BG_ROTATION_SPEED;
-        let rotation = Quat::from_rotation_z(angle);
-        let scroll_total = boss_bg_elapsed * BOSS_BG_SCROLL_SPEED;
-
-        let grid_h = BOSS_TILE_COUNT * BG_TILE_HEIGHT;
-        let half_grid_h = grid_h / 2.0;
-
-        let window = windows.single().unwrap();
-        let half_h = window.height() / 2.0;
-        let planet_x = (difficulty.elapsed * 0.3).sin() * 15.0;
-        let planet_y = -(half_h + 700.0) + (difficulty.elapsed * 0.2).cos() * 10.0;
-        let pivot = Vec3::new(planet_x, planet_y, 0.0);
-
-        let mut tiles: Vec<(Entity, Mut<Transform>)> = query.iter_mut().collect();
-        let count = tiles.len() as f32;
-        let half_count = count / 2.0;
-        for (idx, (_, tf)) in tiles.iter_mut().enumerate() {
-            let row = idx as f32 - half_count + 0.5;
-
-            let raw_y = row * BG_TILE_HEIGHT - scroll_total;
-            let wrapped_y = ((raw_y + half_grid_h).rem_euclid(grid_h)) - half_grid_h;
-
-            let local_pos = Vec3::new(0.0, wrapped_y, 0.0);
-            let rotated = rotation.mul_vec3(local_pos);
-            tf.translation = Vec3::new(pivot.x + rotated.x, pivot.y + rotated.y, -1.0);
-            tf.rotation = rotation;
-        }
-    } else {
-        // ── Scroll normal dans la direction du niveau ──
-        let base_speed = 150.0;
-        let speed = if let Some(override_speed) = difficulty.bg_speed_override {
-            override_speed
-        } else {
-            base_speed * (1.0 + difficulty.factor * 3.0)
-        };
-
-        let delta = speed * time.delta_secs();
-
-        for (_, mut transform) in query.iter_mut() {
-            match config.scroll_direction {
-                ScrollDirection::Down => {
-                    transform.translation.y -= delta;
-                    if transform.translation.y <= -BG_TILE_HEIGHT {
-                        transform.translation.y += BG_TILE_HEIGHT * 2.0;
-                    }
+            ScrollDirection::Up => {
+                transform.translation.y += delta;
+                if transform.translation.y >= BG_TILE_HEIGHT {
+                    transform.translation.y -= BG_TILE_HEIGHT * 2.0;
                 }
-                ScrollDirection::Up => {
-                    transform.translation.y += delta;
-                    if transform.translation.y >= BG_TILE_HEIGHT {
-                        transform.translation.y -= BG_TILE_HEIGHT * 2.0;
-                    }
+            }
+            ScrollDirection::Left => {
+                transform.translation.x -= delta;
+                // 3 tiles centrées (-S, 0, S) : recycler à -1.5×S pour éviter les trous
+                if transform.translation.x <= -BG_TILE_HEIGHT * 1.5 {
+                    transform.translation.x += BG_TILE_HEIGHT * 3.0;
                 }
-                ScrollDirection::Left => {
-                    transform.translation.x -= delta;
-                    // 3 tiles centrées (-S, 0, S) : recycler à -1.5×S pour éviter les trous
-                    if transform.translation.x <= -BG_TILE_HEIGHT * 1.5 {
-                        transform.translation.x += BG_TILE_HEIGHT * 3.0;
-                    }
-                }
-                ScrollDirection::Right => {
-                    transform.translation.x += delta;
-                    if transform.translation.x >= BG_TILE_HEIGHT * 1.5 {
-                        transform.translation.x -= BG_TILE_HEIGHT * 3.0;
-                    }
+            }
+            ScrollDirection::Right => {
+                transform.translation.x += delta;
+                if transform.translation.x >= BG_TILE_HEIGHT * 1.5 {
+                    transform.translation.x -= BG_TILE_HEIGHT * 3.0;
                 }
             }
         }
@@ -194,8 +133,8 @@ fn scroll_background(
 
 /// Durée de l'animation de zoom (secondes).
 const PLANET_ANIM_DURATION: f32 = 10.0;
-/// Vitesse de rotation de la planète pendant le boss (après 3s de musique boss).
-const PLANETE_BOSS_ROTATION_SPEED: f32 = 0.50;
+/// Vitesse de rotation lente constante de la planète (rad/s).
+const PLANET_ROTATION_SPEED: f32 = 0.02;
 
 fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
     let window = windows.single().unwrap();
@@ -217,8 +156,6 @@ fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows:
 }
 
 fn animate_planet(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
     mut difficulty: ResMut<Difficulty>,
     windows: Query<&Window>,
     mut planet_q: Query<&mut Transform, With<Planet>>,
@@ -248,37 +185,25 @@ fn animate_planet(
         ((difficulty.elapsed - planet_appear_time) / PLANET_ANIM_DURATION).clamp(0.0, 1.0);
 
     for mut transform in planet_q.iter_mut() {
-        // Courbe ease-in-out : doux au début et à la fin
+        // Courbe ease-in-out
         let eased = progress * progress * (3.0 - 2.0 * progress);
 
-        // Scale : 1.0→9.0 (zoom bien plus prononcé)
+        // Scale : 1.0 → 5.0
         let scale = 1.0 + eased * 4.0;
         transform.scale = Vec3::splat(scale);
 
-        // Position Y : remonte davantage pour montrer plus de surface
+        // Position Y : remonte
         let start_y = -(half_h + 900.0);
         let end_y = -(half_h + 600.0);
         transform.translation.y = start_y + (end_y - start_y) * eased;
 
-        // Position X : centre avec léger mouvement d'orbite
+        // Léger mouvement d'orbite
         let orbit_x = (difficulty.elapsed * 0.3).sin() * 15.0;
         let orbit_y = (difficulty.elapsed * 0.2).cos() * 10.0;
         transform.translation.x = orbit_x;
         transform.translation.y += orbit_y;
 
-        // Rotation : accélère 3s après le lancement de la musique boss.
-        // On accumule l'angle pour éviter un saut brutal au changement de vitesse.
-        let base_speed = 0.02;
-        let angle = match difficulty.boss_music_start_time {
-            Some(start) if difficulty.elapsed - start >= 3.0 => {
-                let switch_time = start + 3.0;
-                // Angle accumulé avant la transition + angle depuis la transition
-                let angle_before = switch_time * base_speed;
-                let elapsed_since = difficulty.elapsed - switch_time;
-                angle_before + elapsed_since * PLANETE_BOSS_ROTATION_SPEED
-            }
-            _ => difficulty.elapsed * base_speed,
-        };
-        transform.rotation = Quat::from_rotation_z(angle);
+        // Rotation lente constante
+        transform.rotation = Quat::from_rotation_z(difficulty.elapsed * PLANET_ROTATION_SPEED);
     }
 }

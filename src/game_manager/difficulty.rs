@@ -11,7 +11,6 @@ use std::collections::HashMap;
 
 use crate::game_manager::state::GameState;
 use crate::menu::pause::not_paused;
-use crate::ui::countdown::CountdownEvent;
 use bevy::prelude::*;
 
 /// Position de spawn d'un ennemi.
@@ -87,16 +86,9 @@ impl Plugin for DifficultyPlugin {
 pub struct Difficulty {
     pub elapsed: f32,
     pub factor: f32,
-    pub boss_music_played: bool,
-    /// Instant (elapsed) où la musique boss a été lancée.
-    pub boss_music_start_time: Option<f32>,
-    /// Instant (elapsed) où le boss est passé en Active (fin du flexing).
-    pub boss_active_time: Option<f32>,
     /// Vitesse du background indépendante de la difficulté.
     /// None = utilise le calcul basé sur factor. Some(v) = vitesse fixe décroissante.
     pub bg_speed_override: Option<f32>,
-    /// La grille 3×3 du background boss a été initialisée.
-    pub boss_bg_initialized: bool,
     /// Son landing.ogg joué (5s avant la fin de PLANET_ANIM_DURATION).
     pub landing_played: bool,
     /// Le boss a déjà été spawné (empêche le double spawn avec F3).
@@ -106,18 +98,11 @@ pub struct Difficulty {
     pub boss_seen_alive: bool,
     /// Le niveau est terminé — déclenche l'outro.
     pub level_complete: bool,
-    /// Son charging joué avant la phase 3 du vaisseau.
-    pub phase3_charging_played: bool,
-    /// Son boom joué au passage en phase 3 du vaisseau.
-    pub phase3_boom_played: bool,
 
     // ─── Communication Level → systèmes de jeu ─────────────────
     /// File de requêtes de spawn one-shot : (nom, quantité, position).
-    /// Ex: `("boss", 2, SpawnPosition::At(0.0, 50.0))` spawne 2 boss à (0, 50).
-    /// Consommées par le système de spawn de chaque ennemi.
     pub spawn_requests: Vec<(&'static str, usize, SpawnPosition)>,
     /// Spawners continus actifs : nom → (quantité par vague, intervalle, position).
-    /// Ex: `"green_ufo" → (4, 5.0, SpawnPosition::Top)` spawne 4 GreenUFOs/5s depuis le haut.
     pub active_spawners: HashMap<&'static str, (usize, f32, SpawnPosition)>,
     /// Instant (elapsed) où la décélération du background a commencé.
     pub bg_decel_start_elapsed: Option<f32>,
@@ -134,17 +119,11 @@ impl Default for Difficulty {
         Self {
             elapsed: 0.0,
             factor: 1.0,
-            boss_music_played: false,
-            boss_music_start_time: None,
-            boss_active_time: None,
             bg_speed_override: None,
-            boss_bg_initialized: false,
             landing_played: false,
             boss_spawned: false,
             boss_seen_alive: false,
             level_complete: false,
-            phase3_charging_played: false,
-            phase3_boom_played: false,
             spawn_requests: Vec::new(),
             active_spawners: HashMap::new(),
             bg_decel_start_elapsed: None,
@@ -167,26 +146,12 @@ fn reset_difficulty(mut difficulty: ResMut<Difficulty>) {
 }
 
 /// Met à jour la difficulté chaque frame.
-/// Les événements temporels sont maintenant gérés par `level.rs`.
+/// Les événements temporels sont gérés par `level.rs`.
 /// Ce système gère uniquement :
 /// - L'incrément du timer
-/// - Le countdown de la phase 3 (déclenché par la musique boss)
 /// - La décélération du background (déclenchée par le niveau)
-fn update_difficulty(
-    mut difficulty: ResMut<Difficulty>,
-    time: Res<Time>,
-    mut countdown_events: MessageWriter<CountdownEvent>,
-) {
+fn update_difficulty(mut difficulty: ResMut<Difficulty>, time: Res<Time>) {
     difficulty.elapsed += time.delta_secs();
-
-    // Countdown phase 3 : dès que la musique boss démarre
-    if let Some(_start) = difficulty.boss_music_start_time {
-        if !difficulty.phase3_charging_played {
-            difficulty.phase3_charging_played = true;
-            difficulty.phase3_boom_played = true;
-            countdown_events.write(CountdownEvent);
-        }
-    }
 
     // Décélération du background (déclenchée par le niveau via StartBgDeceleration)
     if let Some(decel_start) = difficulty.bg_decel_start_elapsed {

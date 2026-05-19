@@ -8,23 +8,20 @@
 //! - `pattern`      : liste de ShotAngle (angles relatifs en radians, 0 = droit devant)
 //! - `death_folder` : dossier optionnel de frames de mort du projectile
 //!
-//! Pour ajouter une arme : créer un `const WeaponDef` et l'assigner dans `update_player_weapon`.
-//! Le joueur passe automatiquement de Standard Missile à Red Projectile après 10 secondes.
+//! Le joueur démarre avec `RED_PROJECTILE` (default `Weapon`). Le deckbuilding
+//! pourra ultérieurement swap `weapon.def` via une carte. Les autres
+//! constantes (`STANDARD_MISSILE`, `BLUE_PROJECTILE`) restent disponibles
+//! comme palette d'armes ré-assignables.
 
-use crate::game_manager::difficulty::Difficulty;
-use crate::game_manager::state::GameState;
 use crate::geometry::shape::Shape;
-use crate::player::player::Player;
 use bevy::prelude::*;
 
 pub struct WeaponPlugin;
 
 impl Plugin for WeaponPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            update_player_weapon.run_if(in_state(GameState::Playing)),
-        );
+    fn build(&self, _app: &mut App) {
+        // Plugin gardé comme hook : le deckbuilding y branchera ses systèmes
+        // de modification d'arme quand il sera prêt.
     }
 }
 
@@ -38,7 +35,6 @@ pub struct ShotAngle(pub f32);
 // ─── WeaponDef ───────────────────────────────────────────────────────
 
 /// Définition complète d'une arme.
-/// Pour créer une nouvelle arme il suffit de définir une `const WeaponDef`.
 #[derive(Clone)]
 pub struct WeaponDef {
     pub name: &'static str,
@@ -49,16 +45,12 @@ pub struct WeaponDef {
     /// Intervalle entre deux tirs (secondes).
     pub fire_rate: f32,
     /// Pattern de tir : liste d'angles relatifs.
-    /// Un seul élément `[ShotAngle(0.0)]` = tir simple droit devant.
-    /// Trois éléments = éventail style fusil à pompe.
     pub pattern: &'static [ShotAngle],
     /// Dossier optionnel contenant les frames de mort du projectile.
-    /// Ex: "images/projectiles/death_missile/" avec frame_000.png, frame_001.png…
-    /// Si `None`, le projectile disparaît sans animation.
     pub death_folder: Option<&'static str>,
 }
 
-// ─── Armes ───────────────────────────────────────────────────────────
+// ─── Palette d'armes ─────────────────────────────────────────────────
 
 pub const STANDARD_MISSILE: WeaponDef = WeaponDef {
     name: "Standard Missile",
@@ -66,8 +58,8 @@ pub const STANDARD_MISSILE: WeaponDef = WeaponDef {
     hitbox: Shape::Circle(6.0),
     speed: 900.0,
     fire_rate: 0.2,
-    pattern: &[ShotAngle(0.0)], // tir unique droit devant
-    death_folder: None,         // disparaît sans animation
+    pattern: &[ShotAngle(0.0)],
+    death_folder: None,
 };
 
 pub const RED_PROJECTILE: WeaponDef = WeaponDef {
@@ -80,12 +72,11 @@ pub const RED_PROJECTILE: WeaponDef = WeaponDef {
     speed: 1100.0,
     fire_rate: 0.15,
     pattern: &[
-        // éventail fusil à pompe
-        ShotAngle(0.0),   //   central
-        ShotAngle(0.18),  //   gauche (~10°)
-        ShotAngle(-0.18), //   droite (~10°)
+        ShotAngle(0.0),
+        ShotAngle(0.18),
+        ShotAngle(-0.18),
     ],
-    death_folder: None, // pas d'animation de mort pour l'instant
+    death_folder: None,
 };
 
 pub const BLUE_PROJECTILE: WeaponDef = WeaponDef {
@@ -95,21 +86,22 @@ pub const BLUE_PROJECTILE: WeaponDef = WeaponDef {
         half_length: 32.0,
         half_width: 4.0,
     },
-    speed: 3300.0, // vitesse triplée par rapport à Red Projectile
+    speed: 3300.0,
     fire_rate: 0.15,
     pattern: &[
-        ShotAngle(0.0),   //   central
-        ShotAngle(0.12),  //   légèrement gauche
-        ShotAngle(-0.12), //   légèrement droite
-        ShotAngle(0.24),  //   gauche (~14°)
-        ShotAngle(-0.24), //   droite (~14°)
+        ShotAngle(0.0),
+        ShotAngle(0.12),
+        ShotAngle(-0.12),
+        ShotAngle(0.24),
+        ShotAngle(-0.24),
     ],
     death_folder: None,
 };
 
 // ─── Composant ───────────────────────────────────────────────────────
 
-/// Composant attaché au joueur qui indique son arme actuelle.
+/// Composant attaché au joueur qui indique son arme actuelle. `def` peut
+/// être swappé à la volée (ex: via le deckbuilding).
 #[derive(Component, Clone)]
 pub struct Weapon {
     pub def: WeaponDef,
@@ -118,28 +110,7 @@ pub struct Weapon {
 impl Default for Weapon {
     fn default() -> Self {
         Self {
-            def: STANDARD_MISSILE,
-        }
-    }
-}
-
-// ─── Système ─────────────────────────────────────────────────────────
-
-/// Met à jour l'arme du joueur selon la phase.
-fn update_player_weapon(difficulty: Res<Difficulty>, mut query: Query<&mut Weapon, With<Player>>) {
-    let boss_rotation_active = match difficulty.boss_music_start_time {
-        Some(start) => difficulty.elapsed >= start + 3.0,
-        None => false,
-    };
-
-    for mut weapon in query.iter_mut() {
-        if boss_rotation_active && weapon.def.name != BLUE_PROJECTILE.name {
-            weapon.def = BLUE_PROJECTILE;
-        } else if !boss_rotation_active
-            && difficulty.elapsed >= 10.0
-            && weapon.def.name != RED_PROJECTILE.name
-        {
-            weapon.def = RED_PROJECTILE;
+            def: RED_PROJECTILE,
         }
     }
 }

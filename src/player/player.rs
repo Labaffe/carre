@@ -1,11 +1,11 @@
-//! Joueur : spawn, mouvement ZQSD, rotation vers le réticule, animation par phase.
+//! Joueur : spawn, mouvement ZQSD, rotation vers le réticule.
 //!
-//! Phase 1 (0–10s)  : image statique ship_0.png, vitesse 200, Standard Missile.
-//! Phase 2 (10s+)   : animation phase_2/ (20 frames), vitesse 400, Red Projectile.
-//! Phase 3 (boss rotation) : animation phase_3/ (9 frames), vitesse 800, Blue Projectiles.
+//! Vitesse fixe (`PLAYER_SPEED`). La progression du joueur sera ultérieurement
+//! pilotée par le deckbuilding (cartes qui modifient vitesse, arme, etc.).
+//! L'ancien système de phases temporelles (Phase1/2/3 via timer + boss music)
+//! a été retiré.
 
-use crate::fx::explosion::load_frames_from_folder;
-use crate::game_manager::difficulty::{BoomEvent, Difficulty};
+use crate::game_manager::difficulty::BoomEvent;
 use crate::game_manager::state::GameState;
 use crate::level::level::{LevelConfig, LevelSetupSet};
 use crate::menu::pause::not_paused;
@@ -14,25 +14,33 @@ use crate::ui::crosshair::Crosshair;
 use crate::weapon::weapon::Weapon;
 use bevy::prelude::*;
 
-// ─── Système de vies ──────────────────────────────────────────────
+// ─── Constantes ────────────────────────────────────────────────────
 
-/// Nombre de vies au départ. Le joueur a un composant `Health` avec ce nombre
-/// de PV maximum (un hit = 1 PV).
+/// Nombre de vies au départ. `Health` avec ce nombre de PV maximum (un hit = 1 PV).
 pub const PLAYER_MAX_LIVES: i32 = 3;
 /// Durée d'invincibilité après un hit (secondes).
 pub const INVINCIBLE_DURATION: f32 = 2.0;
 /// Fréquence de clignotement pendant l'invincibilité (Hz).
 const INVINCIBLE_BLINK_RATE: f32 = 3.0;
-/// Fréquence de clignotement quand il reste 1 vie (Hz).
-const LAST_LIFE_BLINK_RATE: f32 = 3.0;
-/// Bonus de vitesse quand il reste 1 vie (multiplicateur).
-const LAST_LIFE_SPEED_MULT: f32 = 1.25;
+/// Vitesse de base du joueur (px/s). Constante tant que le deckbuilding
+/// n'intervient pas — bande "MATCHED" entre les ennemis lents et les
+/// projectiles, ratio ~1.14× kamikaze base, ~0.8× boss charge.
+pub const PLAYER_SPEED: f32 = 400.0;
+/// Marge bord d'écran pour empêcher le joueur de sortir.
+const PLAYER_MARGIN: f32 = 64.0;
+/// Durée du flash blanc autour du joueur lors d'un boom.
+const BOOM_FLASH_DURATION: f32 = 0.25;
+
+// ─── Composants ────────────────────────────────────────────────────
+
+#[derive(Component)]
+pub struct Player;
 
 /// Invincibilité temporaire après un hit.
 #[derive(Component)]
 pub struct Invincible(pub Timer);
 
-/// Marqueur pour les icônes de vie dans l'UI.
+/// Marqueur pour le conteneur UI des vies.
 #[derive(Component)]
 pub struct LivesUI;
 
@@ -40,86 +48,38 @@ pub struct LivesUI;
 #[derive(Component)]
 struct LifeIcon(i32);
 
+/// Flash blanc autour du vaisseau lors d'un boom.
+#[derive(Component)]
+struct BoomFlash(Timer);
+
+// ─── Plugin ────────────────────────────────────────────────────────
+
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, preload_ship_textures)
-            .add_systems(
-                OnEnter(GameState::Playing),
-                (setup_player, setup_lives_ui, update_ship_phase1_texture).after(LevelSetupSet),
+        app.add_systems(
+            OnEnter(GameState::Playing),
+            (setup_player, setup_lives_ui).after(LevelSetupSet),
+        )
+        .add_systems(OnExit(GameState::Playing), cleanup_lives_ui)
+        .add_systems(
+            Update,
+            (
+                movement,
+                rotate_towards_crosshair,
+                boom_flash_trigger,
+                boom_flash_update,
+                update_invincibility,
+                update_lives_ui,
             )
-            .add_systems(OnExit(GameState::Playing), cleanup_lives_ui)
-            .add_systems(
-                Update,
-                (
-                    movement,
-                    rotate_towards_crosshair,
-                    update_player_phase,
-                    animate_ship,
-                    boom_flash_trigger,
-                    boom_flash_update,
-                    update_invincibility,
-                    last_life_blink,
-                    update_lives_ui,
-                )
-                    .run_if(in_state(GameState::Playing))
-                    .run_if(not_paused),
-            );
+                .run_if(in_state(GameState::Playing))
+                .run_if(not_paused),
+        );
     }
 }
 
-#[derive(Component)]
-pub struct Player;
-
-/// Flash blanc autour du vaisseau lors d'un boom.
-const BOOM_FLASH_DURATION: f32 = 0.25;
-
-#[derive(Component)]
-struct BoomFlash(Timer);
-
-// ─── Phases du joueur ──────────────────────────────────────────────
-
-const PHASE_1_SPEED: f32 = 200.0;
-const PHASE_2_SPEED: f32 = 400.0;
-const PHASE_3_SPEED: f32 = 1000.0;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum PlayerPhase {
-    Phase1,
-    Phase2,
-    Phase3,
-}
-
-#[derive(Component)]
-pub struct ShipPhase {
-    pub phase: PlayerPhase,
-    pub speed: f32,
-    timer: Timer,
-    current_frame: usize,
-}
-
-// ─── Textures préchargées ──────────────────────────────────────────
-
-#[derive(Resource)]
-struct ShipTextures {
-    phase_1: Handle<Image>,
-    phase_2: Vec<Handle<Image>>,
-    phase_3: Vec<Handle<Image>>,
-}
-
-fn preload_ship_textures(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let phase_1 = asset_server.load("images/player_ship/ship_0.png");
-    let phase_2 = load_frames_from_folder(&asset_server, "images/player_ship/phase_2")
-        .expect("phase_2 folder missing or empty");
-    let phase_3 = load_frames_from_folder(&asset_server, "images/player_ship/phase_3")
-        .expect("phase_3 folder missing or empty");
-    commands.insert_resource(ShipTextures {
-        phase_1,
-        phase_2,
-        phase_3,
-    });
-}
+// ─── Spawn ─────────────────────────────────────────────────────────
 
 fn setup_player(
     mut commands: Commands,
@@ -144,139 +104,40 @@ pub fn spawn_player(
     ship_sprite: &'static str,
 ) {
     commands.spawn((
-        (Sprite { image: asset_server.load(ship_sprite), custom_size: Some(Vec2::new(128.0, 128.0)), ..default() }, Transform::from_xyz(0.0, start_y, 0.5)),
+        Sprite {
+            image: asset_server.load(ship_sprite),
+            custom_size: Some(Vec2::new(128.0, 128.0)),
+            ..default()
+        },
+        Transform::from_xyz(0.0, start_y, 0.5),
         Player,
         Health::new(PLAYER_MAX_LIVES),
         Weapon::default(),
-        ShipPhase {
-            phase: PlayerPhase::Phase1,
-            speed: PHASE_1_SPEED,
-            timer: Timer::from_seconds(0.1, TimerMode::Repeating),
-            current_frame: 0,
-        },
     ));
-}
-
-/// Met à jour la texture Phase1 dans ShipTextures pour correspondre au niveau en cours.
-fn update_ship_phase1_texture(
-    mut textures: ResMut<ShipTextures>,
-    asset_server: Res<AssetServer>,
-    config: Res<LevelConfig>,
-) {
-    textures.phase_1 = asset_server.load(config.player_ship);
-}
-
-// ─── Transition de phase ───────────────────────────────────────────
-
-fn update_player_phase(
-    difficulty: Res<Difficulty>,
-    textures: Res<ShipTextures>,
-    editor_test: Option<Res<crate::level::level::EditorTestEnemy>>,
-    mut query: Query<(&mut Sprite, &mut ShipPhase), With<Player>>,
-) {
-    let boss_rotation_active = match difficulty.boss_music_start_time {
-        Some(start) => difficulty.elapsed >= start + 3.0,
-        None => false,
-    };
-
-    for (mut sprite, mut ship) in query.iter_mut() {
-        let target_phase = if editor_test.is_some() {
-            PlayerPhase::Phase3
-        } else if boss_rotation_active {
-            PlayerPhase::Phase3
-        } else if difficulty.elapsed >= 10.0 {
-            PlayerPhase::Phase2
-        } else {
-            PlayerPhase::Phase1
-        };
-
-        if ship.phase != target_phase {
-            ship.phase = target_phase;
-            ship.current_frame = 0;
-            ship.timer.reset();
-
-            match target_phase {
-                PlayerPhase::Phase1 => {
-                    ship.speed = PHASE_1_SPEED;
-                    sprite.image = textures.phase_1.clone();
-                }
-                PlayerPhase::Phase2 => {
-                    ship.speed = PHASE_2_SPEED;
-                    sprite.image = textures.phase_2[0].clone();
-                }
-                PlayerPhase::Phase3 => {
-                    ship.speed = PHASE_3_SPEED;
-                    sprite.image = textures.phase_3[0].clone();
-                }
-            }
-        }
-    }
 }
 
 // ─── Mouvement ─────────────────────────────────────────────────────
 
-const PLAYER_MARGIN: f32 = 64.0;
-
 fn movement(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut query: Query<(&mut Transform, &ShipPhase), With<Player>>,
-    difficulty: Res<Difficulty>,
+    mut query: Query<&mut Transform, With<Player>>,
     windows: Query<&Window>,
-    editor_test: Option<Res<crate::level::level::EditorTestEnemy>>,
 ) {
-    if editor_test.is_none() && difficulty.elapsed < 1.0 {
-        return;
-    }
-
     let window = windows.single().unwrap();
     let half_w = window.width() / 2.0 - PLAYER_MARGIN;
     let half_h = window.height() / 2.0 - PLAYER_MARGIN;
 
-    let Ok((mut transform, ship)) = query.single_mut() else { return; };
+    let Ok(mut transform) = query.single_mut() else { return; };
     let mut direction = Vec3::ZERO;
 
-    if keyboard.pressed(KeyCode::KeyW) {
-        direction.y += 1.0;
-    }
-    if keyboard.pressed(KeyCode::KeyS) {
-        direction.y -= 1.0;
-    }
-    if keyboard.pressed(KeyCode::KeyA) {
-        direction.x -= 1.0;
-    }
-    if keyboard.pressed(KeyCode::KeyD) {
-        direction.x += 1.0;
-    }
+    if keyboard.pressed(KeyCode::KeyW) { direction.y += 1.0; }
+    if keyboard.pressed(KeyCode::KeyS) { direction.y -= 1.0; }
+    if keyboard.pressed(KeyCode::KeyA) { direction.x -= 1.0; }
+    if keyboard.pressed(KeyCode::KeyD) { direction.x += 1.0; }
 
-    transform.translation += direction.normalize_or_zero() * ship.speed * 0.016;
-
+    transform.translation += direction.normalize_or_zero() * PLAYER_SPEED * 0.016;
     transform.translation.x = transform.translation.x.clamp(-half_w, half_w);
     transform.translation.y = transform.translation.y.clamp(-half_h, half_h);
-}
-
-// ─── Animation ─────────────────────────────────────────────────────
-
-fn animate_ship(
-    time: Res<Time>,
-    textures: Res<ShipTextures>,
-    mut query: Query<(&mut Sprite, &mut ShipPhase), With<Player>>,
-) {
-    for (mut sprite, mut ship) in query.iter_mut() {
-        if ship.phase == PlayerPhase::Phase1 {
-            continue;
-        }
-
-        ship.timer.tick(time.delta());
-        if ship.timer.just_finished() {
-            let frames = match ship.phase {
-                PlayerPhase::Phase1 => continue,
-                PlayerPhase::Phase2 => &textures.phase_2,
-                PlayerPhase::Phase3 => &textures.phase_3,
-            };
-            ship.current_frame = (ship.current_frame + 1) % frames.len();
-            sprite.image = frames[ship.current_frame].clone();
-        }
-    }
 }
 
 // ─── Rotation vers le réticule ─────────────────────────────────────
@@ -348,39 +209,10 @@ fn update_invincibility(
             sprite.color = Color::WHITE;
             commands.entity(entity).remove::<Invincible>();
         } else {
-            // Clignotement rapide : alternance visible/semi-transparent
             let blink =
                 (inv.0.elapsed_secs() * INVINCIBLE_BLINK_RATE * std::f32::consts::TAU).sin();
             let alpha = if blink > 0.0 { 1.0 } else { 0.0 };
             sprite.color = Color::srgba(1.0, 1.0, 1.0, alpha);
-        }
-    }
-}
-
-// ─── Dernière vie : clignotement continu + boost vitesse ──────────
-
-fn last_life_blink(
-    difficulty: Res<Difficulty>,
-    mut query: Query<(&Health, &mut Sprite, &mut ShipPhase, Option<&Invincible>), With<Player>>,
-) {
-    for (health, mut sprite, mut ship, invincible) in query.iter_mut() {
-        // Boost de vitesse à 1 vie
-        let base_speed = match ship.phase {
-            PlayerPhase::Phase1 => PHASE_1_SPEED,
-            PlayerPhase::Phase2 => PHASE_2_SPEED,
-            PlayerPhase::Phase3 => PHASE_3_SPEED,
-        };
-        if health.current == 1 {
-            ship.speed = base_speed * LAST_LIFE_SPEED_MULT;
-        } else {
-            ship.speed = base_speed;
-        }
-
-        // Clignotement dernière vie (style boss touché) — skip si déjà en invincibilité
-        if health.current == 1 && invincible.is_none() {
-            let t = (difficulty.elapsed * LAST_LIFE_BLINK_RATE * std::f32::consts::TAU).sin();
-            let v = 1.0 + (t * 0.5 + 0.5) * 2.0; // pulse entre 1.0 et 3.0
-            sprite.color = Color::srgba(v, v, v, 1.0);
         }
     }
 }
@@ -396,15 +228,13 @@ fn setup_lives_ui(
 
     commands
         .spawn((
-            (
             Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(20.0),
-                    left: Val::Px(20.0),
-                    column_gap: Val::Px(12.0),
-                    ..default()
-                },
-        ),
+                position_type: PositionType::Absolute,
+                top: Val::Px(20.0),
+                left: Val::Px(20.0),
+                column_gap: Val::Px(12.0),
+                ..default()
+            },
             LivesUI,
         ))
         .with_children(|parent| {
