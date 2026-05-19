@@ -37,10 +37,8 @@ pub struct Planet;
 
 // ─── Constantes background ─────────────────────────────────────────
 
-/// Largeur d'une tile de background (px).
-const BG_TILE_WIDTH: f32 = 5796.0;
-/// Hauteur d'une tile de background (px).
-const BG_TILE_HEIGHT: f32 = 1534.0;
+/// Hauteur d'une tile de background (px). Asset `space_background.png` (2048×1536).
+const BG_TILE_HEIGHT: f32 = 1536.0;
 
 fn setup_background(
     mut commands: Commands,

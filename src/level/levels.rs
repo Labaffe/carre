@@ -57,7 +57,7 @@ pub struct LevelDef {
 pub const LEVEL_SPACE_INVADER: LevelDef = LevelDef {
     name: "Space Invader",
     player_ship: "images/player_ship/ship_0.png",
-    background_tile: "images/backgrounds/space_background_tile.png",
+    background_tile: "images/backgrounds/space_background.png",
     scroll_direction: ScrollDirection::Down,
 };
 
@@ -66,7 +66,7 @@ pub const LEVEL_SPACE_INVADER: LevelDef = LevelDef {
 pub const LEVEL_MOTHERSHIP: LevelDef = LevelDef {
     name: "MotherShip",
     player_ship: "images/player_ship/ship_1.png",
-    background_tile: "images/backgrounds/space_background_tile_2.png",
+    background_tile: "images/backgrounds/space_background.png",
     scroll_direction: ScrollDirection::Left,
 };
 
