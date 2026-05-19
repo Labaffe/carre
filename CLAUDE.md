@@ -68,3 +68,23 @@ cargo run -p sfxgen -- all   # régénérer la banque SFX 8-bit
 - **Sons** : passer par `SfxPlayer` + enum `Sfx`, pas de path string hardcodé. Voir [docs/audio.md](docs/audio.md).
 - **Bevy SystemParam** : 16 params max par système. Bundler dans `#[derive(SystemParam)]` au besoin.
 - **Animations sprites** : `Animation::new(name, duration)` boucle par défaut. Chaîner `.one_shot()` pour s'arrêter sur la dernière frame. Chaque dossier d'`AnimBank` = une animation autonome.
+
+## Modules fondateurs — NE PAS MODIFIER sans demander
+
+Certains modules constituent les **briques de base** du projet, écrites par l'équipe (notamment l'ami contributeur). Tu peux les *utiliser* librement, mais tu ne dois **PAS modifier, refactorer, étendre ou ajouter des fonctionnalités** dans ces modules sans poser une question claire à l'utilisateur d'abord et obtenir un OK explicite.
+
+Cette règle s'applique à :
+
+- [src/deckbuilding/](src/deckbuilding/) — système de cartes (card_hand, card_played, card_deck, layout, etc.)
+- [src/environment/](src/environment/) **uniquement la partie clouds** — système de nuages procéduraux
+- [src/tweening/](src/tweening/) — animations UI (tween, plugin, component)
+- [src/movement/](src/movement/) — moteur de déplacement (Movements, Chase, Translate, Oscilate, Spin, Goto, etc.)
+- [src/behavior/](src/behavior/) — BehaviorTree générique (ordered_list, choice_list, parallel_node_list, component_container, etc.)
+
+**Concrètement** :
+- ✅ Tu peux *appeler* `Chase::new(speed)`, `BehaviorBuilder::choice()`, `Tween::new(...)`, etc. depuis du code consommateur (ennemis, items, UI…)
+- ✅ Tu peux *lire* leur code pour comprendre comment ils marchent
+- ❌ Tu ne dois pas modifier leur signature, ajouter un champ, changer leur comportement, ajouter un nouveau type de mouvement/behavior/tween, refactorer leur API
+- ❌ Si tu penses qu'il faut une nouvelle primitive (ex: un nouveau type de `Movement`), **arrête-toi et demande** avant d'écrire la moindre ligne
+
+Si un besoin réel apparaît (un cas légitime nécessite une primitive manquante), formule la question : "Pour faire X, j'aurais besoin d'ajouter Y dans `src/movement/` — est-ce qu'on touche à ce module ou je trouve un autre chemin ?". L'utilisateur arbitrera.
