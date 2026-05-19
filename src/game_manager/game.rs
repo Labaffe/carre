@@ -125,7 +125,7 @@ pub enum LevelPhaseKind {
         elapsed: f32,
         /// Durée de l'animation du vaisseau (= durée du son).
         duration: f32,
-        sound: &'static str,
+        sound: crate::audio::Sfx,
         sound_played: bool,
         /// Le son d'intro a fini de jouer (entité IntroSound despawnée).
         sound_finished: bool,
@@ -174,7 +174,7 @@ pub struct IntroConfig {
     /// Durée de l'animation d'entrée du vaisseau (= durée du son).
     pub duration: f32,
     /// Son joué pendant l'intro.
-    pub sound: &'static str,
+    pub sound: crate::audio::Sfx,
     /// Ratio pour calculer la position cible.
     /// Pour Down : target_y = half_h * ratio (ex: -0.5 → bas de l'écran).
     /// Pour Left : target_x = half_w * ratio (ex: -0.5 → gauche de l'écran).
@@ -186,7 +186,7 @@ pub fn level_intro(level: usize) -> IntroConfig {
     match level {
         _ => IntroConfig {
             duration: 5.0,
-            sound: "audio/sfx/landing.ogg",
+            sound: crate::audio::Sfx::ShipArrival,
             spawn_ratio: -0.5,
         },
     }
@@ -208,6 +208,7 @@ fn level_phase_system(
     level_phase: Option<ResMut<LevelPhase>>,
     intro_sound_q: Query<Entity, With<IntroSound>>,
     config: Res<LevelConfig>,
+    mut sfx: crate::audio::SfxPlayer,
 ) {
     let Some(mut level_phase) = level_phase else {
         return;
@@ -277,10 +278,7 @@ fn level_phase_system(
             // Jouer le son une seule fois (avec marqueur IntroSound)
             if !*sound_played {
                 *sound_played = true;
-                commands.spawn((
-                    (AudioPlayer::new(asset_server.load(*sound)), PlaybackSettings::DESPAWN),
-                    IntroSound,
-                ));
+                sfx.play(*sound).insert(IntroSound);
             }
 
             // Détecter la fin du son (entité IntroSound despawnée par Bevy)

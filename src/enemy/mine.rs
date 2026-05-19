@@ -18,6 +18,7 @@ use std::time::Duration;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
+use crate::audio::{Sfx, SfxPlayer};
 use crate::behavior::BehaviorBuilder;
 use crate::behavior::behavior::BehaviorComponent;
 use crate::behavior::choice_list::TransitionMessages;
@@ -50,10 +51,6 @@ const MINE_BLINK_PERIOD: f32 = 0.25;
 /// explosion à 1.5s.
 const MINE_BEEP_INTERVAL: f32 = 0.5;
 const MINE_BEEP_COUNT: u8 = 3;
-/// Son de chaque bip du countdown — réutilise le "t_1" du 3-2-1 du niveau 1.
-const MINE_BEEP_SOUND: &str = "audio/sfx/t_1.ogg";
-/// Son joué quand la mine explose.
-const MINE_EXPLOSION_SOUND: &str = "audio/sfx/bomb.ogg";
 /// Durée par frame de l'animation idle de la mine (secondes).
 const MINE_FRAME_DURATION: f32 = 0.15;
 
@@ -191,7 +188,7 @@ impl EnemyBuilder for MineBuilder {
 /// indépendante, puis despawn la mine.
 pub fn mine_explode_system(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
+    mut sfx: SfxPlayer,
     query: Query<(Entity, &Transform), With<MineExplode>>,
 ) {
     for (entity, transform) in &query {
@@ -201,10 +198,7 @@ pub fn mine_explode_system(
             Shape::Circle(MINE_AOE_RADIUS),
             MINE_AOE_LIFETIME,
         );
-        commands.spawn((
-            AudioPlayer::new(asset_server.load(MINE_EXPLOSION_SOUND)),
-            PlaybackSettings::DESPAWN,
-        ));
+        sfx.play(Sfx::MineExplode);
         commands.entity(entity).try_despawn();
     }
 }
@@ -214,8 +208,7 @@ pub fn mine_explode_system(
 /// `while` (et non `if`) pour rattraper plusieurs intervalles si un frame
 /// très lourd skip plus de `MINE_BEEP_INTERVAL` d'un coup.
 pub fn mine_countdown_audio(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
+    mut sfx: SfxPlayer,
     time: Res<Time>,
     mut q: Query<&mut MineCountdownAudio>,
 ) {
@@ -225,10 +218,7 @@ pub fn mine_countdown_audio(
         while audio.beeps_played < MINE_BEEP_COUNT
             && (audio.beeps_played as f32) * MINE_BEEP_INTERVAL <= audio.elapsed
         {
-            commands.spawn((
-                AudioPlayer::new(asset_server.load(MINE_BEEP_SOUND)),
-                PlaybackSettings::DESPAWN,
-            ));
+            sfx.play(Sfx::MineBeep);
             audio.beeps_played += 1;
         }
     }

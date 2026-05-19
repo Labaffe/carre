@@ -1,8 +1,11 @@
+[workspace]
+members = [".", "tools/sfxgen"]
+
 [package]
 name = "carre"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = "0.18"
+bevy = { version = "0.18", features = ["wav"] }
 fastrand = "2.0"

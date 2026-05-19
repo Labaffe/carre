@@ -1,6 +1,7 @@
 //! Collision joueur ↔ entités hostiles (astéroïdes, ennemis, projectiles ennemis).
 //! Tout objet implémentant le trait `Hittable` peut blesser le joueur au contact.
 
+use crate::audio::{Sfx, SfxPlayer};
 use crate::debug::debug::DebugMode;
 use crate::enemy::asteroid::Asteroid;
 use crate::enemy::enemy::Enemy;
@@ -90,6 +91,7 @@ fn player_collision<T: Hittable>(
     hostile_q: Query<(Entity, &Transform, &T), Without<Harmless>>,
     debug: Res<DebugMode>,
     asset_server: Res<AssetServer>,
+    mut sfx: SfxPlayer,
 ) {
     if debug.0 {
         return;
@@ -130,13 +132,7 @@ fn player_collision<T: Hittable>(
 
             health.take_damage(1);
 
-            commands.spawn((
-                AudioPlayer::new(asset_server.load("audio/sfx/hurt.ogg")),
-                PlaybackSettings {
-                    volume: bevy::audio::Volume::Linear(3.0),
-                    ..PlaybackSettings::DESPAWN
-                },
-            ));
+            sfx.play_at(Sfx::PlayerHurt, 3.0);
 
             if health.is_dead() {
                 if let Ok(mut e) = commands.get_entity(player_entity) {

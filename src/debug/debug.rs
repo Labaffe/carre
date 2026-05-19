@@ -128,6 +128,7 @@ fn toggle_debug(
     mut boom_events: MessageWriter<crate::game_manager::difficulty::BoomEvent>,
     mut countdown_events: MessageWriter<crate::ui::countdown::CountdownEvent>,
     asset_server: Res<AssetServer>,
+    sfx_library: Res<crate::audio::SfxLibrary>,
 ) {
     if keyboard.just_pressed(KeyCode::F2) {
         // Nettoyer les entités en jeu
@@ -159,6 +160,7 @@ fn toggle_debug(
                         &mut countdown_events,
                         &mut difficulty,
                         &music_q,
+                        &sfx_library,
                     );
                 }
             }

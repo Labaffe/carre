@@ -4,6 +4,7 @@
 //! **Phase boss** (3 s après boss.ogg) : grille 3×3 qui scroll ET tourne
 //! en même temps que la planète, simulant une orbite.
 
+use crate::audio::{Sfx, SfxPlayer};
 use crate::game_manager::difficulty::Difficulty;
 use crate::game_manager::state::GameState;
 use crate::level::level::{LevelConfig, LevelSetupSet};
@@ -221,6 +222,7 @@ fn animate_planet(
     mut difficulty: ResMut<Difficulty>,
     windows: Query<&Window>,
     mut planet_q: Query<&mut Transform, With<Planet>>,
+    mut sfx: SfxPlayer,
 ) {
     // Apparition contrôlée par le système de niveau
     let planet_appear_time = match difficulty.planet_appear_elapsed {
@@ -232,7 +234,7 @@ fn animate_planet(
     let landing_time = planet_appear_time + PLANET_ANIM_DURATION - 6.3;
     if difficulty.elapsed >= landing_time && !difficulty.landing_played {
         difficulty.landing_played = true;
-        commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/landing.ogg")), PlaybackSettings::DESPAWN));
+        sfx.play(Sfx::PlanetLanding);
     }
 
     if difficulty.elapsed < planet_appear_time {

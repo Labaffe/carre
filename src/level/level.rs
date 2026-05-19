@@ -110,8 +110,8 @@ pub enum Action {
     SetDifficulty(f32),
 
     // ─── Audio ──────────────────────────────────────────────────
-    /// Joue un son one-shot.
-    PlaySound(&'static str),
+    /// Joue un SFX one-shot via la banque centralisée.
+    PlaySound(crate::audio::Sfx),
     /// Lance la musique de jeu en boucle.
     StartMusic(&'static str),
     /// Arrête la musique principale.
@@ -326,9 +326,8 @@ impl Action {
     pub fn short_name(&self) -> String {
         match self {
             Action::SetDifficulty(f) => format!("Diff({})", f),
-            Action::PlaySound(p) => {
-                let name = p.rsplit('/').next().unwrap_or(p);
-                format!("Sound({})", name)
+            Action::PlaySound(sfx_id) => {
+                format!("Sound({:?})", sfx_id)
             }
             Action::StartMusic(p) => {
                 let name = p.rsplit('/').next().unwrap_or(p);
@@ -421,7 +420,7 @@ pub fn build_level_1() -> Vec<LevelStep> {
             .with(Action::Log("Niveau 1 démarré")),
         // ─── Countdown (7-10s) ──────────────────────────────────
         LevelStep::at(7.0, "countdown")
-            .with(Action::PlaySound("audio/sfx/t_ready.ogg"))
+            .with(Action::PlaySound(crate::audio::Sfx::UiCountdownReady))
             .with(Action::StartCountdown),
         // Note : le countdown envoie un BoomEvent au "GO!" (10s)
 
@@ -445,15 +444,15 @@ pub fn build_level_1() -> Vec<LevelStep> {
             )),
         LevelStep::at(14.3, "boom_1")
             .with(Action::SetDifficulty(4.5))
-            .with(Action::PlaySound("audio/sfx/t_go.wav"))
+            .with(Action::PlaySound(crate::audio::Sfx::UiCountdownGo))
             .with(Action::SendBoom),
         LevelStep::at(18.3, "boom_2")
             .with(Action::SetDifficulty(6.5))
-            .with(Action::PlaySound("audio/sfx/t_go.wav"))
+            .with(Action::PlaySound(crate::audio::Sfx::UiCountdownGo))
             .with(Action::SendBoom),
         LevelStep::at(22.6, "boom_3")
             .with(Action::SetDifficulty(7.5))
-            .with(Action::PlaySound("audio/sfx/t_go.wav"))
+            .with(Action::PlaySound(crate::audio::Sfx::UiCountdownGo))
             .with(Action::SendBoom),
         // ─── Transition vers le boss ────────────────────────────
         LevelStep::at(27.7, "pre_boss")
@@ -565,6 +564,7 @@ fn run_level(
     mut countdown_events: MessageWriter<crate::ui::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
     level_phase: Option<Res<crate::game_manager::game::LevelPhase>>,
+    sfx_library: Res<crate::audio::SfxLibrary>,
 ) {
     // Ne faire tourner les LevelSteps que pendant la phase Running
     let Some(ref phase) = level_phase else { return };
@@ -612,6 +612,7 @@ fn run_level(
                 &mut countdown_events,
                 &mut difficulty,
                 &music_q,
+                &sfx_library,
             );
         }
 
@@ -631,13 +632,17 @@ pub(crate) fn execute_action(
     countdown_events: &mut MessageWriter<crate::ui::countdown::CountdownEvent>,
     difficulty: &mut ResMut<Difficulty>,
     music_q: &Query<Entity, With<crate::MusicMain>>,
+    sfx_library: &crate::audio::SfxLibrary,
 ) {
     match action {
         Action::SetDifficulty(factor) => {
             difficulty.factor = *factor;
         }
-        Action::PlaySound(path) => {
-            commands.spawn((AudioPlayer::new(asset_server.load(*path)), PlaybackSettings::DESPAWN));
+        Action::PlaySound(sfx_id) => {
+            commands.spawn((
+                AudioPlayer::new(sfx_library.get(*sfx_id)),
+                PlaybackSettings::DESPAWN,
+            ));
         }
         Action::StartMusic(path) => {
             commands.spawn((
@@ -703,6 +708,7 @@ fn process_level_action_events(
     mut boom_events: MessageWriter<BoomEvent>,
     mut countdown_events: MessageWriter<crate::ui::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
+    sfx_library: Res<crate::audio::SfxLibrary>,
 ) {
     for event in events.read() {
         for action in &event.0 {
@@ -715,6 +721,7 @@ fn process_level_action_events(
                 &mut countdown_events,
                 &mut difficulty,
                 &music_q,
+                &sfx_library,
             );
         }
     }

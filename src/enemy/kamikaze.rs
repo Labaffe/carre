@@ -21,6 +21,7 @@ use std::time::Duration;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
+use crate::audio::{Sfx, SfxPlayer};
 use crate::behavior::BehaviorBuilder;
 use crate::behavior::behavior::BehaviorComponent;
 use crate::behavior::choice_list::TransitionMessages;
@@ -68,8 +69,6 @@ const KAMIKAZE_EXPLODE_FRAME_COUNT: f32 = 11.0;
 /// se termine à la frame finale exactement quand le boom se déclenche.
 const KAMIKAZE_COUNTDOWN_DURATION: f32 =
     KAMIKAZE_FRAME_DURATION * KAMIKAZE_EXPLODE_FRAME_COUNT;
-/// Son joué à l'explosion.
-const KAMIKAZE_EXPLOSION_SOUND: &str = "audio/sfx/bomb.ogg";
 
 static KAMIKAZE_DROP_TABLE: [(ItemType, f32); 2] =
     [(ItemType::Bomb, 0.10), (ItemType::BonusScore, 0.15)];
@@ -82,6 +81,12 @@ pub struct Kamikaze;
 /// l'`Added` et déclenche AOE + son + reset couleur — une seule fois.
 #[derive(Component, Clone)]
 pub struct KamikazeBoom;
+
+/// Inséré à l'entrée de l'état armed. `kamikaze_warn_system` détecte l'`Added`
+/// et joue le son d'alerte — une seule fois par kamikaze, au moment où il
+/// devient dangereux pour le joueur.
+#[derive(Component, Clone)]
+pub struct KamikazeArmed;
 
 /// Tick l'âge du kamikaze et applique un déplacement additionnel vers le
 /// joueur dont la magnitude grandit avec l'âge. S'additionne au `Chase` de
@@ -141,7 +146,8 @@ impl EnemyBuilder for KamikazeBuilder {
             ));
 
         // Phase 1 : countdown. Chase continue, BlinkRed actif, animation
-        // d'explosion joue 004→014 sur toute la durée. Quand l'animation
+        // d'explosion joue 004→014 sur toute la durée. Le marker `KamikazeArmed`
+        // déclenche le son d'alerte (one-shot via `Added`). Quand l'animation
         // termine (= countdown terminé), `on_complete("boom")` → phase 2.
         let armed = BehaviorBuilder::first(
             Duration::from_secs_f32(KAMIKAZE_COUNTDOWN_DURATION),
@@ -152,6 +158,7 @@ impl EnemyBuilder for KamikazeBuilder {
                 .with(BehaviorBuilder::from_component(BlinkRed::new(
                     KAMIKAZE_BLINK_PERIOD,
                 )))
+                .with(BehaviorBuilder::from_component(KamikazeArmed))
                 .with(BehaviorBuilder::from_component(
                     Animation::new("kamikaze_explode", frame_dur).one_shot(),
                 )),
@@ -234,7 +241,7 @@ pub fn kamikaze_speed_ramp_system(
 /// despawn le kamikaze. Une seule fois par entité grâce à `Added`.
 pub fn kamikaze_boom_system(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
+    mut sfx: SfxPlayer,
     query: Query<(Entity, &Transform), Added<KamikazeBoom>>,
 ) {
     for (entity, transform) in &query {
@@ -244,10 +251,18 @@ pub fn kamikaze_boom_system(
             Shape::Circle(KAMIKAZE_AOE_RADIUS),
             KAMIKAZE_AOE_LIFETIME,
         );
-        commands.spawn((
-            AudioPlayer::new(asset_server.load(KAMIKAZE_EXPLOSION_SOUND)),
-            PlaybackSettings::DESPAWN,
-        ));
+        sfx.play(Sfx::Explosion);
         commands.entity(entity).try_despawn();
+    }
+}
+
+/// Détecte `Added<KamikazeArmed>` : joue le son d'alerte une fois quand le
+/// kamikaze entre en phase armed.
+pub fn kamikaze_warn_system(
+    mut sfx: SfxPlayer,
+    query: Query<(), Added<KamikazeArmed>>,
+) {
+    for _ in &query {
+        sfx.play(Sfx::KamikazeWarn);
     }
 }
