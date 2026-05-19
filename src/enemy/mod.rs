@@ -70,8 +70,16 @@ impl Plugin for EnemyPlugin {
                     .run_if(not_paused),
             ).add_systems(
                 Update,
-                ( detect_death,despawn)
-                    .run_if(in_state(GameState::Playing)),
+                detect_death.run_if(in_state(GameState::Playing)),
+            )
+            // despawn dans PostUpdate : garantit que toutes les commandes
+            // queuées par update_behavior (cascade de remove::<C> quand un
+            // ennemi entre en dying) flushent AVANT le try_despawn. Sinon
+            // race condition : try_despawn s'applique en premier, les
+            // remove::<C> suivants tapent une entité invalide → panic.
+            .add_systems(
+                PostUpdate,
+                despawn.run_if(in_state(GameState::Playing)),
             )
             ;
     }
