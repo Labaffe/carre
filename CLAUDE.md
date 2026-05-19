@@ -1,41 +1,39 @@
 # Carré — Jeu Bevy 2D
 
-Shoot'em up vertical en Rust avec le moteur [Bevy](https://bevyengine.org/) (v0.13).
+Shoot'em up vertical en Rust avec [Bevy](https://bevyengine.org/) 0.18.
 
-## Stack technique
+## Stack
 
-- **Langage** : Rust (edition 2024)
-- **Moteur** : Bevy 0.13
-- **Plateforme** : Windows
+- Rust edition 2024, Bevy 0.18 (feature `wav` activée), `fastrand`
+- Plateforme : Windows
+- Workspace : crate principal `carre` + outil `tools/sfxgen`
 
 ## Structure
 
 ```
 src/
-  main.rs        — point d'entrée, enregistrement des plugins
-  state.rs       — GameState (MainMenu, Playing, LevelTransition, GameOver)
-  game.rs        — progression multi-niveaux, outro (freeze + musique + victoire)
-  player.rs      — joueur, vies, invincibilité
-  missile.rs     — tir et collision missiles/astéroïdes
-  weapon.rs      — définition des hitboxes (Circle, Rect)
-  asteroid.rs    — astéroïdes (spawn, mouvement, rotation, drop table)
-  enemy.rs       — framework générique ennemi (composants, systèmes réutilisables)
-  enemies.rs     — registre central de tous les ennemis (EnemyDef, PhaseDef, PatternDef)
-  boss.rs        — boss : systèmes spécifiques (intro, flexing, transition, charge, musique)
-  green_ufo.rs   — GreenUFO : ennemi simple (rush/idle, mort instantanée)
-  collision.rs   — collision joueur ↔ entités hostiles (trait Hittable)
-  explosion.rs   — animations d'explosion
-  item.rs        — items (drop, animation, ramassage), bombes, bonus score
-  level.rs       — timeline déclarative du niveau (LevelStep, Trigger, Action, LevelRunner)
-  difficulty.rs  — ressource Difficulty (hub de communication level → systèmes de jeu)
-  countdown.rs   — countdown "3-2-1-GO" avec animations pop
-  background.rs  — scrolling de fond, planète
-  mainmenu.rs    — menu principal (Commencer, Niveaux, Paramètres, Quitter)
-  gameover.rs    — écran game over
-  pause.rs       — pause (Echap), run condition not_paused()
-  crosshair.rs   — viseur
-  score.rs       — score du joueur, UI
-  debug.rs       — overlay debug (F1), skip (F2/F3/F4), hitboxes, timeline niveau
+  audio/         — banque centralisée des SFX (enum Sfx, SfxLibrary, SfxPlayer)
+  behavior/     — BehaviorTree générique (ordered, choice, parallel, weighted)
+  debug/        — overlay debug (F1), skips (F2/F3/F4), hitboxes, timeline
+  deckbuilding/ — système de cartes (deck, hand)
+  editor/       — mode test d'ennemis (lance un ennemi seul)
+  enemy/        — framework ennemi + modules spécifiques (boss, mine, kamikaze, etc.)
+  environment/  — background scrolling, planète
+  fx/           — explosions, animations
+  game_manager/ — GameState, GameProgress, intro/outro, Difficulty (hub)
+  geometry/     — Shape (Circle, Rect), helpers de collision
+  item/         — items (drop, ramassage), bombes
+  level/        — timeline déclarative (LevelStep, Action, LevelRunner)
+  menu/         — main menu, pause, level select, game over
+  movement/     — Movements + stratégies (Chase, Translate, Oscilate, etc.)
+  physic/       — health, collision, AOE, invulnerable, harmless, player_detection
+  player/       — joueur, vies, phases ship, invincibilité
+  tweening/     — animations UI
+  ui/           — score, countdown, crosshair
+  weapon/       — armes, projectiles, tir joueur
+tools/sfxgen/   — générateur de SFX 8-bit (binaire séparé)
+assets/         — images, sons, polices
+docs/           — documentation détaillée (voir ci-dessous)
 ```
 
 ## Contrôles
@@ -43,311 +41,30 @@ src/
 | Action | Touches |
 |--------|---------|
 | Déplacement | ZQSD |
-| Tir | Automatique |
+| Tir | Souris gauche |
 | Bombe | Espace (si disponible) |
-| Pause | Echap |
-| Debug | F1 (overlay + timeline), F2 (skip astéroïdes), F3 (skip au boss), F4 (win niveau) |
-
-## Framework ennemi — Machine à état
-
-Le framework `enemy.rs` fournit une machine à état générique pour tous les ennemis :
-
-```
-Entering ──→ Flexing ──→ Idle ──→ Active(0) ──┬──→ Transitioning(1) ──→ Active(1) ──→ …
-                                               └──→ Dying ──→ Dead
-```
-
-| État | Description | Vulnérable | Dangereux |
-|------|-------------|------------|-----------|
-| `Entering` | Animation d'arrivée (optionnelle) | Non | Non |
-| `Flexing` | Animation post-arrivée (optionnelle) | Non | Non |
-| `Idle` | Attente avant le combat (optionnelle), animation idle, immobile | Non | Non |
-| `Active(n)` | Phase de combat n, patterns actifs | Oui | Oui |
-| `Transitioning(n)` | Animation de transition vers la phase n (shake + flash, pas d'explosions). Géré par le module spécifique de l'ennemi. | Non | Non |
-| `Dying` | Animation de mort (shake, flash, explosions) | Non | Non |
-| `Dead` | Entité despawnée | — | — |
-
-**Phases** : chaque ennemi définit une liste de `PhaseDef` dans `enemies.rs`. Une phase a ses propres PV, sa liste de patterns, et un flag `has_transition`. Quand les PV tombent à 0 :
-- Si `has_transition = true` → entre en `Transitioning(next)`, l'animation est gérée par le module spécifique de l'ennemi
-- Si `has_transition = false` → passage direct à `Active(next)` ou `Dying` si dernière phase
-
-**Patterns** : chaque `PatternDef` a un nom et une durée. Le pattern executor cycle à travers la liste et reprogramme le timer avec la durée du prochain pattern. Un pattern peut aussi se terminer par un événement (ex: la charge du boss se termine au contact du mur).
-
-**Systèmes génériques** (dans `EnemyPlugin`) :
-- Dégâts missile → ennemi (uniquement en `Active`)
-- Flash blanc au hit
-- Transition de phase (0 PV → phase suivante, transition ou mort)
-- Animation de mort (shake + explosions)
-- Déplacement des projectiles ennemis
-- Mouvement patrol sinusoïdal
-
-**Ajouter un nouvel ennemi** :
-1. Définir ses `PhaseDef` et son `EnemyDef` dans `enemies.rs`
-2. Créer un module avec ses systèmes spécifiques (intro, patterns)
-3. Si `has_transition = true`, implémenter les systèmes de transition dans le module spécifique
-4. Les systèmes génériques fonctionnent automatiquement
-
-Un ennemi simple peut spawner directement en `Active(0)` sans passer par `Entering`/`Flexing`.
-
-**La machine à état est entièrement optionnelle.** Un ennemi peut utiliser tous les états ou seulement une partie :
-
-| Ennemi | États utilisés | Mort |
-|--------|---------------|------|
-| **Boss** | `Entering` → `Flexing` → `Idle` → `Active(0)` → `Transitioning(1)` → `Active(1)` → `Transitioning(2)` → `Active(2)` → `Dying` → `Dead` | Longue (4s, shake + explosions + flexing accéléré) |
-| **GreenUFO** | `Active(0)` → `Dying` → `Dead` | Instantanée (explosion style astéroïde) |
-
-### Boss — Difficulté progressive par phase
-
-Le boss a 3 phases de 100 PV chacune (300 PV total). La difficulté augmente à chaque phase :
-
-| Paramètre | Phase 1 | Phase 2 | Phase 3 |
-|-----------|---------|---------|---------|
-| Vitesse de charge | 1500 | 2000 | 2500 |
-| Vitesse de patrol X | 200 | 270 | 270 |
-| Durée patrol avant charge | 5.0s | 4.0s | 3.0s |
-| UFOs en transition | — | 2 | 4 |
-
-Les valeurs sont dans des tableaux indexés par phase : `BOSS_CHARGE_SPEEDS`, `BOSS_PATROL_SPEEDS_X`, `BOSS_TRANSITION_UFO_COUNT` (dans `boss.rs`).
-
-## Système d'items
-
-Le fichier `item.rs` gère les items droppés par les entités mortes. Architecture event-driven :
-
-1. Une entité avec `DropTable` meurt → `DropEvent` émis
-2. `process_drop_events` spawne les items (sprite animé, descente)
-3. Le joueur touche un item → effet appliqué + son + despawn
-
-**Types d'items :**
-
-| Item | Effet | Animation | Son apparition | Son ramassage |
-|------|-------|-----------|----------------|---------------|
-| `Bomb` | +1 bombe au compteur | `images/bomb/` | `level_up.ogg` | `level_up.ogg` |
-| `BonusScore` | +50 au score | `images/bonus_score/` | `level_up.ogg` | `level_up.ogg` |
-
-**Bombes** : le joueur accumule des bombes (UI sous les vies). Appuyer sur Espace consomme 1 bombe :
-- Flash blanc plein écran (fade out 0.4s)
-- Son `bomb.ogg`
-- Dégâts à tous les astéroïdes (`BOMB_DAMAGE_ASTEROID = 999`) et ennemis actifs (`BOMB_DAMAGE_ENEMY = 50`)
-- Texte `[ESPACE]` clignote sous les icônes de bombes quand le compteur > 0
-
-**Drop tables** :
-- Astéroïdes : `[(Bomb, 5%), (BonusScore, 10%)]`
-- GreenUFO : `[(Bomb, 10%), (BonusScore, 15%)]`
-
-Chaque entrée est testée indépendamment.
-
-## Système de niveaux — Timeline déclarative
-
-Le fichier `level.rs` pilote le déroulement du jeu via une timeline déclarative. Il remplace les dizaines de booléens et timers qui étaient éparpillés dans `difficulty.rs`.
-
-### Architecture : Level → Difficulty → systèmes
-
-```
-level.rs (LevelRunner)          difficulty.rs (Difficulty)         systèmes de jeu
-────────────────────           ──────────────────────────         ─────────────────
-SetDifficulty(3.5)     ──→     difficulty.factor = 3.5      ──→  asteroid spawn rate
-StartSpawning("x",4,2) ──→     difficulty.active_spawners   ──→  green_ufo.rs, asteroid.rs
-StopSpawning("x")      ──→     difficulty.active_spawners   ──→  retire le spawner
-SpawnEnemy("boss",2)   ──→     difficulty.spawn_requests    ──→  boss.rs spawne 2×
-StartBgDeceleration    ──→     difficulty.bg_decel_*        ──→  difficulty.rs calcule
-ShowPlanet             ──→     difficulty.planet_appear_*   ──→  background.rs anime
-StartMusic / PlaySound ──→     commands.spawn(AudioBundle)  ──→  audio direct
-StartCountdown         ──→     CountdownEvent               ──→  countdown.rs
-SendBoom               ──→     BoomEvent                    ──→  countdown.rs (flash)
-```
-
-Le système de niveau écrit dans `Difficulty` (hub central), et les systèmes spécialisés lisent ces valeurs.
-
-### Triggers — 3 modes de déclenchement
-
-| Trigger | Constructeur | Description |
-|---------|-------------|-------------|
-| `AtTime(f32)` | `LevelStep::at(7.0, "label")` | Temps absolu depuis le début du niveau |
-| `AfterPrevious(f32)` | `LevelStep::after(2.0, "label")` | N secondes après l'étape précédente |
-| `After(&str, f32)` | `LevelStep::after_step("ref", 5.0, "label")` | N secondes après l'étape nommée |
-
-Le trigger `After` permet de chaîner des événements à n'importe quelle étape par son label, pas uniquement la précédente. Exemple :
-
-```rust
-LevelStep::at(35.8, "boss_spawn")
-    .with(Action::SpawnEnemy("boss", 1, SpawnPosition::At(0.0, 50.0))),
-
-// 10s après "boss_spawn" : vague de 4 GreenUFOs
-LevelStep::after_step("boss_spawn", 10.0, "boss1_ufos")
-    .with(Action::SpawnEnemy("green_ufo", 4, SpawnPosition::Top)),
-```
-
-### Actions disponibles
-
-| Action | Effet |
-|--------|-------|
-| `SetDifficulty(f32)` | Change `difficulty.factor` (vitesse astéroïdes, spawn rate) |
-| `PlaySound(&str)` | Son one-shot (despawn auto) |
-| `StartMusic(&str)` | Musique avec composant `MusicMain` |
-| `StopMainMusic` | Despawn toutes les entités `MusicMain` |
-| `StartCountdown` | Envoie `CountdownEvent` (READY-3-2-1-GO) |
-| `SendBoom` | Envoie `BoomEvent` (flash visuel) |
-| `SpawnEnemy(&str, usize, SpawnPosition)` | Spawn N ennemis d'un type via `spawn_requests` (ex: `"boss", 1, At(0,50)`) |
-| `StartSpawning(&str, usize, f32, SpawnPosition)` | Spawner continu (ex: `"green_ufo", 4, 5.0, Top`). Pour `"asteroid"`, les valeurs count/interval sont ignorées (système propre basé sur `difficulty.factor`). |
-| `StopSpawning(&str)` | Désactive un spawner continu (fonctionne pour tous les types : `"asteroid"`, `"green_ufo"`, etc.) |
-| `StartBgDeceleration { duration, final_speed }` | Décélération progressive du background |
-| `ShowPlanet` | Déclenche l'animation d'apparition de la planète |
-| `Log(&str)` | `info!()` en console (debug uniquement) |
-
-### LevelRunner — état du déroulement
-
-```rust
-pub struct LevelRunner {
-    steps: Vec<LevelStep>,           // étapes du niveau
-    current: usize,                   // prochaine étape à exécuter
-    elapsed: f32,                     // temps écoulé
-    last_trigger_time: f32,           // pour AfterPrevious
-    trigger_times: HashMap<&str, f32> // pour After("label", delay)
-}
-
-// Dans Difficulty (hub de communication) :
-pub spawn_requests: Vec<(&str, usize, SpawnPosition)>,  // spawns one-shot (nom, quantité, position)
-pub active_spawners: HashMap<&str, (usize, f32, SpawnPosition)>, // spawners continus (nom → (quantité, intervalle, position))
-```
-
-**SpawnPosition** — position d'apparition des ennemis :
-
-| Variant | Description |
-|---------|-------------|
-| `Top` | Haut de l'écran (position X aléatoire) |
-| `Bottom` | Bas de l'écran |
-| `Left` | Gauche de l'écran |
-| `Right` | Droite de l'écran |
-| `At(f32, f32)` | Position exacte (x, y) |
-
-Le runner parcourt les étapes dans l'ordre. Quand le déclencheur d'une étape est atteint, toutes ses actions s'exécutent et le temps est enregistré dans `trigger_times` pour les `After`.
-
-**LevelActionEvent** — n'importe quel système peut injecter des actions dans le pipeline du niveau en envoyant un `LevelActionEvent(Vec<Action>)`. Utilisé par le boss pour spawner des GreenUFOs pendant ses transitions.
-
-### Niveau 1 — Timeline
-
-```
- 0.0s  game_start      Music(gradius.ogg), Diff(0.5), Start(asteroid)
- 7.0s  countdown       Sound(t_ready.ogg), Countdown
-10.0s  phase_2_start   Diff(3.5), Start(2×green_ufo,4s)
-14.3s  boom_1          Diff(4.5), Sound(t_go.wav), Boom
-18.3s  boom_2          Diff(6.5), Sound(t_go.wav), Boom
-22.6s  boom_3          Diff(7.5), Sound(t_go.wav), Boom
-27.7s  pre_boss        Stop(asteroid), Stop(green_ufo), BgDecel(9s,30)
-28.0s  planet_appear   Planet
-35.8s  boss_spawn      Spawn(1×boss), StopMusic
-```
-
-Chaque boss gère sa propre séquence interne (Entering → Flexing → Idle → Active) car elle dépend de l'état du boss, pas du temps absolu. La musique boss (`boss.ogg`) est lancée une seule fois quand le premier boss atteint Idle, et ne s'arrête qu'à la mort du **dernier** boss vivant.
-
-### Ajouter une étape au niveau
-
-```rust
-// Dans build_level_1()
-LevelStep::at(15.0, "new_event")
-    .with(Action::PlaySound("audio/alert.ogg"))
-    .with(Action::SetDifficulty(5.0)),
-
-// Ou chaîné à un événement existant
-LevelStep::after_step("boss_spawn", 10.0, "boss_rage")
-    .with(Action::SetDifficulty(10.0))
-    .with(Action::Log("Boss en rage !")),
-```
-
-### Ajouter un nouvel ennemi spawnable
-
-1. Définir ses `PhaseDef` et `EnemyDef` dans `enemies.rs`
-2. Créer son module avec un système de spawn qui lit `difficulty.spawn_requests` (one-shot) ou `difficulty.active_spawners` (continu)
-3. Ajouter le spawn dans la timeline : `Action::SpawnEnemy("nom", N, pos)` ou `Action::StartSpawning("nom", N, interval, pos)`
-
-Exemple pour un spawn one-shot (N ennemis d'un coup) :
-```rust
-// Dans le système de spawn du nouvel ennemi :
-let Some(pos) = difficulty.spawn_requests.iter().position(|(name, _, _)| *name == "mon_ennemi") else { return; };
-let (_name, count, spawn_pos) = difficulty.spawn_requests.remove(pos);
-for _ in 0..count { /* spawner un ennemi à spawn_pos */ }
-```
-
-Exemple pour un spawner continu :
-```rust
-// Dans le système de spawn du nouvel ennemi :
-let Some(&(wave_size, interval, spawn_pos)) = difficulty.active_spawners.get("mon_ennemi") else { return; };
-// ... utiliser wave_size, interval et spawn_pos pour le timer de spawn
-```
-
-### Ajouter une nouvelle Action
-
-1. Ajouter le variant dans `enum Action` (level.rs)
-2. Implémenter dans `execute_action` (level.rs)
-3. Ajouter un cas dans `Action::short_name()` pour le debug
-4. Si nécessaire, ajouter un champ dans `Difficulty` pour la communication
-
-### Debug : timeline dans l'overlay (F1)
-
-L'overlay debug affiche un panneau à droite avec la timeline du niveau :
-- `DONE` : étape exécutée (avec le temps réel)
-- `NEXT` : prochaine étape (avec le temps restant)
-- `....` : étapes futures
-- Liens de causalité affichés pour les triggers `After`
-
-## Système de jeu — Progression et outro
-
-Le fichier `game.rs` gère la progression multi-niveaux et la séquence d'outro (victoire).
-
-### GameState — États du jeu
-
-```
-MainMenu → Playing → LevelTransition → Playing → … → MainMenu
-                  └→ GameOver → MainMenu
-```
-
-| État | Description |
-|------|-------------|
-| `MainMenu` | Menu principal (Commencer, Niveaux, Paramètres, Quitter) |
-| `Playing` | Niveau en cours |
-| `LevelTransition` | État transitoire entre deux niveaux (déclenche cleanup puis setup) |
-| `GameOver` | Écran de game over |
-
-### GameProgress — Progression
-
-```rust
-pub struct GameProgress {
-    pub current_level: usize,  // niveau en cours (1-indexed)
-    pub total_levels: usize,   // nombre total de niveaux
-}
-```
-
-- « Commencer » lance depuis le niveau 1
-- Le menu « Niveaux » permet de choisir un niveau directement
-- `setup_level` dans `level.rs` lit `GameProgress.current_level` pour sélectionner le bon builder (`build_level_1()`, etc.)
-
-### Outro — Séquence de victoire
-
-```
-Boss meurt → 3s countdown → outro (freeze + musique + texte)
-  → Entrée/Espace → LevelTransition (niveau suivant)
-                   ou MainMenu (dernier niveau terminé)
-```
-
-1. **Détection** : `detect_level_complete` vérifie `boss_spawned && boss_q.is_empty()`
-2. **Countdown** : `OutroCountdown(Timer)` — 3 secondes d'attente
-3. **`start_outro()`** — helper partagé qui :
-   - Freeze le jeu via `PauseState.outro_active = true` (les systèmes gatés par `not_paused()` s'arrêtent, mais le temps réel continue)
-   - Despawn les musiques (`MusicMain` + `MusicBoss`)
-   - Stoppe le background (`difficulty.bg_speed_override = Some(0.0)`)
-   - Spawne l'UI de victoire (titre + instruction, apparition instantanée)
-4. **Musique** : `stage_clear.ogg` jouée une seule fois
-5. **Input** : après 3s de délai, Entrée/Espace continue
-6. **Transition** : si `current_level < total_levels` → niveau suivant via `LevelTransition`, sinon retour au `MainMenu`
-
-### Debug : F4 — Win instantané
-
-F4 tue tous les ennemis et astéroïdes, puis appelle `start_outro()` directement (sans countdown).
+| Pause | Échap |
+| Debug | F1 (overlay + timeline), F2 (skip au pre-boss), F4 (win niveau) |
+
+## Documentation détaillée
+
+- [docs/enemy.md](docs/enemy.md) — Framework ennemi (machine à état, boss, kamikaze, mine)
+- [docs/level.md](docs/level.md) — Timeline déclarative, actions, runner, niveau 1
+- [docs/game.md](docs/game.md) — GameState, GameProgress, intro/outro, mode éditeur
+- [docs/items.md](docs/items.md) — Items, bombes, drop tables
+- [docs/audio.md](docs/audio.md) — Banque SFX centralisée, sfxgen, conventions
 
 ## Commandes
 
 ```bash
-cargo run      # lancer le jeu
-cargo build    # compiler
-cargo test     # tests
+cargo run               # lancer le jeu
+cargo build             # compiler
+cargo run -p sfxgen -- all   # régénérer la banque SFX 8-bit
 ```
+
+## Conventions importantes
+
+- **Despawn** : toujours `e.try_despawn()`, jamais `e.despawn()` — voir mémoire perso.
+- **Sons** : passer par `SfxPlayer` + enum `Sfx`, pas de path string hardcodé. Voir [docs/audio.md](docs/audio.md).
+- **Bevy SystemParam** : 16 params max par système. Bundler dans `#[derive(SystemParam)]` au besoin.
+- **Animations sprites** : `Animation::new(name, duration)` boucle par défaut. Chaîner `.one_shot()` pour s'arrêter sur la dernière frame. Chaque dossier d'`AnimBank` = une animation autonome.
