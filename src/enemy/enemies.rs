@@ -95,7 +95,7 @@ pub const KAMIKAZE: EnemyData = EnemyData {
     name: "Kamikaze",
     config: EnemyConfigData::new(
         25.0,
-        64.0,
+        128.0,
         "audio/sfx/asteroid_hit.ogg",
         "audio/sfx/asteroid_die.ogg",
     ),

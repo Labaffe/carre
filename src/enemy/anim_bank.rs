@@ -56,17 +56,31 @@ impl AnimBank {
     }
 }
 
-#[derive(Component,Clone)]
+#[derive(Component, Clone)]
 pub struct Animation {
-    name:String,
-    current_frame:usize,
-    timer:Timer,
-    init:bool
+    name: String,
+    current_frame: usize,
+    timer: Timer,
+    init: bool,
+    /// Si `true`, l'animation s'arrête sur la dernière frame au lieu de reboucler.
+    one_shot: bool,
+    completed: bool,
 }
 impl Animation {
-    pub fn new(name:&str,duration:Duration) -> Animation {
-        Self {name:name.to_string(),current_frame:0,timer:Timer::new(duration, TimerMode::Repeating),init:false}
-    } 
+    pub fn new(name: &str, duration: Duration) -> Animation {
+        Self {
+            name: name.to_string(),
+            current_frame: 0,
+            timer: Timer::new(duration, TimerMode::Repeating),
+            init: false,
+            one_shot: false,
+            completed: false,
+        }
+    }
+    pub fn one_shot(mut self) -> Self {
+        self.one_shot = true;
+        self
+    }
 }
 pub fn preload_frames(
     asset_server: Res<AssetServer>,
@@ -83,25 +97,34 @@ pub fn preload_frames(
 
 pub fn animate(
     time: Res<Time>,
-    anim_bank:Res<AnimBank>,
-    mut query: Query<(&mut Sprite, &mut Animation)>
+    anim_bank: Res<AnimBank>,
+    mut query: Query<(&mut Sprite, &mut Animation)>,
 ) {
     for (mut sprite, mut anim) in query.iter_mut() {
+        let Some(f) = anim_bank.get(&anim.name) else { continue };
+        if f.is_empty() { continue; }
+
         if !anim.init {
-            let frames = anim_bank.get(&anim.name);
-            if let Some(f) = frames {
-                anim.current_frame = 0;
-                sprite.image = f[anim.current_frame].clone();
-            }
+            anim.current_frame = 0;
+            sprite.image = f[0].clone();
             anim.init = true;
         }
+
+        if anim.completed { continue; }
+
         anim.timer.tick(time.delta());
         if anim.timer.just_finished() {
-            let frames = anim_bank.get(&anim.name);
-            if let Some(f) = frames {
-                anim.current_frame = (anim.current_frame + 1) % f.len();
-                sprite.image = f[anim.current_frame].clone();
+            let last = f.len() - 1;
+            if anim.current_frame >= last {
+                if anim.one_shot {
+                    anim.completed = true;
+                    continue;
+                }
+                anim.current_frame = 0;
+            } else {
+                anim.current_frame += 1;
             }
+            sprite.image = f[anim.current_frame].clone();
         }
     }
 }
