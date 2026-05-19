@@ -6,7 +6,7 @@ use crate::debug::debug::DebugMode;
 use crate::enemy::asteroid::Asteroid;
 use crate::enemy::enemy::Enemy;
 use crate::game_manager::state::GameState;
-use crate::physic::area_of_effect::{aoe_lifecycle, AreaOfEffect};
+use crate::physic::area_of_effect::{aoe_lifecycle, setup_aoe_assets, AreaOfEffect};
 use crate::physic::harmless::Harmless;
 use crate::physic::health::Health;
 use crate::player::player::{INVINCIBLE_DURATION, Invincible, Player};
@@ -19,17 +19,18 @@ pub struct CollisionPlugin;
 
 impl Plugin for CollisionPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            (
-                player_collision::<Asteroid>,
-                player_collision::<Enemy>,
-                player_collision::<Projectile>,
-                player_collision::<AreaOfEffect>,
-                aoe_lifecycle,
-            )
-                .run_if(in_state(GameState::Playing)),
-        );
+        app.add_systems(Startup, setup_aoe_assets)
+            .add_systems(
+                Update,
+                (
+                    player_collision::<Asteroid>,
+                    player_collision::<Enemy>,
+                    player_collision::<Projectile>,
+                    player_collision::<AreaOfEffect>,
+                    aoe_lifecycle,
+                )
+                    .run_if(in_state(GameState::Playing)),
+            );
     }
 }
 

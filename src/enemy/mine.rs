@@ -31,7 +31,7 @@ use crate::geometry::shape::Shape;
 use crate::movement::despawn_off_screen::DespawnOffScreen;
 use crate::movement::movements::Movements;
 use crate::movement::translate::Translate;
-use crate::physic::area_of_effect::spawn_aoe;
+use crate::physic::area_of_effect::{spawn_aoe, AoeAssets};
 use crate::physic::harmless::Harmless;
 use crate::physic::health::Health;
 use crate::physic::invulnerable::Invulnerable;
@@ -189,11 +189,13 @@ impl EnemyBuilder for MineBuilder {
 pub fn mine_explode_system(
     mut commands: Commands,
     mut sfx: SfxPlayer,
+    aoe_assets: Res<AoeAssets>,
     query: Query<(Entity, &Transform), With<MineExplode>>,
 ) {
     for (entity, transform) in &query {
         spawn_aoe(
             &mut commands,
+            &aoe_assets,
             transform.translation,
             Shape::Circle(MINE_AOE_RADIUS),
             MINE_AOE_LIFETIME,

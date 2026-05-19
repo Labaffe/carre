@@ -37,7 +37,7 @@ use crate::item::item::{DropTable, ItemType};
 use crate::movement::chase::Chase;
 use crate::movement::despawn_off_screen::DespawnOffScreen;
 use crate::movement::movements::Movements;
-use crate::physic::area_of_effect::spawn_aoe;
+use crate::physic::area_of_effect::{spawn_aoe, AoeAssets};
 use crate::physic::health::Health;
 use crate::physic::player_detection::PlayerDetection;
 
@@ -242,11 +242,13 @@ pub fn kamikaze_speed_ramp_system(
 pub fn kamikaze_boom_system(
     mut commands: Commands,
     mut sfx: SfxPlayer,
+    aoe_assets: Res<AoeAssets>,
     query: Query<(Entity, &Transform), Added<KamikazeBoom>>,
 ) {
     for (entity, transform) in &query {
         spawn_aoe(
             &mut commands,
+            &aoe_assets,
             transform.translation,
             Shape::Circle(KAMIKAZE_AOE_RADIUS),
             KAMIKAZE_AOE_LIFETIME,
