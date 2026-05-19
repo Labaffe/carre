@@ -6,6 +6,7 @@ mod debug;
 mod deckbuilding;
 mod enemy;
 mod behavior;
+mod sprite_orient;
 mod environment;
 mod fx;
 mod game_manager;
@@ -83,6 +84,7 @@ fn main() {
             LevelPlugin,
             GamePlugin,
             audio::AudioPlugin,
+            sprite_orient::SpriteOrientPlugin,
         ))
         .add_plugins(
             EditorPlugin

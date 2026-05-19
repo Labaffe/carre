@@ -40,6 +40,7 @@ use crate::movement::movements::Movements;
 use crate::physic::area_of_effect::{spawn_aoe, AoeAssets};
 use crate::physic::health::Health;
 use crate::physic::player_detection::PlayerDetection;
+use crate::sprite_orient::FaceMovement;
 
 /// Vitesse de poursuite de base (px/s). Esquivable au début, devient
 /// progressivement plus rapide via `KamikazeSpeedRamp`.
@@ -198,6 +199,7 @@ impl EnemyBuilder for KamikazeBuilder {
             DespawnOffScreen,
             Kamikaze,
             KamikazeSpeedRamp::new(),
+            FaceMovement::faces_left(),
             PlayerDetection {
                 shape: Shape::Circle(KAMIKAZE_DETECTION_RADIUS),
                 on_enter: Some("player_detected"),
