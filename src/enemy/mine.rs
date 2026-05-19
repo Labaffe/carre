@@ -37,8 +37,8 @@ use crate::physic::health::Health;
 use crate::physic::invulnerable::Invulnerable;
 use crate::physic::player_detection::PlayerDetection;
 
-const MINE_FALL_SPEED: f32 = 100.0;
-const MINE_DETECTION_RADIUS: f32 = 150.0;
+const MINE_FALL_SPEED: f32 = 250.0;
+const MINE_DETECTION_RADIUS: f32 = 225.0;
 /// Rayon de l'AOE = rayon de détection × 1.3 → légèrement plus large que la
 /// zone qui a déclenché le countdown.
 const MINE_AOE_RADIUS: f32 = MINE_DETECTION_RADIUS * 1.3;

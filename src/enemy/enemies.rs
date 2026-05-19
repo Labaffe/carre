@@ -84,7 +84,7 @@ pub const MINE: EnemyData = EnemyData {
     name: "Mine",
     config: EnemyConfigData::new(
         40.0,
-        80.0,
+        160.0,
         "audio/sfx/asteroid_hit.ogg",
         "audio/sfx/asteroid_die.ogg",
     ),

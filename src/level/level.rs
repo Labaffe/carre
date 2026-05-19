@@ -436,12 +436,7 @@ pub fn build_level_1() -> Vec<LevelStep> {
             // Mines sporadiques pendant la phase 2 — 1 mine toutes les 7s
             // (≈ 2-3 mines sur la durée de phase 2). Spawn aléatoire en haut
             // de l'écran, elles tombent verticalement comme les astéroïdes.
-            .with(Action::StartSpawning(
-                "mine",
-                1,
-                7.0,
-                SpawnPosition::Top,
-            )),
+            .with(Action::StartSpawning("mine", 2, 4.0, SpawnPosition::Top)),
         LevelStep::at(14.3, "boom_1")
             .with(Action::SetDifficulty(4.5))
             .with(Action::PlaySound(crate::audio::Sfx::UiCountdownGo))
@@ -465,11 +460,7 @@ pub fn build_level_1() -> Vec<LevelStep> {
             }),
         LevelStep::at(28.0, "planet_appear").with(Action::ShowPlanet),
         LevelStep::at(35.8, "boss_spawn")
-            .with(Action::SpawnEnemy(
-                "boss",
-                1,
-                SpawnPosition::At(0.0, 50.0),
-            ))
+            .with(Action::SpawnEnemy("boss", 1, SpawnPosition::At(0.0, 50.0)))
             .with(Action::StopMainMusic)
             .with(Action::Log("Boss 1 spawné !")),
         // ─── Le boss gère sa propre séquence interne ──────────
@@ -500,10 +491,11 @@ pub struct EditorTestEnemy(pub &'static str);
 
 /// Niveau de test : spawn un seul ennemi du type demandé, rien d'autre.
 pub fn build_level_test_enemy(enemy_name: &'static str) -> Vec<LevelStep> {
-    vec![
-        LevelStep::at(0.0, "test_spawn")
-            .with(Action::SpawnEnemy(enemy_name, 1, SpawnPosition::At(0.0, 200.0))),
-    ]
+    vec![LevelStep::at(0.0, "test_spawn").with(Action::SpawnEnemy(
+        enemy_name,
+        1,
+        SpawnPosition::At(0.0, 200.0),
+    ))]
 }
 
 // ═══════════════════════════════════════════════════════════════════════
