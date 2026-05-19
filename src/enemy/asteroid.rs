@@ -38,6 +38,17 @@ pub struct Asteroid {
     pub size: Vec2,
 }
 
+/// Info conservée pour spawner l'animation d'explosion à la mort de
+/// l'astéroïde. Stocke l'ID du sprite (pour trouver le dossier
+/// `images/asteroids/death_x{NNN}/`) et la vitesse de chute (pour que
+/// l'explosion conserve l'élan de l'astéroïde).
+#[derive(Component)]
+pub struct AsteroidDeathFx {
+    pub texture_index: usize,
+    pub size: Vec2,
+    pub velocity: Vec3,
+}
+
 
 
 pub struct AsteroidBuilder {
@@ -137,11 +148,40 @@ impl EnemyBuilder for AsteroidBuilder {
             },
             TransitionMessages::new(),
             DespawnOffScreen,
-            BehaviorComponent::new( behavior)
+            AsteroidDeathFx {
+                texture_index: pick,
+                size,
+                velocity: base_velocity,
+            },
+            BehaviorComponent::new(behavior),
         ));
     }
 
     fn name(&self)->&str {
         "asteroid"
+    }
+}
+
+/// Sur réception d'un `EnemyDeathEvent`, si l'entité morte est un astéroïde
+/// (a `AsteroidDeathFx`), spawn une explosion à sa position. Utilise
+/// `spawn_explosion` qui cherche `images/asteroids/death_x{NNN}/`, fallback
+/// sur l'explosion générique si le dossier custom n'existe pas.
+pub fn asteroid_death_fx_system(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut events: bevy::ecs::message::MessageReader<crate::enemy::enemy::EnemyDeathEvent>,
+    asteroid_q: Query<(&Transform, &AsteroidDeathFx)>,
+) {
+    for event in events.read() {
+        let Ok((tf, fx)) = asteroid_q.get(event.entity) else { continue };
+        crate::fx::explosion::spawn_explosion(
+            &mut commands,
+            &asset_server,
+            tf.translation,
+            fx.size,
+            fx.texture_index,
+            fx.velocity,
+            tf.rotation,
+        );
     }
 }

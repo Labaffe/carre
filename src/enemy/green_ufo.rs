@@ -106,11 +106,21 @@ impl EnemyBuilder for GreenUFOBuilder {
             .add_transition(1, 0, "wall_top")
             .add_transition(1, 0, "wall_bottom");
 
-        let dying =
-            BehaviorBuilder::first(Duration::from_secs_f32(0.4), BehaviorBuilder::nothing()).then(
-                Duration::from_secs_f32(1.0),
-                BehaviorBuilder::from_component(DespawnSelf),
-            );
+        // Mort : 10 frames de death animation (one-shot) à 12fps = 0.83s
+        // puis DespawnSelf. Movements::new() pour stopper le rush en cours.
+        let dying = BehaviorBuilder::first(
+            Duration::from_secs_f32(0.83),
+            BehaviorBuilder::multiple()
+                .with(BehaviorBuilder::from_component(Movements::new()))
+                .with(BehaviorBuilder::from_component(
+                    Animation::new("green_ufo_death", Duration::from_secs_f32(1.0 / 12.0))
+                        .one_shot(),
+                )),
+        )
+        .then(
+            Duration::from_secs_f32(0.1),
+            BehaviorBuilder::from_component(DespawnSelf),
+        );
 
         let behavior = BehaviorBuilder::choice()
             .with(alive)

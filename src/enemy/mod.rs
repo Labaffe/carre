@@ -13,7 +13,7 @@ pub mod mine;
 mod death;
 use bevy::prelude::*;
 use crate::enemy::anim_bank::*;
-use crate::enemy::asteroid::AsteroidBuilder;
+use crate::enemy::asteroid::{asteroid_death_fx_system, AsteroidBuilder};
 use crate::enemy::boss::{boss_hp_threshold_check, BossBuilder};
 use crate::enemy::death::despawn;
 use crate::enemy::death::detect_death;
@@ -64,6 +64,7 @@ impl Plugin for EnemyPlugin {
                     kamikaze_boom_system,
                     kamikaze_warn_system,
                     kamikaze_speed_ramp_system,
+                    asteroid_death_fx_system,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing))
