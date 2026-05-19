@@ -33,7 +33,13 @@ impl Oscilate {
         local_pos.dot(self.normal)
     }
     fn set_speed_from_pos(&mut self,value:f32,amplitude:f32) {
-        self.speed = -amplitude * ((value / amplitude).acos()).sin();
+        // Oscillateur harmonique : dv/dt = -freq*x ⇒ ω = √freq.
+        // Pour atteindre l'amplitude max A depuis la position initiale x₀ :
+        //   v₀ = ω * √(A² − x₀²)
+        // (le facteur ω était manquant dans l'ancienne formule, ce qui réduisait
+        // l'amplitude effective d'un facteur 1/√freq.)
+        let omega = self.freq.sqrt();
+        self.speed = -omega * (amplitude * amplitude - value * value).max(0.0).sqrt();
     }
 }
 impl Movement for Oscilate {

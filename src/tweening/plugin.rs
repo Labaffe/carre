@@ -12,6 +12,7 @@ impl Plugin for UiTweenPlugin {
             tween_system::<StyleLeft>,
             tween_system::<StyleTop>,
             tween_system::<UiOpacity>,
+            tween_system::<Scale>,
         ));
     }
 }

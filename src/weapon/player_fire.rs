@@ -4,6 +4,7 @@
 //! Le mouvement et le despawn offscreen sont pris en charge par `ProjectilePlugin`.
 //! La collision projectile-ennemi est gérée dans `enemy::enemy::projectile_enemy_collision`.
 
+use crate::audio::{Sfx, SfxPlayer};
 use crate::enemy::asteroid::{Asteroid};
 use crate::enemy::hit_flash::HitFlash;
 use crate::fx::explosion::{spawn_explosion, spawn_projectile_death};
@@ -14,8 +15,9 @@ use crate::physic::health::Health;
 use crate::player::player::Player;
 use crate::ui::crosshair::Crosshair;
 use crate::ui::score::Score;
+use crate::geometry::shape::shape_hits_circle;
 use crate::weapon::projectile::{
-    projectile_hits_circle, spawn_projectile, Projectile, ProjectileSpawn, ProjectileSprite, Team,
+    spawn_projectile, Projectile, ProjectileSpawn, ProjectileSprite, Team,
 };
 use crate::weapon::weapon::Weapon;
 use bevy::prelude::*;
@@ -60,6 +62,7 @@ fn shoot(
     crosshair_q: Query<&Transform, With<Crosshair>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut sfx: SfxPlayer,
 ) {
     if !mouse.pressed(MouseButton::Left) {
         return;
@@ -115,7 +118,7 @@ fn shoot(
         );
     }
 
-    commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/projectile.ogg")), PlaybackSettings::DESPAWN));
+    sfx.play(Sfx::PlayerShoot);
 }
 
 // ─── Collision projectile joueur → astéroïde ────────────────────────
@@ -128,6 +131,7 @@ fn projectile_asteroid_collision(
     mut score: ResMut<Score>,
     difficulty: Res<Difficulty>,
     mut drop_events: MessageWriter<DropEvent>,
+    mut sfx: SfxPlayer,
 ) {
     let mut despawned_projectiles = std::collections::HashSet::new();
     let mut despawned_asteroids = std::collections::HashSet::new();
@@ -147,7 +151,7 @@ fn projectile_asteroid_collision(
                 continue;
             }
 
-            let hit = projectile_hits_circle(
+            let hit = shape_hits_circle(
                 projectile_transform.translation.truncate(),
                 projectile_transform.rotation,
                 &projectile.hitbox,
@@ -163,7 +167,7 @@ fn projectile_asteroid_collision(
                     projectile.death_folder,
                 );
                 if let Ok(mut e) = commands.get_entity(projectile_entity) {
-                    e.despawn();
+                    e.try_despawn();
                 }
                 despawned_projectiles.insert(projectile_entity);
                 health.take_damage(projectile.damage);
@@ -172,7 +176,7 @@ fn projectile_asteroid_collision(
                 if health.is_dead() {
                     if !despawned_asteroids.contains(&asteroid_entity) {
 
-                        commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/asteroid_die.ogg")), PlaybackSettings::DESPAWN));
+                        sfx.play(Sfx::EnemyDie);
                         if let Some(table) = drop_table {
                             drop_events.write(DropEvent {
                                 position: asteroid_transform.translation,
@@ -180,7 +184,7 @@ fn projectile_asteroid_collision(
                             });
                         }
                         if let Ok(mut e) = commands.get_entity(asteroid_entity) {
-                            e.despawn();
+                            e.try_despawn();
                         }
                         despawned_asteroids.insert(asteroid_entity);
                     }
@@ -188,7 +192,7 @@ fn projectile_asteroid_collision(
                     commands
                         .entity(asteroid_entity)
                         .insert(HitFlash(Timer::from_seconds(0.06, TimerMode::Once)));
-                    commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/asteroid_hit.ogg")), PlaybackSettings::DESPAWN));
+                    sfx.play(Sfx::EnemyHit);
                 }
                 break;
             }

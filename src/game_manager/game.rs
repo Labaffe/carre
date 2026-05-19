@@ -125,7 +125,7 @@ pub enum LevelPhaseKind {
         elapsed: f32,
         /// Durée de l'animation du vaisseau (= durée du son).
         duration: f32,
-        sound: &'static str,
+        sound: crate::audio::Sfx,
         sound_played: bool,
         /// Le son d'intro a fini de jouer (entité IntroSound despawnée).
         sound_finished: bool,
@@ -174,7 +174,7 @@ pub struct IntroConfig {
     /// Durée de l'animation d'entrée du vaisseau (= durée du son).
     pub duration: f32,
     /// Son joué pendant l'intro.
-    pub sound: &'static str,
+    pub sound: crate::audio::Sfx,
     /// Ratio pour calculer la position cible.
     /// Pour Down : target_y = half_h * ratio (ex: -0.5 → bas de l'écran).
     /// Pour Left : target_x = half_w * ratio (ex: -0.5 → gauche de l'écran).
@@ -186,7 +186,7 @@ pub fn level_intro(level: usize) -> IntroConfig {
     match level {
         _ => IntroConfig {
             duration: 5.0,
-            sound: "audio/sfx/landing.ogg",
+            sound: crate::audio::Sfx::ShipArrival,
             spawn_ratio: -0.5,
         },
     }
@@ -208,6 +208,7 @@ fn level_phase_system(
     level_phase: Option<ResMut<LevelPhase>>,
     intro_sound_q: Query<Entity, With<IntroSound>>,
     config: Res<LevelConfig>,
+    mut sfx: crate::audio::SfxPlayer,
 ) {
     let Some(mut level_phase) = level_phase else {
         return;
@@ -277,10 +278,7 @@ fn level_phase_system(
             // Jouer le son une seule fois (avec marqueur IntroSound)
             if !*sound_played {
                 *sound_played = true;
-                commands.spawn((
-                    (AudioPlayer::new(asset_server.load(*sound)), PlaybackSettings::DESPAWN),
-                    IntroSound,
-                ));
+                sfx.play(*sound).insert(IntroSound);
             }
 
             // Détecter la fin du son (entité IntroSound despawnée par Bevy)
@@ -407,7 +405,7 @@ pub(crate) fn do_skip_intro(
     // Despawn le son d'intro
     for entity in intro_sound_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 
@@ -500,12 +498,12 @@ fn start_outro(
     // Couper les musiques
     for entity in music_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
     for entity in boss_music_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 
@@ -576,7 +574,7 @@ fn level_outro_input(
     if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
         for entity in music_q.iter() {
             if let Ok(mut e) = commands.get_entity(entity) {
-                e.despawn();
+                e.try_despawn();
             }
         }
         pause.outro_active = false;
@@ -638,7 +636,7 @@ fn debug_skip_to_outro(
     // Despawn tous les astéroïdes
     for entity in asteroid_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 
@@ -730,22 +728,22 @@ fn cleanup_playing(
     commands.remove_resource::<ConfirmPopup>();
     for entity in intro_sound_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
     for entity in outro_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
     for entity in music_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
     for entity in confirm_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }
@@ -862,7 +860,7 @@ pub(crate) fn despawn_confirm_popup(
 ) {
     for entity in confirm_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }
@@ -919,7 +917,7 @@ fn handle_credits_input(
 fn cleanup_credits(mut commands: Commands, ui_q: Query<Entity, With<CreditsUI>>) {
     for entity in ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }

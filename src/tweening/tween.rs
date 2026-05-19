@@ -51,6 +51,20 @@ pub struct TweenSequence<T: TweenTarget> {
     pub _marker: std::marker::PhantomData<T>,
 }
 
+// Impl Clone manuel pour éviter le bound parasite `T: Clone` que `#[derive(Clone)]`
+// ajouterait à cause de `PhantomData<T>` (alors que `PhantomData<T>` est `Clone`
+// quel que soit `T`). Permet d'utiliser `TweenSequence` via `ComponentContainer`
+// du behavior tree (qui exige `Component + Clone`).
+impl<T: TweenTarget> Clone for TweenSequence<T> {
+    fn clone(&self) -> Self {
+        Self {
+            current: self.current.clone(),
+            queue: self.queue.clone(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<T: TweenTarget> TweenSequence<T> {
     pub fn new(tween: Tween) -> Self {
         Self {

@@ -130,7 +130,7 @@ fn despawn_crosshair(
 
     for entity in query.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }

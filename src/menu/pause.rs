@@ -5,7 +5,9 @@
 //! Le temps de jeu est gelé tant que la pause est active.
 
 use crate::MusicMain;
+use crate::audio::{Sfx, SfxPlayer};
 use crate::enemy::boss::MusicBoss;
+use bevy::ecs::system::SystemParam;
 use crate::game_manager::game::{
     CampaignProgress, ConfirmOptionMarker, ConfirmPopup, ConfirmPopupUI, IntroSound, PlayMode,
     despawn_confirm_popup, spawn_confirm_popup,
@@ -13,6 +15,20 @@ use crate::game_manager::game::{
 use crate::game_manager::state::GameState;
 use bevy::app::AppExit;
 use bevy::prelude::*;
+
+/// Bundle des params liés à la popup de confirmation. Réduit le compte de
+/// system params de `handle_pause_input` (limite à 16 dans Bevy).
+#[derive(SystemParam)]
+struct ConfirmParams<'w, 's> {
+    state: Option<ResMut<'w, ConfirmPopup>>,
+    ui_q: Query<'w, 's, Entity, With<ConfirmPopupUI>>,
+    text_q: Query<
+        'w,
+        's,
+        (&'static mut TextColor, &'static ConfirmOptionMarker),
+        Without<PauseOption>,
+    >,
+}
 
 pub struct PausePlugin;
 
@@ -79,10 +95,12 @@ fn handle_pause_input(
     music_q: Query<&AudioSink, With<MusicMain>>,
     boss_music_q: Query<&AudioSink, With<MusicBoss>>,
     play_mode: Option<Res<PlayMode>>,
-    confirm: Option<ResMut<ConfirmPopup>>,
-    confirm_ui_q: Query<Entity, With<ConfirmPopupUI>>,
-    mut confirm_text_q: Query<(&mut TextColor, &ConfirmOptionMarker), Without<PauseOption>>,
+    mut confirm_params: ConfirmParams,
+    mut sfx: SfxPlayer,
 ) {
+    let confirm = confirm_params.state.as_mut();
+    let confirm_ui_q = &confirm_params.ui_q;
+    let confirm_text_q = &mut confirm_params.text_q;
     // ─── Popup de confirmation active ───────────────────────────
     if let Some(mut popup) = confirm {
         // Mise à jour des couleurs Oui/Non
@@ -156,8 +174,7 @@ fn handle_pause_input(
             for sink in boss_music_q.iter() {
                 sink.pause();
             }
-            // Son de pause
-            commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/pause.ogg")), PlaybackSettings::ONCE));
+            sfx.play_once(Sfx::UiPause);
             spawn_pause_ui(&mut commands, &asset_server);
         }
         return;
@@ -242,7 +259,7 @@ fn unpause(
     time.unpause();
     for entity in pause_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }
@@ -326,12 +343,12 @@ fn cleanup_pause(
     commands.remove_resource::<ConfirmPopup>();
     for entity in pause_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
     for entity in confirm_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }

@@ -7,13 +7,14 @@ pub mod enemy_builder;
 pub mod enemy_register;
 pub mod green_ufo;
 pub mod hit_flash;
-pub mod despawn_zone;
+pub mod kamikaze;
+pub mod mine;
 //pub mod spawn;
 mod death;
 use bevy::prelude::*;
 use crate::enemy::anim_bank::*;
 use crate::enemy::asteroid::AsteroidBuilder;
-use crate::enemy::boss::BossBuilder;
+use crate::enemy::boss::{boss_hp_threshold_check, BossBuilder};
 use crate::enemy::death::despawn;
 use crate::enemy::death::detect_death;
 use crate::enemy::enemy::EnemyDeathEvent;
@@ -22,6 +23,8 @@ use crate::enemy::enemy_register::EnemyRegister;
 use crate::enemy::enemy_register::spawn;
 use crate::enemy::hit_flash::*;
 use crate::enemy::green_ufo::*;
+use crate::enemy::kamikaze::{kamikaze_boom_system, kamikaze_speed_ramp_system, kamikaze_warn_system, KamikazeBuilder};
+use crate::enemy::mine::{blink_red_system, mine_countdown_audio, mine_explode_system, MineBuilder};
 use crate::GameState;
 use crate::menu::pause::not_paused;
 pub struct EnemyPlugin;
@@ -34,6 +37,8 @@ impl Plugin for EnemyPlugin {
                 .with(GreenUFOBuilder::new())
                 .with(BossBuilder::new())
                 .with(AsteroidBuilder::new())
+                .with(MineBuilder::new())
+                .with(KamikazeBuilder::new())
             )
             .insert_resource(AnimBank::new())
             .add_systems(Startup, preload_frames)
@@ -52,6 +57,13 @@ impl Plugin for EnemyPlugin {
                     // Framework phases+behaviors (exclusif, séquentiel)
                     // Systèmes réactifs (ordre après la machine à état)
                     projectile_enemy_collision,
+                    boss_hp_threshold_check,
+                    mine_explode_system,
+                    mine_countdown_audio,
+                    blink_red_system,
+                    kamikaze_boom_system,
+                    kamikaze_warn_system,
+                    kamikaze_speed_ramp_system,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing))

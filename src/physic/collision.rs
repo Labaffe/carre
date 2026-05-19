@@ -1,14 +1,17 @@
 //! Collision joueur ↔ entités hostiles (astéroïdes, ennemis, projectiles ennemis).
 //! Tout objet implémentant le trait `Hittable` peut blesser le joueur au contact.
 
+use crate::audio::{Sfx, SfxPlayer};
 use crate::debug::debug::DebugMode;
 use crate::enemy::asteroid::Asteroid;
 use crate::enemy::enemy::Enemy;
 use crate::game_manager::state::GameState;
+use crate::physic::area_of_effect::{aoe_lifecycle, AreaOfEffect};
+use crate::physic::harmless::Harmless;
 use crate::physic::health::Health;
 use crate::player::player::{INVINCIBLE_DURATION, Invincible, Player};
 use crate::weapon::projectile::{Projectile, Team};
-use crate::weapon::weapon::HitboxShape;
+use crate::geometry::shape::Shape;
 use bevy::prelude::*;
 use std::time::Duration;
 
@@ -22,6 +25,8 @@ impl Plugin for CollisionPlugin {
                 player_collision::<Asteroid>,
                 player_collision::<Enemy>,
                 player_collision::<Projectile>,
+                player_collision::<AreaOfEffect>,
+                aoe_lifecycle,
             )
                 .run_if(in_state(GameState::Playing)),
         );
@@ -33,7 +38,7 @@ pub const PLAYER_RADIUS: f32 = 45.0;
 
 /// Trait commun pour tout objet possédant une hitbox.
 pub trait Hittable: Component {
-    fn hitbox_shape(&self) -> HitboxShape;
+    fn hitbox_shape(&self) -> Shape;
     /// Si true, l'entité hostile est despawnée au contact avec le joueur.
     fn despawn_on_hit(&self) -> bool {
         true
@@ -45,33 +50,33 @@ pub trait Hittable: Component {
 }
 
 impl Hittable for Player {
-    fn hitbox_shape(&self) -> HitboxShape {
-        HitboxShape::Circle(PLAYER_RADIUS)
+    fn hitbox_shape(&self) -> Shape {
+        Shape::Circle(PLAYER_RADIUS)
     }
 }
 
 impl Hittable for Asteroid {
-    fn hitbox_shape(&self) -> HitboxShape {
-        HitboxShape::Circle(self.radius)
+    fn hitbox_shape(&self) -> Shape {
+        Shape::Circle(self.radius)
     }
 }
 
 impl Hittable for Enemy {
-    fn hitbox_shape(&self) -> HitboxShape {
-        HitboxShape::Circle(self.radius)
+    fn hitbox_shape(&self) -> Shape {
+        Shape::Circle(self.radius)
     }
     fn despawn_on_hit(&self) -> bool {
         false
     }
-    fn is_dangerous(&self) -> bool {
-        self.is_vulnerable()
-    }
+    // is_dangerous: default true. Le filtre `Harmless` (marqueur ECS posé
+    // sur l'entité) est appliqué au niveau de la query dans `player_collision`,
+    // pas via le trait — découplé de `is_vulnerable` qui gère les dégâts pris.
 }
 
 /// Un `Projectile` ne blesse le joueur que si son `team` est `Enemy`.
 /// Les projectiles du joueur sont ignorés par ce système de collision joueur.
 impl Hittable for Projectile {
-    fn hitbox_shape(&self) -> HitboxShape {
+    fn hitbox_shape(&self) -> Shape {
         self.hitbox.clone()
     }
     fn is_dangerous(&self) -> bool {
@@ -83,9 +88,10 @@ fn player_collision<T: Hittable>(
     mut commands: Commands,
     mut next_state: ResMut<NextState<GameState>>,
     mut player_q: Query<(Entity, &Transform, &mut Health, Option<&Invincible>), With<Player>>,
-    hostile_q: Query<(Entity, &Transform, &T)>,
+    hostile_q: Query<(Entity, &Transform, &T), Without<Harmless>>,
     debug: Res<DebugMode>,
     asset_server: Res<AssetServer>,
+    mut sfx: SfxPlayer,
 ) {
     if debug.0 {
         return;
@@ -110,8 +116,8 @@ fn player_collision<T: Hittable>(
             .distance(hostile_transform.translation);
 
         let combined_radius = match hittable.hitbox_shape() {
-            HitboxShape::Circle(r) => PLAYER_RADIUS + r,
-            HitboxShape::Rect {
+            Shape::Circle(r) => PLAYER_RADIUS + r,
+            Shape::Rect {
                 half_length,
                 half_width,
             } => PLAYER_RADIUS + half_length.max(half_width),
@@ -120,23 +126,17 @@ fn player_collision<T: Hittable>(
         if distance < combined_radius {
             if hittable.despawn_on_hit() {
                 if let Ok(mut e) = commands.get_entity(hostile_entity) {
-                    e.despawn();
+                    e.try_despawn();
                 }
             }
 
             health.take_damage(1);
 
-            commands.spawn((
-                AudioPlayer::new(asset_server.load("audio/sfx/hurt.ogg")),
-                PlaybackSettings {
-                    volume: bevy::audio::Volume::Linear(3.0),
-                    ..PlaybackSettings::DESPAWN
-                },
-            ));
+            sfx.play_at(Sfx::PlayerHurt, 3.0);
 
             if health.is_dead() {
                 if let Ok(mut e) = commands.get_entity(player_entity) {
-                    e.despawn();
+                    e.try_despawn();
                 }
                 next_state.set(GameState::GameOver);
             } else {

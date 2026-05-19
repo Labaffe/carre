@@ -32,8 +32,10 @@ use crate::game_manager::state::GameState;
 use crate::item::item::{DropEvent, DropTable};
 use crate::menu::pause::not_paused;
 use crate::physic::health::Health;
+use crate::physic::invulnerable::Invulnerable;
 use crate::ui::score::Score;
-use crate::weapon::projectile::{projectile_hits_circle, Projectile, Team};
+use crate::geometry::shape::shape_hits_circle;
+use crate::weapon::projectile::{Projectile, Team};
 
 
 pub struct EnemyPlugin;
@@ -140,10 +142,10 @@ pub fn projectile_enemy_collision(
     asset_server: Res<AssetServer>,
     mut score: ResMut<Score>,
     projectile_q: Query<(Entity, &Transform, &Projectile)>,
-    mut enemy_q: Query<(Entity, &Transform, &Enemy, &mut Health)>,
+    mut enemy_q: Query<(Entity, &Transform, &Enemy, &mut Health, Option<&Invulnerable>)>,
 ) {
     let mut despawned_projectiles = std::collections::HashSet::new();
-    for (enemy_entity, enemy_transform, enemy, mut health) in enemy_q.iter_mut() {
+    for (enemy_entity, enemy_transform, enemy, mut health, invulnerable) in enemy_q.iter_mut() {
 
         for (projectile_entity, projectile_transform, projectile) in projectile_q.iter() {
              
@@ -153,7 +155,7 @@ pub fn projectile_enemy_collision(
             if despawned_projectiles.contains(&projectile_entity) {
                 continue;
             }
-            let hit = projectile_hits_circle(
+            let hit = shape_hits_circle(
                 projectile_transform.translation.truncate(),
                 projectile_transform.rotation,
                 &projectile.hitbox,
@@ -165,11 +167,11 @@ pub fn projectile_enemy_collision(
             }
             // Le projectile est détruit même contre un ennemi invulnérable.
             if let Ok(mut e) = commands.get_entity(projectile_entity) {
-                e.despawn();
+                e.try_despawn();
             }
             despawned_projectiles.insert(projectile_entity);
 
-            if enemy.is_vulnerable() {
+            if enemy.is_vulnerable() && invulnerable.is_none() {
                 health.take_damage(projectile.damage);
                 score.add(1);
 

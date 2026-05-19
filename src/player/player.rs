@@ -171,6 +171,7 @@ fn update_ship_phase1_texture(
 fn update_player_phase(
     difficulty: Res<Difficulty>,
     textures: Res<ShipTextures>,
+    editor_test: Option<Res<crate::level::level::EditorTestEnemy>>,
     mut query: Query<(&mut Sprite, &mut ShipPhase), With<Player>>,
 ) {
     let boss_rotation_active = match difficulty.boss_music_start_time {
@@ -179,7 +180,9 @@ fn update_player_phase(
     };
 
     for (mut sprite, mut ship) in query.iter_mut() {
-        let target_phase = if boss_rotation_active {
+        let target_phase = if editor_test.is_some() {
+            PlayerPhase::Phase3
+        } else if boss_rotation_active {
             PlayerPhase::Phase3
         } else if difficulty.elapsed >= 10.0 {
             PlayerPhase::Phase2
@@ -219,8 +222,9 @@ fn movement(
     mut query: Query<(&mut Transform, &ShipPhase), With<Player>>,
     difficulty: Res<Difficulty>,
     windows: Query<&Window>,
+    editor_test: Option<Res<crate::level::level::EditorTestEnemy>>,
 ) {
-    if difficulty.elapsed < 1.0 {
+    if editor_test.is_none() && difficulty.elapsed < 1.0 {
         return;
     }
 
@@ -435,7 +439,7 @@ fn update_lives_ui(
 fn cleanup_lives_ui(mut commands: Commands, query: Query<Entity, With<LivesUI>>) {
     for entity in query.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }

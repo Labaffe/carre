@@ -10,6 +10,7 @@ use crate::game_manager::game::{
     despawn_confirm_popup,
 };
 use crate::game_manager::state::GameState;
+use crate::audio::{Sfx, SfxPlayer};
 use crate::{MusicGameOver, MusicMain};
 use bevy::color::Alpha;
 use bevy::prelude::*;
@@ -149,7 +150,7 @@ fn setup_gameover_ui(
 fn stop_main_music(mut commands: Commands, main_music_q: Query<Entity, With<MusicMain>>) {
     for entity in main_music_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }
@@ -171,6 +172,7 @@ fn animate_gameover(
     mut gameover_music_q: Query<(Entity, Option<&mut AudioSink>), With<MusicGameOver>>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
+    mut sfx: SfxPlayer,
 ) {
     anim.elapsed += time.delta_secs();
 
@@ -182,10 +184,7 @@ fn animate_gameover(
     // musique et animation démarrent ensemble
     if !anim.music_spawned {
         anim.music_spawned = true;
-        commands.spawn((
-            (AudioPlayer::new(asset_server.load("audio/sfx/you_died.ogg")), PlaybackSettings::ONCE),
-            MusicGameOver,
-        ));
+        sfx.play_once(Sfx::PlayerDeath).insert(MusicGameOver);
     }
 
     // progression calculée depuis le début de l'animation (après le délai)
@@ -261,7 +260,7 @@ fn animate_gameover(
             if fade_progress >= 1.0 {
                 for (entity, _) in gameover_music_q.iter() {
                     if let Ok(mut e) = commands.get_entity(entity) {
-                        e.despawn();
+                        e.try_despawn();
                     }
                 }
                 // Progression perdue en campagne
@@ -295,7 +294,7 @@ fn animate_gameover(
 fn cleanup_gameover_ui(mut commands: Commands, query: Query<Entity, With<GameOverUI>>) {
     for entity in query.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }
@@ -364,7 +363,7 @@ fn handle_restart(
     if !is_campaign && keyboard.just_pressed(KeyCode::KeyR) {
         for entity in gameover_music_q.iter() {
             if let Ok(mut e) = commands.get_entity(entity) {
-                e.despawn();
+                e.try_despawn();
             }
         }
         next_state.set(GameState::Playing);
@@ -375,7 +374,7 @@ fn handle_restart(
         commands.remove_resource::<PlayMode>();
         for entity in gameover_music_q.iter() {
             if let Ok(mut e) = commands.get_entity(entity) {
-                e.despawn();
+                e.try_despawn();
             }
         }
         next_state.set(GameState::MainMenu);

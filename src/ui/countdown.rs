@@ -4,6 +4,7 @@
 //! Chaque étape pop avec un effet de scale (zoom-in + overshoot) puis fade-out.
 //! Envoyez un `CountdownEvent` pour déclencher un countdown de 3 secondes.
 
+use crate::audio::{Sfx, SfxPlayer};
 use crate::game_manager::difficulty::BoomEvent;
 use crate::game_manager::state::GameState;
 use bevy::prelude::*;
@@ -30,12 +31,12 @@ pub struct CountdownEvent;
 const COUNTDOWN_DURATION: f32 = 3.0;
 
 /// Étapes du countdown : (temps relatif, texte, son).
-const STEPS: &[(f32, &str, &str)] = &[
-    (0.0, "READY", "audio/sfx/t_ready.ogg"),
-    (0.75, "3", "audio/sfx/t_1.ogg"),
-    (1.5, "2", "audio/sfx/t_1.ogg"),
-    (2.25, "1", "audio/sfx/t_1.ogg"),
-    (3.0, "GO!", "audio/sfx/t_go.wav"),
+const STEPS: &[(f32, &str, Sfx)] = &[
+    (0.0,  "READY", Sfx::UiCountdownReady),
+    (0.75, "3",     Sfx::UiCountdownBeep),
+    (1.5,  "2",     Sfx::UiCountdownBeep),
+    (2.25, "1",     Sfx::UiCountdownBeep),
+    (3.0,  "GO!",   Sfx::UiCountdownGo),
 ];
 
 /// Durée d'affichage de "GO!" avant de disparaître.
@@ -73,6 +74,7 @@ fn start_countdown(
     mut events: MessageReader<CountdownEvent>,
     asset_server: Res<AssetServer>,
     existing_q: Query<Entity, With<CountdownUI>>,
+    mut sfx: SfxPlayer,
 ) {
     if events.read().next().is_none() {
         return;
@@ -82,7 +84,7 @@ fn start_countdown(
     // Nettoyer un countdown précédent
     for entity in existing_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 
@@ -117,8 +119,7 @@ fn start_countdown(
             ));
         });
 
-    // Son READY
-    commands.spawn((AudioPlayer::new(asset_server.load(STEPS[0].2)), PlaybackSettings::DESPAWN));
+    sfx.play(STEPS[0].2);
 
     commands.insert_resource(CountdownState {
         timer: 0.0,
@@ -130,11 +131,11 @@ fn start_countdown(
 fn update_countdown(
     mut commands: Commands,
     time: Res<Time>,
-    asset_server: Res<AssetServer>,
     mut state: Option<ResMut<CountdownState>>,
     mut text_q: Query<(&mut Text, &mut TextColor, &mut BaseFontSize, &mut CountdownPop), With<ChildOf>>,
     ui_q: Query<Entity, With<CountdownUI>>,
     mut boom_events: MessageWriter<BoomEvent>,
+    mut sfx: SfxPlayer,
 ) {
     let Some(ref mut state) = state else {
         return;
@@ -145,7 +146,7 @@ fn update_countdown(
         if state.timer >= COUNTDOWN_DURATION + GO_LINGER {
             for entity in ui_q.iter() {
                 if let Ok(mut e) = commands.get_entity(entity) {
-                    e.despawn();
+                    e.try_despawn();
                 }
             }
             commands.remove_resource::<CountdownState>();
@@ -175,7 +176,7 @@ fn update_countdown(
             pop.timer = 0.0;
         }
 
-        commands.spawn((AudioPlayer::new(asset_server.load(sound)), PlaybackSettings::DESPAWN));
+        sfx.play(sound);
 
         if label == "GO!" {
             boom_events.write(BoomEvent);
@@ -228,7 +229,7 @@ fn animate_countdown_text(
 fn cleanup_countdown(mut commands: Commands, query: Query<Entity, With<CountdownUI>>) {
     for entity in query.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
     commands.remove_resource::<CountdownState>();

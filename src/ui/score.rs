@@ -1,3 +1,4 @@
+use crate::audio::{Sfx, SfxPlayer};
 use crate::game_manager::state::GameState;
 use bevy::prelude::*;
 
@@ -120,7 +121,7 @@ fn setup_score_ui(
 fn cleanup_score_ui(mut commands: Commands, query: Query<Entity, With<ScoreUI>>) {
     for entity in query.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }
@@ -142,18 +143,17 @@ fn score_update(
     }
 }
 fn level_update(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
     time: Res<Time>,
     mut text_q: Query<&mut Text, With<LevelText>>,
     mut font_q: Query<(&mut TextFont, &BaseFontSize), With<LevelText>>,
     mut level: ResMut<Level>,
     score: Res<Score>,
+    mut sfx: SfxPlayer,
 ) {
     let levelup = score.value > LEVELS[level.value] && LEVELS.len() > level.value + 1;
     if levelup {
         level.value += 1;
-        commands.spawn((AudioPlayer::new(asset_server.load("audio/sfx/level_up.ogg")), PlaybackSettings::DESPAWN));
+        sfx.play(Sfx::ScoreMilestone);
     }
     for mut text in text_q.iter_mut() {
         **text = level.value.to_string();

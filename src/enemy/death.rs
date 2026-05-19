@@ -51,6 +51,6 @@ pub fn detect_death(
 
 pub fn despawn(mut commands: Commands,mut death_events: MessageWriter<EnemyDeathEvent>,query:Query<Entity,With<DespawnSelf>>) {
     for entity in query.iter() {
-        if let Ok(mut e) = commands.get_entity(entity) { e.despawn(); }
+        if let Ok(mut e) = commands.get_entity(entity) { e.try_despawn(); }
     }
 }

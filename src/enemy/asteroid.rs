@@ -12,7 +12,7 @@ use crate::behavior::*;
 use crate::behavior::behavior::{Behavior, BehaviorComponent};
 use crate::enemy::anim_bank::Animation;
 use crate::enemy::death::DespawnSelf;
-use crate::enemy::despawn_zone::DespawnZone;
+use crate::movement::despawn_off_screen::DespawnOffScreen;
 use crate::enemy::enemy::Enemy;
 use crate::enemy::enemy_builder::EnemyBuilder;
 use crate::movement::movements::Movements;
@@ -83,8 +83,11 @@ impl EnemyBuilder for AsteroidBuilder {
         let half_h = window.height() / 2.0;
         let x = fastrand::f32() * window.width() - half_w;
         let is_small = fastrand::f32() < 0.3; // 30% de petits, 70% de gros
-        let pick = fastrand::usize(2..16);
-        let texture_name = "asteroid".to_string()+&pick.to_string();
+        // IDs des sprites présents dans `assets/images/asteroids/` — note les
+        // trous (pas d'asteroid11) qui sortaient un sprite vide avant.
+        const ASTEROID_IDS: &[usize] = &[2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16];
+        let pick = ASTEROID_IDS[fastrand::usize(0..ASTEROID_IDS.len())];
+        let texture_name = "asteroid".to_string() + &pick.to_string();
 
         let anim = Animation::new(&texture_name,Duration::from_secs_f32(5.0));
         // Spawn au-dessus de l'écran (juste hors du champ visible)
@@ -133,12 +136,7 @@ impl EnemyBuilder for AsteroidBuilder {
                 drops: &ASTEROID_DROP_TABLE,
             },
             TransitionMessages::new(),
-            DespawnZone {
-                x:-window.width(),
-                y:-window.height(),
-                width: window.width() * 2.0,
-                height:window.height() * 0.25
-            },
+            DespawnOffScreen,
             BehaviorComponent::new( behavior)
         ));
     }

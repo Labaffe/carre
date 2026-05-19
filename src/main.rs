@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 // ─── Modules par feature ──────────────────────────────────────────
+mod audio;
 mod debug;
 mod deckbuilding;
 mod enemy;
@@ -18,6 +19,7 @@ mod ui;
 mod weapon;
 mod editor;
 mod movement;
+mod geometry;
 // ─── Imports ───────────────────────────────────────────────────────
 use game_manager::state::GameState;
 use game_manager::game::{GamePlugin, MusicOutro};
@@ -37,7 +39,7 @@ use enemy::{enemy::Enemy, EnemyPlugin};
 use enemy::boss::{ MusicBoss};
 use enemy::asteroid::{Asteroid};
 
-use crate::enemy::despawn_zone::DespawnZonePlugin;
+use crate::movement::despawn_off_screen::DespawnOffScreenPlugin;
 use fx::explosion::{Explosion, ExplosionPlugin};
 use item::item::{Droppable, ItemPlugin};
 
@@ -53,6 +55,7 @@ use ui::countdown::CountdownPlugin;
 use environment::background::{Background, BackgroundPlugin, Planet};
 use physic::collision::CollisionPlugin;
 use physic::health::HealthPlugin;
+use physic::player_detection::PlayerDetectionPlugin;
 
 use debug::debug::DebugPlugin;
 use deckbuilding::DeckbuildingPlugin;
@@ -79,6 +82,7 @@ fn main() {
             DifficultyPlugin,
             LevelPlugin,
             GamePlugin,
+            audio::AudioPlugin,
         ))
         .add_plugins(
             EditorPlugin
@@ -99,11 +103,12 @@ fn main() {
             CrosshairPlugin,
             CollisionPlugin,
             HealthPlugin,
+            PlayerDetectionPlugin,
         ))
         // Ennemis
         .add_plugins((
             EnemyPlugin,
-            DespawnZonePlugin
+            DespawnOffScreenPlugin
         ))
         // Entités & effets
         .add_plugins((
@@ -185,7 +190,7 @@ fn cleanup_playing(
 
     for entity in all_entities {
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.despawn();
+            e.try_despawn();
         }
     }
 }

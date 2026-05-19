@@ -110,8 +110,8 @@ pub enum Action {
     SetDifficulty(f32),
 
     // ─── Audio ──────────────────────────────────────────────────
-    /// Joue un son one-shot.
-    PlaySound(&'static str),
+    /// Joue un SFX one-shot via la banque centralisée.
+    PlaySound(crate::audio::Sfx),
     /// Lance la musique de jeu en boucle.
     StartMusic(&'static str),
     /// Arrête la musique principale.
@@ -326,9 +326,8 @@ impl Action {
     pub fn short_name(&self) -> String {
         match self {
             Action::SetDifficulty(f) => format!("Diff({})", f),
-            Action::PlaySound(p) => {
-                let name = p.rsplit('/').next().unwrap_or(p);
-                format!("Sound({})", name)
+            Action::PlaySound(sfx_id) => {
+                format!("Sound({:?})", sfx_id)
             }
             Action::StartMusic(p) => {
                 let name = p.rsplit('/').next().unwrap_or(p);
@@ -421,7 +420,7 @@ pub fn build_level_1() -> Vec<LevelStep> {
             .with(Action::Log("Niveau 1 démarré")),
         // ─── Countdown (7-10s) ──────────────────────────────────
         LevelStep::at(7.0, "countdown")
-            .with(Action::PlaySound("audio/sfx/t_ready.ogg"))
+            .with(Action::PlaySound(crate::audio::Sfx::UiCountdownReady))
             .with(Action::StartCountdown),
         // Note : le countdown envoie un BoomEvent au "GO!" (10s)
 
@@ -433,23 +432,33 @@ pub fn build_level_1() -> Vec<LevelStep> {
                 2,
                 4.0,
                 SpawnPosition::Top,
+            ))
+            // Mines sporadiques pendant la phase 2 — 1 mine toutes les 7s
+            // (≈ 2-3 mines sur la durée de phase 2). Spawn aléatoire en haut
+            // de l'écran, elles tombent verticalement comme les astéroïdes.
+            .with(Action::StartSpawning(
+                "mine",
+                1,
+                7.0,
+                SpawnPosition::Top,
             )),
         LevelStep::at(14.3, "boom_1")
             .with(Action::SetDifficulty(4.5))
-            .with(Action::PlaySound("audio/sfx/t_go.wav"))
+            .with(Action::PlaySound(crate::audio::Sfx::UiCountdownGo))
             .with(Action::SendBoom),
         LevelStep::at(18.3, "boom_2")
             .with(Action::SetDifficulty(6.5))
-            .with(Action::PlaySound("audio/sfx/t_go.wav"))
+            .with(Action::PlaySound(crate::audio::Sfx::UiCountdownGo))
             .with(Action::SendBoom),
         LevelStep::at(22.6, "boom_3")
             .with(Action::SetDifficulty(7.5))
-            .with(Action::PlaySound("audio/sfx/t_go.wav"))
+            .with(Action::PlaySound(crate::audio::Sfx::UiCountdownGo))
             .with(Action::SendBoom),
         // ─── Transition vers le boss ────────────────────────────
         LevelStep::at(27.7, "pre_boss")
             .with(Action::StopSpawning("asteroid"))
             .with(Action::StopSpawning("green_ufo"))
+            .with(Action::StopSpawning("mine"))
             .with(Action::StartBgDeceleration {
                 duration: 9.0,
                 final_speed: 30.0,
@@ -484,6 +493,19 @@ pub fn build_level_2() -> Vec<LevelStep> {
     ]
 }
 
+/// Ressource d'éditeur : si présente au moment de `setup_level`, override
+/// le niveau normal par une timeline minimale qui spawn juste cet ennemi.
+#[derive(Resource)]
+pub struct EditorTestEnemy(pub &'static str);
+
+/// Niveau de test : spawn un seul ennemi du type demandé, rien d'autre.
+pub fn build_level_test_enemy(enemy_name: &'static str) -> Vec<LevelStep> {
+    vec![
+        LevelStep::at(0.0, "test_spawn")
+            .with(Action::SpawnEnemy(enemy_name, 1, SpawnPosition::At(0.0, 200.0))),
+    ]
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Systèmes
 // ═══════════════════════════════════════════════════════════════════════
@@ -492,6 +514,7 @@ fn setup_level(
     mut commands: Commands,
     progress: Res<crate::game_manager::game::GameProgress>,
     mut config: ResMut<LevelConfig>,
+    editor_test: Option<Res<EditorTestEnemy>>,
 ) {
     // Mettre à jour la config visuelle du niveau (immédiat via ResMut)
     let def = crate::level::levels::level_def(progress.current_level);
@@ -499,25 +522,34 @@ fn setup_level(
     config.background_tile = def.background_tile;
     config.scroll_direction = def.scroll_direction;
 
-    let steps = match progress.current_level {
-        1 => build_level_1(),
-        2 => build_level_2(),
-        _ => build_level_1(), // fallback
+    let steps = if let Some(test) = editor_test.as_ref() {
+        build_level_test_enemy(test.0)
+    } else {
+        match progress.current_level {
+            1 => build_level_1(),
+            2 => build_level_2(),
+            _ => build_level_1(), // fallback
+        }
     };
     commands.insert_resource(LevelRunner::new(steps));
 
-    // Créer la LevelPhase : tous les niveaux commencent par une intro
-    let intro = crate::game_manager::game::level_intro(progress.current_level);
-    let phase = crate::game_manager::game::LevelPhaseKind::Intro {
-        elapsed: 0.0,
-        duration: intro.duration,
-        sound: intro.sound,
-        sound_played: false,
-        sound_finished: false,
-        start_pos: Vec2::ZERO,
-        target_pos: Vec2::ZERO,
-        spawn_ratio: intro.spawn_ratio,
-        initialized: false,
+    // En éditeur on saute l'intro (animation vaisseau + son) — l'ennemi spawn à
+    // t=0 et le joueur doit pouvoir bouger immédiatement pour tester.
+    let phase = if editor_test.is_some() {
+        crate::game_manager::game::LevelPhaseKind::Running
+    } else {
+        let intro = crate::game_manager::game::level_intro(progress.current_level);
+        crate::game_manager::game::LevelPhaseKind::Intro {
+            elapsed: 0.0,
+            duration: intro.duration,
+            sound: intro.sound,
+            sound_played: false,
+            sound_finished: false,
+            start_pos: Vec2::ZERO,
+            target_pos: Vec2::ZERO,
+            spawn_ratio: intro.spawn_ratio,
+            initialized: false,
+        }
     };
     commands.insert_resource(crate::game_manager::game::LevelPhase { phase });
 }
@@ -532,6 +564,7 @@ fn run_level(
     mut countdown_events: MessageWriter<crate::ui::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
     level_phase: Option<Res<crate::game_manager::game::LevelPhase>>,
+    sfx_library: Res<crate::audio::SfxLibrary>,
 ) {
     // Ne faire tourner les LevelSteps que pendant la phase Running
     let Some(ref phase) = level_phase else { return };
@@ -579,6 +612,7 @@ fn run_level(
                 &mut countdown_events,
                 &mut difficulty,
                 &music_q,
+                &sfx_library,
             );
         }
 
@@ -598,13 +632,17 @@ pub(crate) fn execute_action(
     countdown_events: &mut MessageWriter<crate::ui::countdown::CountdownEvent>,
     difficulty: &mut ResMut<Difficulty>,
     music_q: &Query<Entity, With<crate::MusicMain>>,
+    sfx_library: &crate::audio::SfxLibrary,
 ) {
     match action {
         Action::SetDifficulty(factor) => {
             difficulty.factor = *factor;
         }
-        Action::PlaySound(path) => {
-            commands.spawn((AudioPlayer::new(asset_server.load(*path)), PlaybackSettings::DESPAWN));
+        Action::PlaySound(sfx_id) => {
+            commands.spawn((
+                AudioPlayer::new(sfx_library.get(*sfx_id)),
+                PlaybackSettings::DESPAWN,
+            ));
         }
         Action::StartMusic(path) => {
             commands.spawn((
@@ -619,7 +657,7 @@ pub(crate) fn execute_action(
         Action::StopMainMusic => {
             for entity in music_q.iter() {
                 if let Ok(mut e) = commands.get_entity(entity) {
-                    e.despawn();
+                    e.try_despawn();
                 }
             }
         }
@@ -670,6 +708,7 @@ fn process_level_action_events(
     mut boom_events: MessageWriter<BoomEvent>,
     mut countdown_events: MessageWriter<crate::ui::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
+    sfx_library: Res<crate::audio::SfxLibrary>,
 ) {
     for event in events.read() {
         for action in &event.0 {
@@ -682,6 +721,7 @@ fn process_level_action_events(
                 &mut countdown_events,
                 &mut difficulty,
                 &music_q,
+                &sfx_library,
             );
         }
     }
@@ -689,4 +729,5 @@ fn process_level_action_events(
 
 fn cleanup_level(mut commands: Commands) {
     commands.remove_resource::<LevelRunner>();
+    commands.remove_resource::<EditorTestEnemy>();
 }
