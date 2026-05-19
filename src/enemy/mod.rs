@@ -23,7 +23,10 @@ use crate::enemy::enemy_register::EnemyRegister;
 use crate::enemy::enemy_register::spawn;
 use crate::enemy::hit_flash::*;
 use crate::enemy::green_ufo::*;
-use crate::enemy::kamikaze::{kamikaze_boom_system, kamikaze_speed_ramp_system, kamikaze_warn_system, KamikazeBuilder};
+use crate::enemy::kamikaze::{
+    kamikaze_boom_system, kamikaze_laugh_start_system, kamikaze_laugh_stop_system,
+    kamikaze_scream_system, kamikaze_speed_ramp_system, KamikazeBuilder,
+};
 use crate::enemy::mine::{blink_red_system, mine_countdown_audio, mine_explode_system, MineBuilder};
 use crate::GameState;
 use crate::menu::pause::not_paused;
@@ -62,7 +65,9 @@ impl Plugin for EnemyPlugin {
                     mine_countdown_audio,
                     blink_red_system,
                     kamikaze_boom_system,
-                    kamikaze_warn_system,
+                    kamikaze_scream_system,
+                    kamikaze_laugh_start_system,
+                    kamikaze_laugh_stop_system,
                     kamikaze_speed_ramp_system,
                     asteroid_death_fx_system,
                 )

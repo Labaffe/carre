@@ -83,11 +83,23 @@ pub struct Kamikaze;
 #[derive(Component, Clone)]
 pub struct KamikazeBoom;
 
-/// Inséré à l'entrée de l'état armed. `kamikaze_warn_system` détecte l'`Added`
-/// et joue le son d'alerte — une seule fois par kamikaze, au moment où il
-/// devient dangereux pour le joueur.
+/// Inséré à l'entrée de l'état armed. `kamikaze_scream_system` détecte
+/// l'`Added` et joue le cri terrifiant — une seule fois par kamikaze, au
+/// moment où il devient dangereux pour le joueur.
 #[derive(Component, Clone)]
 pub struct KamikazeArmed;
+
+/// Inséré pendant la phase pursuing. `kamikaze_laugh_start_system` spawn
+/// un AudioPlayer en loop (le rire) attaché à l'entité. Quand le composant
+/// est retiré (transition vers armed), `kamikaze_laugh_stop_system` despawn
+/// l'audio. Cleanup automatique aussi si le kamikaze est tué.
+#[derive(Component, Clone)]
+pub struct KamikazeLaughing;
+
+/// Marker sur l'entité audio du rire — permet de retrouver et despawn cet
+/// audio précis quand la phase pursuing se termine.
+#[derive(Component)]
+pub struct KamikazeLaughAudio;
 
 /// Tick l'âge du kamikaze et applique un déplacement additionnel vers le
 /// joueur dont la magnitude grandit avec l'âge. S'additionne au `Chase` de
@@ -138,13 +150,16 @@ impl EnemyBuilder for KamikazeBuilder {
         let frame_dur = Duration::from_secs_f32(KAMIKAZE_FRAME_DURATION);
 
         // Phase 0 : chase + animation 000→003 one-shot (reste figé sur 003).
+        // `KamikazeLaughing` marker → spawn d'un AudioPlayer LOOP via le
+        // système `kamikaze_laugh_start_system`. Retiré à la transition.
         let pursuing = BehaviorBuilder::multiple()
             .with(BehaviorBuilder::from_component(
                 Movements::new().with(Chase::new(KAMIKAZE_CHASE_SPEED)),
             ))
             .with(BehaviorBuilder::from_component(
                 Animation::new("kamikaze_chase", frame_dur).one_shot(),
-            ));
+            ))
+            .with(BehaviorBuilder::from_component(KamikazeLaughing));
 
         // Phase 1 : countdown. Chase continue, BlinkRed actif, animation
         // d'explosion joue 004→014 sur toute la durée. Le marker `KamikazeArmed`
@@ -260,13 +275,56 @@ pub fn kamikaze_boom_system(
     }
 }
 
-/// Détecte `Added<KamikazeArmed>` : joue le son d'alerte une fois quand le
-/// kamikaze entre en phase armed.
-pub fn kamikaze_warn_system(
+/// Détecte `Added<KamikazeArmed>` : joue le cri terrifiant une fois quand
+/// le kamikaze entre en phase armed.
+pub fn kamikaze_scream_system(
     mut sfx: SfxPlayer,
     query: Query<(), Added<KamikazeArmed>>,
 ) {
     for _ in &query {
-        sfx.play(Sfx::KamikazeWarn);
+        sfx.play(Sfx::KamikazeScream);
+    }
+}
+
+/// Détecte `Added<KamikazeLaughing>` : spawn un AudioPlayer LOOP en CHILD du
+/// kamikaze. La relation parent-enfant assure que si le kamikaze est tué,
+/// l'audio est despawn en cascade (try_despawn récursif).
+pub fn kamikaze_laugh_start_system(
+    mut commands: Commands,
+    library: Res<crate::audio::SfxLibrary>,
+    query: Query<Entity, Added<KamikazeLaughing>>,
+) {
+    for kamikaze_entity in &query {
+        if let Ok(mut e) = commands.get_entity(kamikaze_entity) {
+            e.with_children(|parent| {
+                parent.spawn((
+                    AudioPlayer::new(library.get(Sfx::KamikazeLaugh)),
+                    PlaybackSettings::LOOP,
+                    KamikazeLaughAudio,
+                ));
+            });
+        }
+    }
+}
+
+/// Détecte la disparition de `KamikazeLaughing` (transition pursuing → armed).
+/// Cherche l'audio enfant via le marker `KamikazeLaughAudio` et despawn.
+/// Si le kamikaze est mort, la cascade parent-enfant a déjà géré le despawn —
+/// `children_q.get` échoue silencieusement.
+pub fn kamikaze_laugh_stop_system(
+    mut commands: Commands,
+    mut removed: RemovedComponents<KamikazeLaughing>,
+    children_q: Query<&Children>,
+    audio_q: Query<(), With<KamikazeLaughAudio>>,
+) {
+    for kamikaze_entity in removed.read() {
+        let Ok(children) = children_q.get(kamikaze_entity) else { continue };
+        for &child in children {
+            if audio_q.contains(child) {
+                if let Ok(mut e) = commands.get_entity(child) {
+                    e.try_despawn();
+                }
+            }
+        }
     }
 }
