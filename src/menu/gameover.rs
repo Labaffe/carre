@@ -10,6 +10,7 @@ use crate::game_manager::game::{
     despawn_confirm_popup,
 };
 use crate::game_manager::state::GameState;
+use crate::audio::{Sfx, SfxPlayer};
 use crate::{MusicGameOver, MusicMain};
 use bevy::color::Alpha;
 use bevy::prelude::*;
@@ -171,6 +172,7 @@ fn animate_gameover(
     mut gameover_music_q: Query<(Entity, Option<&mut AudioSink>), With<MusicGameOver>>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
+    mut sfx: SfxPlayer,
 ) {
     anim.elapsed += time.delta_secs();
 
@@ -182,10 +184,7 @@ fn animate_gameover(
     // musique et animation démarrent ensemble
     if !anim.music_spawned {
         anim.music_spawned = true;
-        commands.spawn((
-            (AudioPlayer::new(asset_server.load("audio/sfx/you_died.ogg")), PlaybackSettings::ONCE),
-            MusicGameOver,
-        ));
+        sfx.play_once(Sfx::PlayerDeath).insert(MusicGameOver);
     }
 
     // progression calculée depuis le début de l'animation (après le délai)

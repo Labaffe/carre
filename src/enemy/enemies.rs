@@ -90,3 +90,14 @@ pub const MINE: EnemyData = EnemyData {
     ),
     total_hp: 1,
 };
+
+pub const KAMIKAZE: EnemyData = EnemyData {
+    name: "Kamikaze",
+    config: EnemyConfigData::new(
+        25.0,
+        128.0,
+        "audio/sfx/asteroid_hit.ogg",
+        "audio/sfx/asteroid_die.ogg",
+    ),
+    total_hp: 2,
+};

@@ -7,6 +7,7 @@
 //! Le joueur peut accumuler des bombes et les déclencher avec Espace.
 //! La bombe inflige des dégâts à tous les astéroïdes et ennemis à l'écran.
 
+use crate::audio::{Sfx, SfxPlayer};
 use crate::enemy::asteroid::Asteroid;
 use crate::enemy::enemy::Enemy;
 use crate::fx::explosion::load_frames_from_folder;
@@ -81,10 +82,10 @@ pub enum ItemType {
 }
 
 impl ItemType {
-    fn pickup_sound(&self) -> &'static str {
+    fn pickup_sound(&self) -> Sfx {
         match self {
-            ItemType::Bomb => "audio/sfx/level_up.ogg",
-            ItemType::BonusScore => "audio/sfx/level_up.ogg",
+            ItemType::Bomb => Sfx::ItemPickup,
+            ItemType::BonusScore => Sfx::ItemPickup,
         }
     }
 }
@@ -312,19 +313,13 @@ fn bomb_input(
     mut bomb_events: MessageWriter<BombEvent>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut sfx: SfxPlayer,
 ) {
     if keyboard.just_pressed(KeyCode::Space) && bombs.count > 0 {
         bombs.count -= 1;
         bomb_events.write(BombEvent);
 
-        // Son de bombe
-        commands.spawn((
-            AudioPlayer::new(asset_server.load("audio/sfx/bomb.ogg")),
-            PlaybackSettings {
-                volume: bevy::audio::Volume::Linear(3.0),
-                ..PlaybackSettings::DESPAWN
-            },
-        ));
+        sfx.play_at(Sfx::PlayerBomb, 3.0);
 
         // Flash blanc plein écran
         commands.spawn((
@@ -413,6 +408,7 @@ fn process_drop_events(
     asset_server: Res<AssetServer>,
     mut events: MessageReader<DropEvent>,
     item_frames: Res<ItemFrames>,
+    mut sfx: SfxPlayer,
 ) {
     for event in events.read() {
         for &(item_type, chance) in event.table {
@@ -442,14 +438,7 @@ fn process_drop_events(
                 },
             ));
 
-            // Son générique d'apparition d'item
-            commands.spawn((
-                AudioPlayer::new(asset_server.load("audio/sfx/level_up.ogg")),
-                PlaybackSettings {
-                    volume: bevy::audio::Volume::Linear(3.0),
-                    ..PlaybackSettings::DESPAWN
-                },
-            ));
+            sfx.play_at(Sfx::ItemAppear, 3.0);
         }
     }
 }
@@ -497,6 +486,7 @@ fn player_pickup(
     item_q: Query<(Entity, &Transform, &Droppable)>,
     mut bombs: ResMut<PlayerBombs>,
     mut score: ResMut<Score>,
+    mut sfx: SfxPlayer,
 ) {
     let Ok(player_transform) = player_q.single() else {
         return;
@@ -519,13 +509,7 @@ fn player_pickup(
             }
         }
 
-        commands.spawn((
-            AudioPlayer::new(asset_server.load(droppable.item_type.pickup_sound())),
-            PlaybackSettings {
-                volume: bevy::audio::Volume::Linear(3.0),
-                ..PlaybackSettings::DESPAWN
-            },
-        ));
+        sfx.play_at(droppable.item_type.pickup_sound(), 3.0);
 
         if let Ok(mut e) = commands.get_entity(entity) {
             e.try_despawn();

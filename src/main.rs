@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 // ─── Modules par feature ──────────────────────────────────────────
+mod audio;
 mod debug;
 mod deckbuilding;
 mod enemy;
@@ -81,6 +82,7 @@ fn main() {
             DifficultyPlugin,
             LevelPlugin,
             GamePlugin,
+            audio::AudioPlugin,
         ))
         .add_plugins(
             EditorPlugin
