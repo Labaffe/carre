@@ -12,7 +12,7 @@ use std::time::Duration;
 use crate::audio::{Sfx, SfxPlayer};
 use crate::debug::debug::DebugMode;
 use crate::game_manager::state::GameState;
-use crate::physic::area_of_effect::{aoe_lifecycle, setup_aoe_assets};
+use crate::physic::area_of_effect::{aoe_damage_enemies_on_overlap, aoe_lifecycle, setup_aoe_assets};
 use crate::physic::collider::{layers, OverlapEvent};
 use crate::physic::harmless::Harmless;
 use crate::physic::health::{DamageEvent, Health, HitEvent};
@@ -28,6 +28,7 @@ impl Plugin for CollisionPlugin {
                 player_damage_on_overlap,
                 player_post_hit,
                 player_hurt_sound_on_hit,
+                aoe_damage_enemies_on_overlap,
                 aoe_lifecycle,
             )
                 .run_if(in_state(GameState::Playing)),
