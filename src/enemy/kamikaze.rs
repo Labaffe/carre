@@ -260,9 +260,40 @@ pub fn kamikaze_speed_ramp_system(
     }
 }
 
-/// Détecte `Added<KamikazeBoom>` (insertion à l'entrée de la phase booming,
-/// déclenchée par `on_complete` du countdown) : spawn l'AOE, joue le son,
-/// despawn le kamikaze. Une seule fois par entité grâce à `Added`.
+/// Force le kamikaze à exploser (insert `KamikazeBoom`) dans 2 cas :
+/// - **HP=0** (tué par les tirs joueur) — au lieu de mourir silencieusement
+/// - **Contact physique avec le joueur** (distance < `enemy.radius + PLAYER_RADIUS`)
+///   — court-circuite le countdown armed s'il était en cours
+///
+/// Le filtre `Without<KamikazeBoom>` empêche le double-déclenchement si la
+/// phase booming est déjà active.
+pub fn kamikaze_force_boom_system(
+    mut commands: Commands,
+    kamikaze_q: Query<
+        (Entity, &Transform, &Health, &Enemy),
+        (With<Kamikaze>, Without<KamikazeBoom>),
+    >,
+    player_q: Query<&Transform, With<crate::player::player::Player>>,
+) {
+    let player_pos = player_q.single().ok().map(|tf| tf.translation.xy());
+
+    for (entity, tf, health, enemy) in &kamikaze_q {
+        let touches_player = player_pos.map_or(false, |pp| {
+            let dist = (tf.translation.xy() - pp).length();
+            dist < enemy.radius + crate::physic::collision::PLAYER_RADIUS
+        });
+        if health.is_dead() || touches_player {
+            if let Ok(mut e) = commands.get_entity(entity) {
+                e.insert(KamikazeBoom);
+            }
+        }
+    }
+}
+
+/// Détecte `Added<KamikazeBoom>` (insertion à l'entrée de la phase booming
+/// via `on_complete` du countdown, OU forcée par `kamikaze_force_boom_system`) :
+/// spawn l'AOE, joue le son, despawn le kamikaze. Une seule fois par entité
+/// grâce à `Added`.
 pub fn kamikaze_boom_system(
     mut commands: Commands,
     mut sfx: SfxPlayer,
