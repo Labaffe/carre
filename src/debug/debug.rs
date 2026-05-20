@@ -1,20 +1,26 @@
-//! Mode debug (F1) : affiche un overlay avec FPS, timer, difficulté,
-//! dessine les hitboxes de tous les `Hittable` (cercles ou rectangles OBB),
-//! affiche le nom du sprite au-dessus de chaque astéroïde (ex: "x007"),
-//! et affiche la timeline du niveau avec les liens de causalité.
+//! Mode debug.
+//!
+//! Touches :
+//! - **F1** : toggle overlay (FPS, hitboxes via `Hitbox` + `CollisionLayer`,
+//!   timer, difficulté, timeline, mouse coords) ET rend le joueur invulnérable
+//!   (via le composant `Invulnerable`, géré par `debug_player_invulnerability`).
+//! - **F2** : pendant l'intro → skip l'intro. Pendant Playing → saute la
+//!   timeline jusqu'à `planet_appear` (juste avant le boss).
+//! - **F3 / F4** : pendant l'intro → skip l'intro.
+//! - **F5** : tue le joueur instantanément (test GameOver).
 
 use crate::MusicMain;
 use crate::behavior::behavior::BehaviorComponent;
 use crate::enemy::asteroid::Asteroid;
 use crate::enemy::boss::BossMarker;
 use crate::enemy::enemy::Enemy;
-//use crate::enemy::green_ufo::GreenUFOMarker;
 use crate::game_manager::difficulty::Difficulty;
 use crate::game_manager::game::{IntroSound, LevelPhase, LevelPhaseKind};
 use crate::level::level::{LevelRunner, Trigger};
 use crate::menu::pause::PauseState;
 use crate::physic::collider::{layers, CollisionLayer, Hitbox};
 use crate::physic::health::Health;
+use crate::physic::invulnerable::Invulnerable;
 use crate::physic::player_detection::PlayerDetection;
 use crate::player::player::Player;
 use crate::ui::score::Score;
@@ -34,6 +40,7 @@ impl Plugin for DebugPlugin {
                 (
                     debug_skip_intro,
                     toggle_debug,
+                    debug_player_invulnerability,
                     draw_hitboxes,
                     update_debug_ui,
                     update_debug_level_ui,
@@ -124,7 +131,6 @@ fn toggle_debug(
     runner: Option<ResMut<crate::level::level::LevelRunner>>,
     music_q: Query<Entity, With<MusicMain>>,
     asteroid_q: Query<Entity, With<Asteroid>>,
-    //green_ufo_q: Query<Entity, With<GreenUFOMarker>>,
     mut boom_events: MessageWriter<crate::game_manager::difficulty::BoomEvent>,
     mut countdown_events: MessageWriter<crate::ui::countdown::CountdownEvent>,
     asset_server: Res<AssetServer>,
@@ -135,9 +141,6 @@ fn toggle_debug(
         for entity in asteroid_q.iter() {
             if let Ok(mut e) = commands.get_entity(entity) { e.try_despawn(); }
         }
-        //for entity in green_ufo_q.iter() {
-        //    if let Ok(mut e) = commands.get_entity(entity) { e.try_despawn(); }
-        //}
 
         // Avancer le LevelRunner jusqu'à "planet_appear" (juste avant le boss)
         if let Some(mut runner) = runner {
@@ -183,6 +186,26 @@ fn toggle_debug(
         if let Ok(mut vis) = mouse_ui_q.single_mut() {
             *vis = new_vis;
         }
+    }
+}
+
+/// Insère/retire `Invulnerable` sur le joueur selon l'état de `DebugMode`.
+/// Le filtre passe via le pipeline `apply_damage` standard — pas de check
+/// dédié dans les systèmes de collision.
+pub fn debug_player_invulnerability(
+    mut commands: Commands,
+    debug: Res<DebugMode>,
+    player_q: Query<(Entity, Option<&Invulnerable>), With<Player>>,
+) {
+    let Ok((player_e, has_invuln)) = player_q.single() else { return };
+    match (debug.0, has_invuln) {
+        (true, None) => {
+            commands.entity(player_e).insert(Invulnerable);
+        }
+        (false, Some(_)) => {
+            commands.entity(player_e).remove::<Invulnerable>();
+        }
+        _ => {}
     }
 }
 

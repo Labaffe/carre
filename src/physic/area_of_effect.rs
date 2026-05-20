@@ -1,10 +1,12 @@
 //! Zone de dégâts générique (Area Of Effect).
 //!
-//! Une entité avec un [`AreaOfEffect`] est un `Hittable` qui touche le joueur
-//! au contact mais ne despawn pas (`despawn_on_hit = false`) — elle persiste
-//! pour sa `lifetime`. Le joueur prend 1 dégât puis devient `Invincible` pour
-//! `INVINCIBLE_DURATION` (=2s), donc en pratique une AOE de lifetime ≤ 2s
-//! n'inflige qu'un seul hit.
+//! Une entité avec un [`AreaOfEffect`] porte un collider de layer `AOE` qui
+//! émet des `OverlapEvent` pour player/ennemis/asteroids. Le joueur prend 1
+//! dégât (via `player_damage_on_overlap`) puis devient `Invincible` pour
+//! `INVINCIBLE_DURATION` (=2s), donc une AOE de lifetime ≤ 2s n'inflige
+//! qu'un seul hit. Les ennemis prennent `AOE_DAMAGE_TO_ENEMY` une fois
+//! (via `aoe_damage_enemies_on_overlap` + tracking `AoeAlreadyHit`).
+//! L'AOE persiste pour sa `lifetime` puis se despawn (`aoe_lifecycle`).
 //!
 //! **Visuel** : utilise des `Mesh2d` partagés (cercle unité + quad unité)
 //! stockés dans [`AoeAssets`]. Le scale du `Transform` adapte la taille.

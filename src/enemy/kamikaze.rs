@@ -317,7 +317,11 @@ pub fn kamikaze_boom_system(
             KAMIKAZE_AOE_LIFETIME,
         );
         sfx.play(Sfx::Explosion);
-        commands.entity(entity).try_despawn();
+        // DespawnSelf au lieu de try_despawn direct : évite la race avec les
+        // commandes du behavior tree (cf. collision.rs pour les détails).
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_insert(DespawnSelf);
+        }
     }
 }
 

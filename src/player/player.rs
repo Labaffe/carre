@@ -30,6 +30,10 @@ const INVINCIBLE_BLINK_RATE: f32 = 3.0;
 pub const PLAYER_SPEED: f32 = 400.0;
 /// Marge bord d'écran pour empêcher le joueur de sortir.
 const PLAYER_MARGIN: f32 = 64.0;
+/// Taille du sprite du joueur (carré, px).
+const PLAYER_SPRITE_SIZE: f32 = 128.0;
+/// Rayon de la hitbox du joueur (px). ~70% de la demi-taille du sprite.
+const PLAYER_HITBOX_RADIUS: f32 = 45.0;
 /// Durée du flash blanc autour du joueur lors d'un boom.
 const BOOM_FLASH_DURATION: f32 = 0.25;
 
@@ -108,7 +112,7 @@ pub fn spawn_player(
     commands.spawn((
         Sprite {
             image: asset_server.load(ship_sprite),
-            custom_size: Some(Vec2::new(128.0, 128.0)),
+            custom_size: Some(Vec2::splat(PLAYER_SPRITE_SIZE)),
             ..default()
         },
         Transform::from_xyz(0.0, start_y, 0.5),
@@ -116,7 +120,7 @@ pub fn spawn_player(
         Health::new(PLAYER_MAX_LIVES),
         Weapon::default(),
         collider(
-            Shape::Circle(45.0),
+            Shape::Circle(PLAYER_HITBOX_RADIUS),
             layers::PLAYER,
             layers::ENEMY
                 | layers::ASTEROID
@@ -130,6 +134,7 @@ pub fn spawn_player(
 // ─── Mouvement ─────────────────────────────────────────────────────
 
 fn movement(
+    time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut query: Query<&mut Transform, With<Player>>,
     windows: Query<&Window>,
@@ -146,7 +151,7 @@ fn movement(
     if keyboard.pressed(KeyCode::KeyA) { direction.x -= 1.0; }
     if keyboard.pressed(KeyCode::KeyD) { direction.x += 1.0; }
 
-    transform.translation += direction.normalize_or_zero() * PLAYER_SPEED * 0.016;
+    transform.translation += direction.normalize_or_zero() * PLAYER_SPEED * time.delta_secs();
     transform.translation.x = transform.translation.x.clamp(-half_w, half_w);
     transform.translation.y = transform.translation.y.clamp(-half_h, half_h);
 }

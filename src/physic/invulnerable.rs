@@ -2,13 +2,14 @@ use bevy::prelude::*;
 
 /// Marqueur posé sur une entité qui ne doit pas prendre de dégâts.
 ///
-/// Utilisé typiquement pendant les phases de transition d'un boss (cf. boss.rs)
-/// ou pendant les frames d'invulnérabilité du joueur (cf. `Invincible` côté
-/// player — composant séparé pour ne pas mélanger les sémantiques).
+/// Utilisé typiquement pendant les phases de transition d'un boss (cf. boss.rs),
+/// sur une mine (toujours invulnérable + harmless), ou via F1 (debug mode) sur
+/// le joueur. Pour les frames d'invulnérabilité post-hit du joueur, voir
+/// le composant séparé `Invincible(Timer)`.
 ///
-/// Les systèmes de dégâts (`projectile_enemy_collision`, `bomb_apply_damage`)
-/// vérifient la présence de ce composant et skippent l'application des dégâts.
-/// L'entité reste **dangereuse au contact** (le joueur peut toujours être
-/// touché par un boss invulnérable qui bouge sur lui).
+/// Le système central `apply_damage` (cf. `physic::health`) vérifie ce
+/// composant et skip l'application des dégâts. L'entité reste **dangereuse
+/// au contact** (le joueur peut toujours être touché par un boss invulnérable
+/// qui bouge sur lui — utiliser `Harmless` pour bloquer le contact).
 #[derive(Component, Clone)]
 pub struct Invulnerable;
