@@ -105,6 +105,7 @@ fn main() {
             CrosshairPlugin,
             CollisionPlugin,
             ColliderPlugin,
+            physic::health::HealthPlugin,
             PlayerDetectionPlugin,
         ))
         // Ennemis

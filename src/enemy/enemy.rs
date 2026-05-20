@@ -30,8 +30,7 @@ use crate::enemy::enemies::EnemyData;
 use crate::enemy::hit_flash::HitFlash;
 use crate::fx::explosion::spawn_projectile_death;
 use crate::physic::collider::{layers, OverlapEvent};
-use crate::physic::health::Health;
-use crate::physic::invulnerable::Invulnerable;
+use crate::physic::health::{DamageEvent, HitEvent};
 use crate::ui::score::Score;
 use crate::weapon::projectile::Projectile;
 
@@ -90,43 +89,32 @@ const HIT_FLASH_DURATION: f32 = 0.06;
 
 
 /// Réactif sur `OverlapEvent` : pour chaque overlap projectile joueur ↔
-/// (ennemi | astéroïde), inflige les dégâts et despawn le projectile.
-/// Unifie l'ancien `projectile_enemy_collision` et le dead `projectile_asteroid_collision`.
+/// (ennemi | astéroïde), émet un `DamageEvent` et despawn le projectile.
 ///
-/// Comportement :
-/// - Projectile toujours despawn (même si cible invulnérable). Anim de mort
-///   du projectile via `spawn_projectile_death` si `death_folder` configuré.
-/// - Cible prend `projectile.damage` PV si pas `Invulnerable` ET (si Enemy)
-///   en phase vulnérable.
-/// - HitFlash + Sfx::EnemyHit + score+1 sur dégât effectif.
-/// - Mort (HP=0) gérée par les systèmes existants (`detect_death`, `asteroid_death_fx`).
+/// La logique métier (skip Invulnerable, take_damage, émission HitEvent
+/// pour FX) est centralisée dans `apply_damage`. Ce système est juste un
+/// émetteur — il ne sait rien de l'invulnérabilité, du flash, du son, etc.
 pub fn projectile_damage_on_overlap(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut events: MessageReader<OverlapEvent>,
     projectile_q: Query<(&Transform, &Projectile)>,
-    mut target_q: Query<(&mut Health, Option<&Invulnerable>)>,
-    mut score: ResMut<Score>,
-    mut sfx: SfxPlayer,
+    mut damage_events: MessageWriter<DamageEvent>,
 ) {
     let mut despawned_projectiles = std::collections::HashSet::new();
 
     for ev in events.read() {
         let Some((proj_e, target_e)) = ev.pick(layers::PLAYER_PROJECTILE) else { continue };
-        // Filtre cible : ENEMY ou ASTEROID uniquement
         let target_layer = if ev.a == target_e { ev.a_layer } else { ev.b_layer };
         if target_layer & (layers::ENEMY | layers::ASTEROID) == 0 {
             continue;
         }
-        // Un projectile ne touche qu'une cible (premier event consommé)
         if despawned_projectiles.contains(&proj_e) {
             continue;
         }
 
         let Ok((proj_tf, projectile)) = projectile_q.get(proj_e) else { continue };
-        let Ok((mut health, invulnerable)) = target_q.get_mut(target_e) else { continue };
 
-        // Despawn projectile + anim de mort (même si cible invulnérable)
         spawn_projectile_death(
             &mut commands,
             &asset_server,
@@ -138,17 +126,55 @@ pub fn projectile_damage_on_overlap(
         }
         despawned_projectiles.insert(proj_e);
 
-        // Dégâts si cible vulnérable (= pas de marker Invulnerable).
-        if invulnerable.is_none() {
-            health.take_damage(projectile.damage);
-            score.add(1);
-            if let Ok(mut ent) = commands.get_entity(target_e) {
-                ent.insert(HitFlash::white(HIT_FLASH_DURATION));
-            }
+        damage_events.write(DamageEvent {
+            target: target_e,
+            amount: projectile.damage,
+            source: Some(proj_e),
+        });
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Reactive systems sur HitEvent — feedback "ennemi touché"
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Insère un `HitFlash` sur tout target ENEMY ou ASTEROID qui a pris des
+/// dégâts. PLAYER est exclu (le flash blanc cohabiterait mal avec le blink
+/// d'`Invincible`).
+pub fn hit_flash_on_hit(
+    mut commands: Commands,
+    mut events: MessageReader<HitEvent>,
+) {
+    for ev in events.read() {
+        if ev.target_layer & (layers::ENEMY | layers::ASTEROID) == 0 {
+            continue;
+        }
+        if let Ok(mut e) = commands.get_entity(ev.target) {
+            e.try_insert(HitFlash::white(HIT_FLASH_DURATION));
+        }
+    }
+}
+
+/// Joue `Sfx::EnemyHit` quand un ENEMY ou ASTEROID prend des dégâts.
+pub fn enemy_hit_sound_on_hit(
+    mut events: MessageReader<HitEvent>,
+    mut sfx: SfxPlayer,
+) {
+    for ev in events.read() {
+        if ev.target_layer & (layers::ENEMY | layers::ASTEROID) != 0 {
             sfx.play(Sfx::EnemyHit);
         }
     }
 }
 
-
-
+/// +1 au score à chaque hit sur ENEMY ou ASTEROID.
+pub fn score_on_enemy_hit(
+    mut events: MessageReader<HitEvent>,
+    mut score: ResMut<Score>,
+) {
+    for ev in events.read() {
+        if ev.target_layer & (layers::ENEMY | layers::ASTEROID) != 0 {
+            score.add(1);
+        }
+    }
+}

@@ -1,18 +1,26 @@
-//! Composant `Health` unifié, utilisé par toutes les entités qui peuvent
-//! prendre des dégâts : joueur, ennemis, astéroïdes.
+//! Composant `Health` + pipeline de dégâts unifié via événements.
 //!
-//! Les systèmes de collision ne manipulent plus des champs `Enemy.health` ou
-//! une ressource `PlayerLives` séparée — ils décrémentent directement
-//! `Health.current` via `take_damage()`.
+//! ## Pipeline
 //!
-//! ## Conventions
-//! - `current` et `max` sont en `i32` pour éviter les soucis de comparaison
-//!   flottante (un projectile fait `damage: i32` aussi).
-//! - Une entité est considérée morte dès que `current <= 0`.
-//! - Les transitions `HealthBelow(f)` du framework de behaviors comparent la
-//!   fraction `current / max` au seuil `f`.
+//! ```text
+//! Émetteurs ──→ DamageEvent ──→ apply_damage ──→ HitEvent ──→ FX reactive systems
+//! (projectile,    (target,        (un seul          (target,         (HitFlash,
+//!  player coll,    amount,         endroit où        amount_dealt,    Sfx, Score,
+//!  bomb...)        source)         on check          source,          player Invincible,
+//!                                  Invulnerable      target_layer)    etc.)
+//!                                  + Invincible
+//!                                  + take_damage)
+//! ```
+//!
+//! Avantage : les règles métier de l'application (skip si invulnerable, etc.)
+//! vivent à UN SEUL endroit (`apply_damage`). Les émetteurs disent juste
+//! "faire X dégâts à Y". Les FX listent indépendamment "j'ai pris un hit".
 
 use bevy::prelude::*;
+
+use crate::physic::collider::CollisionLayer;
+use crate::physic::invulnerable::Invulnerable;
+use crate::player::player::Invincible;
 
 /// Points de vie d'une entité. Fraîchement spawnée, `current == max`.
 #[derive(Component, Debug, Clone, Copy)]
@@ -22,27 +30,18 @@ pub struct Health {
 }
 
 impl Health {
-    /// Crée une santé pleine avec une limite donnée.
     pub fn new(max: i32) -> Self {
         Self { current: max, max }
     }
-
-    /// Inflige `damage` PV. Clamp `current` à 0 minimum.
     pub fn take_damage(&mut self, damage: i32) {
         self.current = (self.current - damage).max(0);
     }
-
-    /// Rend `amount` PV. Clamp `current` à `max` maximum.
     pub fn heal(&mut self, amount: i32) {
         self.current = (self.current + amount).min(self.max);
     }
-
-    /// `true` si `current <= 0`.
     pub fn is_dead(&self) -> bool {
         self.current <= 0
     }
-
-    /// Fraction `current / max` dans [0.0, 1.0].
     pub fn fraction(&self) -> f32 {
         if self.max <= 0 {
             0.0
@@ -50,12 +49,84 @@ impl Health {
             (self.current as f32 / self.max as f32).clamp(0.0, 1.0)
         }
     }
-
-    /// Réinitialise la santé au max (utilisé lors d'une transition de phase
-    /// dans l'ancien framework ennemi multi-phase).
     pub fn reset(&mut self, new_max: i32) {
         self.max = new_max;
         self.current = new_max;
     }
 }
 
+// ─── Events ──────────────────────────────────────────────────────────
+
+/// Demande d'infliction de dégâts. Émis par les systèmes de collision ou
+/// d'effet (projectile, bombe, contact joueur). Consommé par `apply_damage`.
+#[derive(Message, Debug, Clone, Copy)]
+pub struct DamageEvent {
+    pub target: Entity,
+    pub amount: i32,
+    /// Source du dégât (projectile, ennemi, …). `None` pour les broadcasts
+    /// non-spatiaux comme la bombe.
+    pub source: Option<Entity>,
+}
+
+/// Notification que des dégâts ont été appliqués (post-filtrage Invulnerable).
+/// Émis par `apply_damage`. Consommé par les systèmes FX (flash, son, score)
+/// et logique spécifique au target (player → Invincible/GameOver).
+#[derive(Message, Debug, Clone, Copy)]
+pub struct HitEvent {
+    pub target: Entity,
+    /// Layer de la cible (utilisé pour dispatcher les FX selon le type
+    /// d'entité touchée).
+    pub target_layer: u32,
+    pub amount_dealt: i32,
+    pub source: Option<Entity>,
+}
+
+// ─── Système central ─────────────────────────────────────────────────
+
+/// Lit `DamageEvent`, filtre Invulnerable/Invincible, applique à `Health`,
+/// émet `HitEvent` si le dégât a effectivement été infligé.
+pub fn apply_damage(
+    mut damage_events: MessageReader<DamageEvent>,
+    mut hit_events: MessageWriter<HitEvent>,
+    mut q: Query<(
+        &mut Health,
+        &CollisionLayer,
+        Option<&Invulnerable>,
+        Option<&Invincible>,
+    )>,
+) {
+    for ev in damage_events.read() {
+        let Ok((mut health, layer, invulnerable, invincible)) = q.get_mut(ev.target) else {
+            continue;
+        };
+        if invulnerable.is_some() || invincible.is_some() {
+            continue;
+        }
+        let before = health.current;
+        health.take_damage(ev.amount);
+        let dealt = before - health.current;
+        if dealt > 0 {
+            hit_events.write(HitEvent {
+                target: ev.target,
+                target_layer: layer.0,
+                amount_dealt: dealt,
+                source: ev.source,
+            });
+        }
+    }
+}
+
+// ─── Plugin ──────────────────────────────────────────────────────────
+
+pub struct HealthPlugin;
+
+impl Plugin for HealthPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_message::<DamageEvent>()
+            .add_message::<HitEvent>()
+            .add_systems(
+                Update,
+                apply_damage.run_if(in_state(crate::game_manager::state::GameState::Playing)),
+            );
+    }
+}
