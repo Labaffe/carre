@@ -47,6 +47,7 @@ use crate::movement::rush::Rush;
 use crate::movement::shake::Shake;
 use crate::movement::spin::Spin;
 use crate::movement::translate::Translate;
+use crate::physic::collider::{collider, layers};
 use crate::physic::harmless::Harmless;
 use crate::physic::health::Health;
 use crate::physic::invulnerable::Invulnerable;
@@ -358,6 +359,11 @@ impl EnemyBuilder for BossBuilder {
                 cooldown_remaining: 0.0,
             },
             BehaviorComponent::new(behavior),
+            collider(
+                Shape::Circle(BOSS.config.radius),
+                layers::ENEMY,
+                layers::PLAYER | layers::PLAYER_PROJECTILE,
+            ),
         ));
     }
 

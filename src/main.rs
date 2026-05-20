@@ -54,6 +54,7 @@ use ui::score::ScorePlugin;
 use ui::countdown::CountdownPlugin;
 
 use environment::background::{Background, BackgroundPlugin, Planet};
+use physic::collider::ColliderPlugin;
 use physic::collision::CollisionPlugin;
 use physic::health::HealthPlugin;
 use physic::player_detection::PlayerDetectionPlugin;
@@ -104,6 +105,7 @@ fn main() {
             ProjectilePlugin,
             CrosshairPlugin,
             CollisionPlugin,
+            ColliderPlugin,
             HealthPlugin,
             PlayerDetectionPlugin,
         ))

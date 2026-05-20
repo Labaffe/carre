@@ -13,7 +13,8 @@ use crate::enemy::enemy::Enemy;
 use crate::fx::explosion::load_frames_from_folder;
 use crate::game_manager::state::GameState;
 use crate::menu::pause::not_paused;
-use crate::physic::collision::PLAYER_RADIUS;
+use crate::geometry::shape::Shape;
+use crate::physic::collider::{collider, layers};
 use crate::physic::health::Health;
 use crate::physic::invulnerable::Invulnerable;
 use crate::player::player::Player;
@@ -36,7 +37,7 @@ impl Plugin for ItemPlugin {
                     process_drop_events,
                     move_droppables,
                     cleanup_offscreen_droppables,
-                    player_pickup,
+                    item_pickup_on_overlap,
                     animate_items,
                     bomb_input,
                     bomb_apply_damage,
@@ -436,6 +437,11 @@ fn process_drop_events(
                     index: 0,
                     timer: Timer::from_seconds(ITEM_ANIM_FPS, TimerMode::Repeating),
                 },
+                collider(
+                    Shape::Circle(ITEM_PICKUP_RADIUS),
+                    layers::ITEM,
+                    layers::PLAYER,
+                ),
             ));
 
             sfx.play_at(Sfx::ItemAppear, 3.0);
@@ -479,27 +485,23 @@ fn cleanup_offscreen_droppables(
     }
 }
 
-fn player_pickup(
+/// Réactif sur `OverlapEvent` : pour chaque overlap player ↔ item, applique
+/// l'effet (bomb/score), joue le son, despawn l'item. Multi-pickup possible
+/// dans la même frame (chaque event est traité).
+fn item_pickup_on_overlap(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    player_q: Query<&Transform, With<Player>>,
-    item_q: Query<(Entity, &Transform, &Droppable)>,
+    mut events: MessageReader<crate::physic::collider::OverlapEvent>,
+    droppable_q: Query<&Droppable>,
     mut bombs: ResMut<PlayerBombs>,
     mut score: ResMut<Score>,
     mut sfx: SfxPlayer,
 ) {
-    let Ok(player_transform) = player_q.single() else {
-        return;
-    };
-    let player_pos = player_transform.translation;
+    use crate::physic::collider::layers;
+    for ev in events.read() {
+        // pick(layer) retourne (entity_avec_ce_layer, autre). On veut l'item.
+        let Some((item_e, _player_e)) = ev.pick(layers::ITEM) else { continue };
+        let Ok(droppable) = droppable_q.get(item_e) else { continue };
 
-    for (entity, item_transform, droppable) in item_q.iter() {
-        let dist = player_pos.distance(item_transform.translation);
-        if dist > PLAYER_RADIUS + ITEM_PICKUP_RADIUS {
-            continue;
-        }
-
-        // Appliquer l'effet
         match droppable.item_type {
             ItemType::Bomb => {
                 bombs.count += 1;
@@ -508,10 +510,9 @@ fn player_pickup(
                 score.add(BONUS_SCORE_VALUE);
             }
         }
-
         sfx.play_at(droppable.item_type.pickup_sound(), 3.0);
 
-        if let Ok(mut e) = commands.get_entity(entity) {
+        if let Ok(mut e) = commands.get_entity(item_e) {
             e.try_despawn();
         }
     }

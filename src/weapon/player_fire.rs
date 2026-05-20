@@ -33,7 +33,7 @@ impl Plugin for PlayerFirePlugin {
         .add_systems(OnEnter(GameState::Playing), reset_fire_rate)
         .add_systems(
             Update,
-            (shoot, projectile_asteroid_collision).run_if(in_state(GameState::Playing)),
+            shoot.run_if(in_state(GameState::Playing)),
         );
     }
 }
@@ -119,83 +119,4 @@ fn shoot(
     }
 
     sfx.play(Sfx::PlayerShoot);
-}
-
-// ─── Collision projectile joueur → astéroïde ────────────────────────
-
-fn projectile_asteroid_collision(
-    mut commands: Commands,
-    projectile_q: Query<(Entity, &Transform, &Projectile)>,
-    mut asteroid_q: Query<(Entity, &Transform, &Asteroid, &mut Health, Option<&DropTable>)>,
-    asset_server: Res<AssetServer>,
-    mut score: ResMut<Score>,
-    difficulty: Res<Difficulty>,
-    mut drop_events: MessageWriter<DropEvent>,
-    mut sfx: SfxPlayer,
-) {
-    let mut despawned_projectiles = std::collections::HashSet::new();
-    let mut despawned_asteroids = std::collections::HashSet::new();
-
-    for (projectile_entity, projectile_transform, projectile) in projectile_q.iter() {
-        // Seuls les projectiles du joueur touchent les astéroïdes
-        if projectile.team != Team::Player {
-            continue;
-        }
-        if despawned_projectiles.contains(&projectile_entity) {
-            continue;
-        }
-        for (asteroid_entity, asteroid_transform, asteroid, mut health, drop_table) in
-            asteroid_q.iter_mut()
-        {
-            if despawned_asteroids.contains(&asteroid_entity) {
-                continue;
-            }
-
-            let hit = shape_hits_circle(
-                projectile_transform.translation.truncate(),
-                projectile_transform.rotation,
-                &projectile.hitbox,
-                asteroid_transform.translation.truncate(),
-                asteroid.radius,
-            );
-
-            if hit {
-                spawn_projectile_death(
-                    &mut commands,
-                    &asset_server,
-                    projectile_transform.translation,
-                    projectile.death_folder,
-                );
-                if let Ok(mut e) = commands.get_entity(projectile_entity) {
-                    e.try_despawn();
-                }
-                despawned_projectiles.insert(projectile_entity);
-                health.take_damage(projectile.damage);
-                score.add(1);
-
-                if health.is_dead() {
-                    if !despawned_asteroids.contains(&asteroid_entity) {
-
-                        sfx.play(Sfx::EnemyDie);
-                        if let Some(table) = drop_table {
-                            drop_events.write(DropEvent {
-                                position: asteroid_transform.translation,
-                                table: table.drops,
-                            });
-                        }
-                        if let Ok(mut e) = commands.get_entity(asteroid_entity) {
-                            e.try_despawn();
-                        }
-                        despawned_asteroids.insert(asteroid_entity);
-                    }
-                } else if !despawned_asteroids.contains(&asteroid_entity) {
-                    commands
-                        .entity(asteroid_entity)
-                        .insert(HitFlash(Timer::from_seconds(0.06, TimerMode::Once)));
-                    sfx.play(Sfx::EnemyHit);
-                }
-                break;
-            }
-        }
-    }
 }

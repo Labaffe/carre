@@ -17,24 +17,13 @@ use bevy::prelude::*;
 use bevy::sprite_render::{ColorMaterial, MeshMaterial2d};
 
 use crate::geometry::shape::Shape;
-use crate::physic::collision::Hittable;
+use crate::physic::collider::{collider, layers};
 
 #[derive(Component)]
 pub struct AreaOfEffect {
     pub shape: Shape,
     pub lifetime: f32,
     pub elapsed: f32,
-}
-
-impl Hittable for AreaOfEffect {
-    fn hitbox_shape(&self) -> Shape {
-        self.shape.clone()
-    }
-    /// L'AOE persiste pour toute sa lifetime — le joueur peut entrer/sortir
-    /// sans la consommer.
-    fn despawn_on_hit(&self) -> bool {
-        false
-    }
 }
 
 /// Assets partagés pour le rendu des AOE : un cercle unité et un quad unité
@@ -96,6 +85,7 @@ pub fn spawn_aoe(
             Vec3::new(*half_width * 2.0, *half_length * 2.0, 1.0),
         ),
     };
+    let shape_clone = shape.clone();
     commands
         .spawn((
             Mesh2d(mesh),
@@ -106,6 +96,7 @@ pub fn spawn_aoe(
                 lifetime,
                 elapsed: 0.0,
             },
+            collider(shape_clone, layers::AOE, layers::PLAYER),
         ))
         .id()
 }

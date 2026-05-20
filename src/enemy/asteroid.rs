@@ -15,12 +15,14 @@ use crate::enemy::death::DespawnSelf;
 use crate::movement::despawn_off_screen::DespawnOffScreen;
 use crate::enemy::enemy::Enemy;
 use crate::enemy::enemy_builder::EnemyBuilder;
+use crate::geometry::shape::Shape;
 use crate::movement::movements::Movements;
 use crate::behavior::ordered_list::OrderedNodeList;
 use crate::game_manager::difficulty::Difficulty;
 use crate::game_manager::state::GameState;
 use crate::item::item::{DropTable, ItemType};
 use crate::movement::translate::Translate;
+use crate::physic::collider::{collider, layers};
 use crate::physic::health::Health;
 use bevy::prelude::*;
 use std::time::Duration;
@@ -142,6 +144,7 @@ impl EnemyBuilder for AsteroidBuilder {
             transform,
             anim,
             Enemy {radius,sprite_size:size.x,name:"Asteroid"},
+            Asteroid { radius, size },
             Health::new(health),
             DropTable {
                 drops: &ASTEROID_DROP_TABLE,
@@ -153,6 +156,11 @@ impl EnemyBuilder for AsteroidBuilder {
                 size,
                 velocity: base_velocity,
             },
+            collider(
+                Shape::Circle(radius),
+                layers::ASTEROID,
+                layers::PLAYER | layers::PLAYER_PROJECTILE,
+            ),
             BehaviorComponent::new(behavior),
         ));
     }

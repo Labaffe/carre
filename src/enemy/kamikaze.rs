@@ -38,6 +38,7 @@ use crate::movement::chase::Chase;
 use crate::movement::despawn_off_screen::DespawnOffScreen;
 use crate::movement::movements::Movements;
 use crate::physic::area_of_effect::{AoeAssets, spawn_aoe};
+use crate::physic::collider::{collider, layers};
 use crate::physic::health::Health;
 use crate::physic::player_detection::PlayerDetection;
 use crate::sprite_orient::FaceMovement;
@@ -214,6 +215,11 @@ impl EnemyBuilder for KamikazeBuilder {
             Kamikaze,
             KamikazeSpeedRamp::new(),
             FaceMovement::faces_left(),
+            collider(
+                Shape::Circle(KAMIKAZE.config.radius),
+                layers::ENEMY,
+                layers::PLAYER | layers::PLAYER_PROJECTILE,
+            ),
             PlayerDetection {
                 shape: Shape::Circle(KAMIKAZE_DETECTION_RADIUS),
                 on_enter: Some("player_detected"),
@@ -261,31 +267,33 @@ pub fn kamikaze_speed_ramp_system(
 }
 
 /// Force le kamikaze à exploser (insert `KamikazeBoom`) dans 2 cas :
-/// - **HP=0** (tué par les tirs joueur) — au lieu de mourir silencieusement
-/// - **Contact physique avec le joueur** (distance < `enemy.radius + PLAYER_RADIUS`)
-///   — court-circuite le countdown armed s'il était en cours
+/// - **HP=0** (tué par les tirs joueur) — via check direct sur Health
+/// - **Contact physique avec le joueur** — via `OverlapEvent` joueur ↔ kamikaze
 ///
 /// Le filtre `Without<KamikazeBoom>` empêche le double-déclenchement si la
 /// phase booming est déjà active.
 pub fn kamikaze_force_boom_system(
     mut commands: Commands,
-    kamikaze_q: Query<
-        (Entity, &Transform, &Health, &Enemy),
-        (With<Kamikaze>, Without<KamikazeBoom>),
-    >,
-    player_q: Query<&Transform, With<crate::player::player::Player>>,
+    mut events: MessageReader<crate::physic::collider::OverlapEvent>,
+    kamikaze_hp_q: Query<(Entity, &Health), (With<Kamikaze>, Without<KamikazeBoom>)>,
+    kamikaze_marker_q: Query<(), (With<Kamikaze>, Without<KamikazeBoom>)>,
 ) {
-    let player_pos = player_q.single().ok().map(|tf| tf.translation.xy());
-
-    for (entity, tf, health, enemy) in &kamikaze_q {
-        let touches_player = player_pos.map_or(false, |pp| {
-            let dist = (tf.translation.xy() - pp).length();
-            dist < enemy.radius + crate::physic::collision::PLAYER_RADIUS
-        });
-        if health.is_dead() || touches_player {
+    // 1. HP=0 → boom (check direct, pas via collision)
+    for (entity, health) in &kamikaze_hp_q {
+        if health.is_dead() {
             if let Ok(mut e) = commands.get_entity(entity) {
                 e.insert(KamikazeBoom);
             }
+        }
+    }
+    // 2. Overlap player ↔ kamikaze → boom
+    use crate::physic::collider::layers;
+    for ev in events.read() {
+        let Some((_, kam_e)) = ev.pick_pair(layers::PLAYER, layers::ENEMY) else { continue };
+        // Filtre : c'est un kamikaze (pas un autre Enemy) qui n'a pas déjà KamikazeBoom
+        if !kamikaze_marker_q.contains(kam_e) { continue; }
+        if let Ok(mut e) = commands.get_entity(kam_e) {
+            e.insert(KamikazeBoom);
         }
     }
 }

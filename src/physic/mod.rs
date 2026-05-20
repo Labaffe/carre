@@ -1,4 +1,5 @@
 pub mod area_of_effect;
+pub mod collider;
 pub mod collision;
 pub mod harmless;
 pub mod health;
