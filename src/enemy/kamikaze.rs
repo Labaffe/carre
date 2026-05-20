@@ -37,13 +37,14 @@ use crate::item::item::{DropTable, ItemType};
 use crate::movement::chase::Chase;
 use crate::movement::despawn_off_screen::DespawnOffScreen;
 use crate::movement::movements::Movements;
-use crate::physic::area_of_effect::{spawn_aoe, AoeAssets};
+use crate::physic::area_of_effect::{AoeAssets, spawn_aoe};
 use crate::physic::health::Health;
 use crate::physic::player_detection::PlayerDetection;
+use crate::sprite_orient::FaceMovement;
 
 /// Vitesse de poursuite de base (px/s). Esquivable au début, devient
 /// progressivement plus rapide via `KamikazeSpeedRamp`.
-const KAMIKAZE_CHASE_SPEED: f32 = 350.0;
+const KAMIKAZE_CHASE_SPEED: f32 = 250.0;
 /// Bonus de vitesse gagné par seconde de vie (px/s par seconde). Cumulé
 /// linéairement avec `KAMIKAZE_CHASE_SPEED`. Plus le kamikaze survit
 /// longtemps, plus il devient dangereux — pousse à le prioriser.
@@ -52,7 +53,7 @@ const KAMIKAZE_RAMP_RATE: f32 = 120.0;
 /// folle. Atteint après `MAX_BONUS / RAMP_RATE` secondes de vie.
 const KAMIKAZE_MAX_BONUS: f32 = 1000.0;
 /// Rayon de détection joueur (px) qui déclenche le countdown. Close range.
-const KAMIKAZE_DETECTION_RADIUS: f32 = 100.0;
+const KAMIKAZE_DETECTION_RADIUS: f32 = 200.0;
 /// Rayon de l'AOE explosion (px). Légèrement plus large que la détection.
 const KAMIKAZE_AOE_RADIUS: f32 = 180.0;
 /// Durée de vie de l'AOE (secondes). Bref — pas zone denial, juste un
@@ -67,8 +68,7 @@ const KAMIKAZE_EXPLODE_FRAME_COUNT: f32 = 11.0;
 /// Durée du countdown avant explosion (secondes). Alignée sur la durée de
 /// l'animation d'explosion : l'animation commence au début du countdown et
 /// se termine à la frame finale exactement quand le boom se déclenche.
-const KAMIKAZE_COUNTDOWN_DURATION: f32 =
-    KAMIKAZE_FRAME_DURATION * KAMIKAZE_EXPLODE_FRAME_COUNT;
+const KAMIKAZE_COUNTDOWN_DURATION: f32 = KAMIKAZE_FRAME_DURATION * KAMIKAZE_EXPLODE_FRAME_COUNT;
 
 static KAMIKAZE_DROP_TABLE: [(ItemType, f32); 2] =
     [(ItemType::Bomb, 0.10), (ItemType::BonusScore, 0.15)];
@@ -82,11 +82,23 @@ pub struct Kamikaze;
 #[derive(Component, Clone)]
 pub struct KamikazeBoom;
 
-/// Inséré à l'entrée de l'état armed. `kamikaze_warn_system` détecte l'`Added`
-/// et joue le son d'alerte — une seule fois par kamikaze, au moment où il
-/// devient dangereux pour le joueur.
+/// Inséré à l'entrée de l'état armed. `kamikaze_scream_system` détecte
+/// l'`Added` et joue le cri terrifiant — une seule fois par kamikaze, au
+/// moment où il devient dangereux pour le joueur.
 #[derive(Component, Clone)]
 pub struct KamikazeArmed;
+
+/// Inséré pendant la phase pursuing. `kamikaze_laugh_start_system` spawn
+/// un AudioPlayer en loop (le rire) attaché à l'entité. Quand le composant
+/// est retiré (transition vers armed), `kamikaze_laugh_stop_system` despawn
+/// l'audio. Cleanup automatique aussi si le kamikaze est tué.
+#[derive(Component, Clone)]
+pub struct KamikazeLaughing;
+
+/// Marker sur l'entité audio du rire — permet de retrouver et despawn cet
+/// audio précis quand la phase pursuing se termine.
+#[derive(Component)]
+pub struct KamikazeLaughAudio;
 
 /// Tick l'âge du kamikaze et applique un déplacement additionnel vers le
 /// joueur dont la magnitude grandit avec l'âge. S'additionne au `Chase` de
@@ -116,7 +128,7 @@ impl EnemyBuilder for KamikazeBuilder {
     fn get_timer(&mut self) -> &mut Timer {
         &mut self.timer
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "kamikaze"
     }
     fn preload_anim(&self) -> HashMap<&str, &str> {
@@ -137,13 +149,16 @@ impl EnemyBuilder for KamikazeBuilder {
         let frame_dur = Duration::from_secs_f32(KAMIKAZE_FRAME_DURATION);
 
         // Phase 0 : chase + animation 000→003 one-shot (reste figé sur 003).
+        // `KamikazeLaughing` marker → spawn d'un AudioPlayer LOOP via le
+        // système `kamikaze_laugh_start_system`. Retiré à la transition.
         let pursuing = BehaviorBuilder::multiple()
             .with(BehaviorBuilder::from_component(
                 Movements::new().with(Chase::new(KAMIKAZE_CHASE_SPEED)),
             ))
             .with(BehaviorBuilder::from_component(
                 Animation::new("kamikaze_chase", frame_dur).one_shot(),
-            ));
+            ))
+            .with(BehaviorBuilder::from_component(KamikazeLaughing));
 
         // Phase 1 : countdown. Chase continue, BlinkRed actif, animation
         // d'explosion joue 004→014 sur toute la durée. Le marker `KamikazeArmed`
@@ -198,6 +213,7 @@ impl EnemyBuilder for KamikazeBuilder {
             DespawnOffScreen,
             Kamikaze,
             KamikazeSpeedRamp::new(),
+            FaceMovement::faces_left(),
             PlayerDetection {
                 shape: Shape::Circle(KAMIKAZE_DETECTION_RADIUS),
                 on_enter: Some("player_detected"),
@@ -220,9 +236,17 @@ impl EnemyBuilder for KamikazeBuilder {
 pub fn kamikaze_speed_ramp_system(
     time: Res<Time>,
     mut query: Query<(&mut Transform, &mut KamikazeSpeedRamp)>,
-    player_q: Query<&Transform, (With<crate::player::player::Player>, Without<KamikazeSpeedRamp>)>,
+    player_q: Query<
+        &Transform,
+        (
+            With<crate::player::player::Player>,
+            Without<KamikazeSpeedRamp>,
+        ),
+    >,
 ) {
-    let Ok(player_tf) = player_q.single() else { return };
+    let Ok(player_tf) = player_q.single() else {
+        return;
+    };
     let dt = time.delta_secs();
     let player_pos = player_tf.translation.xy();
 
@@ -236,9 +260,40 @@ pub fn kamikaze_speed_ramp_system(
     }
 }
 
-/// Détecte `Added<KamikazeBoom>` (insertion à l'entrée de la phase booming,
-/// déclenchée par `on_complete` du countdown) : spawn l'AOE, joue le son,
-/// despawn le kamikaze. Une seule fois par entité grâce à `Added`.
+/// Force le kamikaze à exploser (insert `KamikazeBoom`) dans 2 cas :
+/// - **HP=0** (tué par les tirs joueur) — au lieu de mourir silencieusement
+/// - **Contact physique avec le joueur** (distance < `enemy.radius + PLAYER_RADIUS`)
+///   — court-circuite le countdown armed s'il était en cours
+///
+/// Le filtre `Without<KamikazeBoom>` empêche le double-déclenchement si la
+/// phase booming est déjà active.
+pub fn kamikaze_force_boom_system(
+    mut commands: Commands,
+    kamikaze_q: Query<
+        (Entity, &Transform, &Health, &Enemy),
+        (With<Kamikaze>, Without<KamikazeBoom>),
+    >,
+    player_q: Query<&Transform, With<crate::player::player::Player>>,
+) {
+    let player_pos = player_q.single().ok().map(|tf| tf.translation.xy());
+
+    for (entity, tf, health, enemy) in &kamikaze_q {
+        let touches_player = player_pos.map_or(false, |pp| {
+            let dist = (tf.translation.xy() - pp).length();
+            dist < enemy.radius + crate::physic::collision::PLAYER_RADIUS
+        });
+        if health.is_dead() || touches_player {
+            if let Ok(mut e) = commands.get_entity(entity) {
+                e.insert(KamikazeBoom);
+            }
+        }
+    }
+}
+
+/// Détecte `Added<KamikazeBoom>` (insertion à l'entrée de la phase booming
+/// via `on_complete` du countdown, OU forcée par `kamikaze_force_boom_system`) :
+/// spawn l'AOE, joue le son, despawn le kamikaze. Une seule fois par entité
+/// grâce à `Added`.
 pub fn kamikaze_boom_system(
     mut commands: Commands,
     mut sfx: SfxPlayer,
@@ -258,13 +313,55 @@ pub fn kamikaze_boom_system(
     }
 }
 
-/// Détecte `Added<KamikazeArmed>` : joue le son d'alerte une fois quand le
-/// kamikaze entre en phase armed.
-pub fn kamikaze_warn_system(
-    mut sfx: SfxPlayer,
-    query: Query<(), Added<KamikazeArmed>>,
-) {
+/// Détecte `Added<KamikazeArmed>` : joue le cri terrifiant une fois quand
+/// le kamikaze entre en phase armed.
+pub fn kamikaze_scream_system(mut sfx: SfxPlayer, query: Query<(), Added<KamikazeArmed>>) {
     for _ in &query {
-        sfx.play(Sfx::KamikazeWarn);
+        sfx.play(Sfx::KamikazeScream);
+    }
+}
+
+/// Détecte `Added<KamikazeLaughing>` : spawn un AudioPlayer LOOP en CHILD du
+/// kamikaze. La relation parent-enfant assure que si le kamikaze est tué,
+/// l'audio est despawn en cascade (try_despawn récursif).
+pub fn kamikaze_laugh_start_system(
+    mut commands: Commands,
+    library: Res<crate::audio::SfxLibrary>,
+    query: Query<Entity, Added<KamikazeLaughing>>,
+) {
+    for kamikaze_entity in &query {
+        if let Ok(mut e) = commands.get_entity(kamikaze_entity) {
+            e.with_children(|parent| {
+                parent.spawn((
+                    AudioPlayer::new(library.get(Sfx::KamikazeLaugh)),
+                    PlaybackSettings::LOOP,
+                    KamikazeLaughAudio,
+                ));
+            });
+        }
+    }
+}
+
+/// Détecte la disparition de `KamikazeLaughing` (transition pursuing → armed).
+/// Cherche l'audio enfant via le marker `KamikazeLaughAudio` et despawn.
+/// Si le kamikaze est mort, la cascade parent-enfant a déjà géré le despawn —
+/// `children_q.get` échoue silencieusement.
+pub fn kamikaze_laugh_stop_system(
+    mut commands: Commands,
+    mut removed: RemovedComponents<KamikazeLaughing>,
+    children_q: Query<&Children>,
+    audio_q: Query<(), With<KamikazeLaughAudio>>,
+) {
+    for kamikaze_entity in removed.read() {
+        let Ok(children) = children_q.get(kamikaze_entity) else {
+            continue;
+        };
+        for &child in children {
+            if audio_q.contains(child) {
+                if let Ok(mut e) = commands.get_entity(child) {
+                    e.try_despawn();
+                }
+            }
+        }
     }
 }

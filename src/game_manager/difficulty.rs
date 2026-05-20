@@ -26,6 +26,9 @@ pub enum SpawnPosition {
     Right,
     /// Position exacte en pixels (x, y).
     At(f32, f32),
+    /// Centré en X, à mi-chemin entre le centre de l'écran et le bord haut
+    /// (y = half_height × 0.5). Résolution-indépendant.
+    UpperMid,
 }
 
 impl SpawnPosition {
@@ -52,6 +55,7 @@ impl SpawnPosition {
                 bevy::math::Vec2::new(half_w + 40.0, y)
             }
             SpawnPosition::At(x, y) => bevy::math::Vec2::new(x, y),
+            SpawnPosition::UpperMid => bevy::math::Vec2::new(0.0, half_h * 0.5),
         }
     }
 }

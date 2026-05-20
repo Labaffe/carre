@@ -27,6 +27,7 @@ use crate::movement::movement_zone::MovementZone;
 use crate::movement::movements::Movements;
 use crate::movement::rush::Rush;
 use crate::physic::health::Health;
+use crate::sprite_orient::FaceMovement;
 
 /// Vitesse du rush (px/s). Pas trop rapide — combiné à `RUSH_DURATION` et
 /// `MovementZone` qui interrompt sur contact mur, le green_ufo ne traverse
@@ -58,7 +59,7 @@ impl EnemyBuilder for GreenUFOBuilder {
     fn get_timer(&mut self) -> &mut Timer {
         &mut self.timer
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "green_ufo"
     }
     fn preload_anim(&self) -> HashMap<&str, &str> {
@@ -151,6 +152,7 @@ impl EnemyBuilder for GreenUFOBuilder {
             DropTable {
                 drops: &GREEN_UFO_DROP_TABLE,
             },
+            FaceMovement::faces_left(),
         ));
     }
 }

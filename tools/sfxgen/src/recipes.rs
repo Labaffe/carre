@@ -40,18 +40,43 @@ pub fn pickup() -> Sfx {
         .volume(0.4)
 }
 
-pub fn kamikaze_warn() -> Sfx {
-    Sfx::new("kamikaze_warn")
+/// Cri terrifiant joué à l'entrée de la phase armed du kamikaze.
+/// Sweep aigu→grave bruité + bit-crush sévère pour un côté "agonie".
+pub fn kamikaze_scream() -> Sfx {
+    Sfx::new("kamikaze_scream")
+        .wave(Wave::Noise)
+        .freq_sweep(2400.0, 200.0)
+        .duration(1.2)
+        .envelope(0.01, 0.08, 0.7, 0.4)
+        .bit_crush(4)
+        .volume(0.55)
+}
+
+/// Rire en continu pendant la phase pursuing — court motif (~0.7s) bouclé
+/// par `PlaybackSettings::LOOP`. Arpège square bit-crushé + lowpass pour un
+/// "ha ha ha" grave et menaçant.
+pub fn kamikaze_laugh() -> Sfx {
+    Sfx::new("kamikaze_laugh")
         .wave(Wave::Square)
-        .freq_sweep(440.0, 880.0)
-        .duration(0.3)
-        .envelope(0.0, 0.05, 0.6, 0.2)
-        .bit_crush(6)
+        .freq_arpeggio(&[
+            130.0, 195.0, 80.0, 130.0, 195.0, 260.0, 130.0, 80.0,
+        ])
+        .duration(0.7)
+        .envelope(0.005, 0.02, 0.55, 0.04)
+        .lowpass(600.0)
+        .bit_crush(5)
         .volume(0.4)
 }
 
 pub fn all() -> Vec<Sfx> {
-    vec![shoot(), hit(), explode(), pickup(), kamikaze_warn()]
+    vec![
+        shoot(),
+        hit(),
+        explode(),
+        pickup(),
+        kamikaze_scream(),
+        kamikaze_laugh(),
+    ]
 }
 
 pub fn by_name(name: &str) -> Option<Sfx> {
@@ -60,7 +85,8 @@ pub fn by_name(name: &str) -> Option<Sfx> {
         "hit" => Some(hit()),
         "explode" => Some(explode()),
         "pickup" => Some(pickup()),
-        "kamikaze_warn" => Some(kamikaze_warn()),
+        "kamikaze_scream" => Some(kamikaze_scream()),
+        "kamikaze_laugh" => Some(kamikaze_laugh()),
         _ => None,
     }
 }

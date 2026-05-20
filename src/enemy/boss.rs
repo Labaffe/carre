@@ -361,7 +361,7 @@ impl EnemyBuilder for BossBuilder {
         ));
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "boss"
     }
 }

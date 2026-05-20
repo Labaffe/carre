@@ -69,7 +69,7 @@ impl Default for GameProgress {
     fn default() -> Self {
         Self {
             current_level: 1,
-            total_levels: 2,
+            total_levels: crate::level::levels::ALL_LEVELS.len(),
         }
     }
 }
