@@ -1,24 +1,15 @@
 //! Tir du joueur : lit l'input, cadence le tir, spawn des `Projectile { Team::Player }`
-//! selon la `WeaponDef` équipée, et gère la collision projectile-astéroïde.
+//! selon la `WeaponDef` équipée.
 //!
 //! Le mouvement et le despawn offscreen sont pris en charge par `ProjectilePlugin`.
-//! La collision projectile-ennemi est gérée dans `enemy::enemy::projectile_enemy_collision`.
+//! Les collisions projectile↔ennemi/astéroïde sont gérées via le pipeline
+//! `OverlapEvent` → `projectile_damage_on_overlap` dans `enemy::enemy`.
 
 use crate::audio::{Sfx, SfxPlayer};
-use crate::enemy::asteroid::{Asteroid};
-use crate::enemy::hit_flash::HitFlash;
-use crate::fx::explosion::{spawn_explosion, spawn_projectile_death};
-use crate::game_manager::difficulty::Difficulty;
 use crate::game_manager::state::GameState;
-use crate::item::item::{DropEvent, DropTable};
-use crate::physic::health::Health;
 use crate::player::player::Player;
 use crate::ui::crosshair::Crosshair;
-use crate::ui::score::Score;
-use crate::geometry::shape::shape_hits_circle;
-use crate::weapon::projectile::{
-    spawn_projectile, Projectile, ProjectileSpawn, ProjectileSprite, Team,
-};
+use crate::weapon::projectile::{spawn_projectile, ProjectileSpawn, ProjectileSprite, Team};
 use crate::weapon::weapon::Weapon;
 use bevy::prelude::*;
 

@@ -14,7 +14,7 @@ use bevy::prelude::*;
 /// queryable, ou un ennemi en charge prudente qui prend des dégâts mais ne
 /// touche pas — peu réaliste mais l'API le permet.
 ///
-/// Filtre appliqué côté `player_collision` via `Without<Harmless>` sur la
-/// query des entités hostiles.
+/// Filtre appliqué côté `player_damage_on_overlap` qui skip les entités
+/// portant ce marker avant d'émettre un `DamageEvent`.
 #[derive(Component, Clone)]
 pub struct Harmless;

@@ -9,7 +9,6 @@ pub mod green_ufo;
 pub mod hit_flash;
 pub mod kamikaze;
 pub mod mine;
-//pub mod spawn;
 pub mod death;
 use bevy::prelude::*;
 use crate::enemy::anim_bank::*;

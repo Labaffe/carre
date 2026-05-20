@@ -56,10 +56,6 @@ impl Enemy {
 //  Composants auxiliaires
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Flash blanc temporaire appliqué quand l'ennemi prend un hit.
-#[derive(Component)]
-pub struct EnemyHitFlash(pub Timer);
-
 /// Position de référence pour une animation de shake (utilisée par
 /// les behaviors `ShakeAround` / `DyingFx` pour reprendre la position
 /// initiale d'une phase).
