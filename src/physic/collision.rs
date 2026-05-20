@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use std::time::Duration;
 
 use crate::audio::{Sfx, SfxPlayer};
-use crate::debug::debug::DebugMode;
+use crate::enemy::death::DespawnSelf;
 use crate::game_manager::state::GameState;
 use crate::physic::area_of_effect::{aoe_damage_enemies_on_overlap, aoe_lifecycle, setup_aoe_assets};
 use crate::physic::collider::{layers, OverlapEvent};
@@ -50,19 +50,17 @@ const DESPAWN_ON_PLAYER_HIT: u32 = layers::ASTEROID | layers::ENEMY_PROJECTILE;
 
 /// Émet `DamageEvent` quand le joueur touche une entité hostile. Despawn
 /// l'hostile au passage si c'est un type consommable (asteroid, projectile).
+///
+/// Note : pas de check `DebugMode` ici. F1 insère le composant `Invulnerable`
+/// sur le joueur, ce qui fait que `apply_damage` skip le dégât naturellement.
 fn player_damage_on_overlap(
     mut commands: Commands,
     mut events: MessageReader<OverlapEvent>,
     player_q: Query<Entity, With<Player>>,
     invincible_q: Query<(), With<Invincible>>,
     harmless_q: Query<(), With<Harmless>>,
-    debug: Res<DebugMode>,
     mut damage_events: MessageWriter<DamageEvent>,
 ) {
-    if debug.0 {
-        events.read().for_each(drop);
-        return;
-    }
     let Ok(player_e) = player_q.single() else {
         events.read().for_each(drop);
         return;
@@ -82,8 +80,12 @@ fn player_damage_on_overlap(
         if harmless_q.contains(hostile) { continue; }
 
         if hostile_layer & DESPAWN_ON_PLAYER_HIT != 0 {
+            // DespawnSelf au lieu de try_despawn direct : évite la race avec
+            // les commandes du behavior tree (cas d'un asteroid qui meurt
+            // simultanément par missile → cascade disable). Le système
+            // `despawn` en PostUpdate dépile après le flush de Update.
             if let Ok(mut e) = commands.get_entity(hostile) {
-                e.try_despawn();
+                e.try_insert(DespawnSelf);
             }
         }
         damage_events.write(DamageEvent {
