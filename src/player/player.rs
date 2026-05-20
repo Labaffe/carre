@@ -146,10 +146,10 @@ fn rotate_towards_crosshair(
     crosshair_q: Query<&Transform, (With<Crosshair>, Without<Player>)>,
     mut player_q: Query<&mut Transform, (With<Player>, Without<Crosshair>)>,
 ) {
-    let crosshair_pos = crosshair_q.single().unwrap().translation;
-    let mut player_transform = player_q.single_mut().unwrap();
+    let Ok(crosshair_tf) = crosshair_q.single() else { return };
+    let Ok(mut player_transform) = player_q.single_mut() else { return };
 
-    let direction = crosshair_pos - player_transform.translation;
+    let direction = crosshair_tf.translation - player_transform.translation;
     let angle = direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2;
     player_transform.rotation = Quat::from_rotation_z(angle);
 }
