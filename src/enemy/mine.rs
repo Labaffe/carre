@@ -32,6 +32,7 @@ use crate::movement::despawn_off_screen::DespawnOffScreen;
 use crate::movement::movements::Movements;
 use crate::movement::translate::Translate;
 use crate::physic::area_of_effect::{spawn_aoe, AoeAssets};
+use crate::physic::collider::{collider, layers};
 use crate::physic::harmless::Harmless;
 use crate::physic::health::Health;
 use crate::physic::invulnerable::Invulnerable;
@@ -179,6 +180,14 @@ impl EnemyBuilder for MineBuilder {
                 cooldown_remaining: 0.0,
             },
             BehaviorComponent::new(behavior),
+            // Mine porte ENEMY layer. Sa nature `Invulnerable + Harmless`
+            // est gérée par les reactive systems (qui skip Harmless pour
+            // damage joueur et Invulnerable pour damage par projectile).
+            collider(
+                Shape::Circle(MINE.config.radius),
+                layers::ENEMY,
+                layers::PLAYER | layers::PLAYER_PROJECTILE,
+            ),
         ));
     }
 }

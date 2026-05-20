@@ -13,11 +13,13 @@
 //!
 //! Spawn via [`spawn_aoe`] (signature avec assets) ou manuellement.
 
+use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use bevy::sprite_render::{ColorMaterial, MeshMaterial2d};
 
 use crate::geometry::shape::Shape;
-use crate::physic::collision::Hittable;
+use crate::physic::collider::{collider, layers, OverlapEvent};
+use crate::physic::health::DamageEvent;
 
 #[derive(Component)]
 pub struct AreaOfEffect {
@@ -26,16 +28,14 @@ pub struct AreaOfEffect {
     pub elapsed: f32,
 }
 
-impl Hittable for AreaOfEffect {
-    fn hitbox_shape(&self) -> Shape {
-        self.shape.clone()
-    }
-    /// L'AOE persiste pour toute sa lifetime — le joueur peut entrer/sortir
-    /// sans la consommer.
-    fn despawn_on_hit(&self) -> bool {
-        false
-    }
-}
+/// Dégâts infligés par une AOE à un ennemi/astéroïde dans sa zone. Une seule
+/// fois par couple (AOE, target) — pas de damage tick frame-par-frame.
+pub const AOE_DAMAGE_TO_ENEMY: i32 = 50;
+
+/// Tracking des entités déjà touchées par cette AOE — évite le damage tick
+/// répété tant que l'entité reste dans la zone.
+#[derive(Component, Default)]
+pub struct AoeAlreadyHit(pub HashSet<Entity>);
 
 /// Assets partagés pour le rendu des AOE : un cercle unité et un quad unité
 /// (réutilisables, le `Transform.scale` adapte les dimensions). Évite de
@@ -96,6 +96,7 @@ pub fn spawn_aoe(
             Vec3::new(*half_width * 2.0, *half_length * 2.0, 1.0),
         ),
     };
+    let shape_clone = shape.clone();
     commands
         .spawn((
             Mesh2d(mesh),
@@ -106,6 +107,39 @@ pub fn spawn_aoe(
                 lifetime,
                 elapsed: 0.0,
             },
+            AoeAlreadyHit::default(),
+            collider(
+                shape_clone,
+                layers::AOE,
+                layers::PLAYER | layers::ENEMY | layers::ASTEROID,
+            ),
         ))
         .id()
+}
+
+/// Réactif sur `OverlapEvent` : pour chaque overlap AOE↔ENEMY/ASTEROID,
+/// émet un `DamageEvent` une seule fois par couple (AOE, target).
+/// L'AOE elle-même n'est pas despawnée — elle continue jusqu'à sa lifetime.
+pub fn aoe_damage_enemies_on_overlap(
+    mut events: MessageReader<OverlapEvent>,
+    mut aoe_q: Query<&mut AoeAlreadyHit>,
+    mut damage_events: MessageWriter<DamageEvent>,
+) {
+    for ev in events.read() {
+        let Some((aoe_e, target_e)) = ev.pick(layers::AOE) else { continue };
+        let target_layer = if ev.a == target_e { ev.a_layer } else { ev.b_layer };
+        if target_layer & (layers::ENEMY | layers::ASTEROID) == 0 {
+            continue;
+        }
+        let Ok(mut already_hit) = aoe_q.get_mut(aoe_e) else { continue };
+        // insert retourne true si pas déjà présent
+        if !already_hit.0.insert(target_e) {
+            continue;
+        }
+        damage_events.write(DamageEvent {
+            target: target_e,
+            amount: AOE_DAMAGE_TO_ENEMY,
+            source: Some(aoe_e),
+        });
+    }
 }

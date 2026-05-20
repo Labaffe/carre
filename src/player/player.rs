@@ -7,8 +7,10 @@
 
 use crate::game_manager::difficulty::BoomEvent;
 use crate::game_manager::state::GameState;
+use crate::geometry::shape::Shape;
 use crate::level::level::{LevelConfig, LevelSetupSet};
 use crate::menu::pause::not_paused;
+use crate::physic::collider::{collider, layers};
 use crate::physic::health::Health;
 use crate::ui::crosshair::Crosshair;
 use crate::weapon::weapon::Weapon;
@@ -113,6 +115,15 @@ pub fn spawn_player(
         Player,
         Health::new(PLAYER_MAX_LIVES),
         Weapon::default(),
+        collider(
+            Shape::Circle(45.0),
+            layers::PLAYER,
+            layers::ENEMY
+                | layers::ASTEROID
+                | layers::ENEMY_PROJECTILE
+                | layers::AOE
+                | layers::ITEM,
+        ),
     ));
 }
 

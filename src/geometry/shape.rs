@@ -46,6 +46,37 @@ pub fn shape_hits_circle(
     }
 }
 
+/// Test d'intersection entre 2 `Shape` arbitraires (orientées par leurs Quat).
+/// Dispatch sur les variantes :
+/// - Circle ↔ Circle : distance < r₁ + r₂
+/// - Circle ↔ Rect / Rect ↔ Circle : utilise `shape_hits_circle`
+/// - Rect ↔ Rect : approximation via le bounding circle d'un des deux Rect
+///   (cas rare en pratique : un projectile long contre une AOE rectangulaire).
+pub fn shapes_overlap(
+    pos_a: Vec2,
+    rot_a: Quat,
+    shape_a: &Shape,
+    pos_b: Vec2,
+    rot_b: Quat,
+    shape_b: &Shape,
+) -> bool {
+    match (shape_a, shape_b) {
+        (Shape::Circle(r_a), Shape::Circle(r_b)) => pos_a.distance(pos_b) < r_a + r_b,
+        (Shape::Circle(r), _) => shape_hits_circle(pos_b, rot_b, shape_b, pos_a, *r),
+        (_, Shape::Circle(r)) => shape_hits_circle(pos_a, rot_a, shape_a, pos_b, *r),
+        (
+            Shape::Rect {
+                half_length: hl_a,
+                half_width: hw_a,
+            },
+            _,
+        ) => {
+            let bounding_r_a = (*hl_a).hypot(*hw_a);
+            shape_hits_circle(pos_b, rot_b, shape_b, pos_a, bounding_r_a)
+        }
+    }
+}
+
 /// Test OBB (rectangle orienté) vs cercle.
 /// Projette le centre du cercle dans le repère local du rectangle, puis trouve
 /// le point le plus proche sur le rectangle.

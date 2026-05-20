@@ -2,6 +2,7 @@ use crate::movement::despawn_off_screen::DespawnOffScreen;
 use crate::game_manager::state::GameState;
 use crate::menu::pause::not_paused;
 use crate::geometry::shape::Shape;
+use crate::physic::collider::{collider, layers};
 use bevy::prelude::*;
 
 pub struct ProjectilePlugin;
@@ -102,6 +103,17 @@ pub fn spawn_projectile(
         },
     };
 
+    // Layer + mask selon team. Player projectile détecte ennemis+asteroids,
+    // enemy projectile détecte le joueur uniquement.
+    let (layer, mask) = match spec.team {
+        Team::Player => (
+            layers::PLAYER_PROJECTILE,
+            layers::ENEMY | layers::ASTEROID,
+        ),
+        Team::Enemy => (layers::ENEMY_PROJECTILE, layers::PLAYER),
+    };
+    let proj_collider = collider(spec.hitbox.clone(), layer, mask);
+
     commands
         .spawn((
             sprite,
@@ -118,6 +130,7 @@ pub fn spawn_projectile(
                 death_folder: spec.death_folder,
             },
             DespawnOffScreen,
+            proj_collider,
         ))
         .id()
 }

@@ -18,7 +18,9 @@ use crate::enemy::boss::{boss_hp_threshold_check, BossBuilder};
 use crate::enemy::death::despawn;
 use crate::enemy::death::detect_death;
 use crate::enemy::enemy::EnemyDeathEvent;
-use crate::enemy::enemy::projectile_enemy_collision;
+use crate::enemy::enemy::{
+    enemy_hit_sound_on_hit, hit_flash_on_hit, projectile_damage_on_overlap, score_on_enemy_hit,
+};
 use crate::enemy::enemy_register::EnemyRegister;
 use crate::enemy::enemy_register::spawn;
 use crate::enemy::hit_flash::*;
@@ -60,7 +62,10 @@ impl Plugin for EnemyPlugin {
                 (
                     // Framework phases+behaviors (exclusif, séquentiel)
                     // Systèmes réactifs (ordre après la machine à état)
-                    projectile_enemy_collision,
+                    projectile_damage_on_overlap,
+                    hit_flash_on_hit,
+                    enemy_hit_sound_on_hit,
+                    score_on_enemy_hit,
                     boss_hp_threshold_check,
                     mine_explode_system,
                     mine_countdown_audio,

@@ -13,7 +13,7 @@ use crate::game_manager::difficulty::Difficulty;
 use crate::game_manager::game::{IntroSound, LevelPhase, LevelPhaseKind};
 use crate::level::level::{LevelRunner, Trigger};
 use crate::menu::pause::PauseState;
-use crate::physic::collision::Hittable;
+use crate::physic::collider::{layers, CollisionLayer, Hitbox};
 use crate::physic::health::Health;
 use crate::physic::player_detection::PlayerDetection;
 use crate::player::player::Player;
@@ -508,13 +508,39 @@ fn draw_player_detection(
     }
 }
 
-/// Dessine la hitbox d'un Hittable via gizmos.
-fn draw_hittable<T: Hittable>(gizmos: &mut Gizmos, query: &Query<(&Transform, &T)>, color: Color) {
-    for (transform, hittable) in query.iter() {
+/// Couleur du gizmo selon la `CollisionLayer` de l'entité.
+fn color_for_layer(layer: u32) -> Color {
+    if layer & layers::PLAYER != 0 {
+        Color::srgb(0.0, 1.0, 0.0)
+    } else if layer & layers::ASTEROID != 0 {
+        Color::srgb(1.0, 0.0, 0.0)
+    } else if layer & layers::ENEMY != 0 {
+        Color::srgb(0.0, 1.0, 1.0)
+    } else if layer & layers::PLAYER_PROJECTILE != 0 {
+        Color::srgb(1.0, 1.0, 0.0)
+    } else if layer & layers::ENEMY_PROJECTILE != 0 {
+        Color::srgb(1.0, 0.5, 0.0)
+    } else if layer & layers::AOE != 0 {
+        Color::srgb(1.0, 0.0, 1.0)
+    } else if layer & layers::ITEM != 0 {
+        Color::srgb(0.0, 0.5, 1.0)
+    } else {
+        Color::WHITE
+    }
+}
+
+/// Dessine la `Hitbox` de toutes les entités collidables (Hitbox + CollisionLayer),
+/// avec une couleur par layer.
+fn draw_colliders(
+    gizmos: &mut Gizmos,
+    query: &Query<(&Transform, &Hitbox, &CollisionLayer)>,
+) {
+    for (transform, hitbox, layer) in query.iter() {
         let pos = transform.translation.truncate();
-        match hittable.hitbox_shape() {
+        let color = color_for_layer(layer.0);
+        match &hitbox.0 {
             Shape::Circle(r) => {
-                gizmos.circle_2d(pos, r, color);
+                gizmos.circle_2d(pos, *r, color);
             }
             Shape::Rect {
                 half_length,
@@ -525,7 +551,6 @@ fn draw_hittable<T: Hittable>(gizmos: &mut Gizmos, query: &Query<(&Transform, &T
                 let sin = angle.sin();
                 let ax = Vec2::new(cos, sin);
                 let ay = Vec2::new(-sin, cos);
-
                 let corners = [
                     pos + ax * half_width + ay * half_length,
                     pos - ax * half_width + ay * half_length,
@@ -639,10 +664,7 @@ fn debug_kill_player(
 fn draw_hitboxes(
     debug: Res<DebugMode>,
     mut gizmos: Gizmos,
-    player_q: Query<(&Transform, &Player)>,
-    asteroid_q: Query<(&Transform, &Asteroid)>,
-    projectile_q: Query<(&Transform, &Projectile)>,
-    enemy_q: Query<(&Transform, &Enemy)>,
+    collider_q: Query<(&Transform, &Hitbox, &CollisionLayer)>,
     detection_q: Query<(&Transform, &PlayerDetection)>,
     zone_q: Query<(
         &crate::movement::movement_zone::MovementZone,
@@ -656,13 +678,8 @@ fn draw_hitboxes(
         return;
     }
 
-    draw_hittable(&mut gizmos, &player_q, Color::srgb(0.0, 1.0, 0.0));
-    draw_hittable(&mut gizmos, &asteroid_q, Color::srgb(1.0, 0.0, 0.0));
-    draw_hittable(&mut gizmos, &enemy_q, Color::srgb(0.0, 1.0, 1.0));
+    draw_colliders(&mut gizmos, &collider_q);
     draw_player_detection(&mut gizmos, &detection_q);
-    // Projectiles : jaune pour le joueur, orange pour les ennemis (la couleur
-    // est uniforme ici — si besoin on peut séparer selon projectile.team).
-    draw_hittable(&mut gizmos, &projectile_q, Color::srgb(1.0, 1.0, 0.0));
 
     // Boîtes blanches semi-transparentes : taille effective des sprites
     // (Sprite.custom_size). Utile pour comparer la taille rendue avec le

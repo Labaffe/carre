@@ -23,78 +23,32 @@
 //! 3. Les systèmes génériques prennent en charge dégâts, flash, transitions
 
 use bevy::prelude::*;
-use bevy::ui::debug::print_ui_layout_tree;
 
 
+use crate::audio::{Sfx, SfxPlayer};
 use crate::enemy::enemies::EnemyData;
 use crate::enemy::hit_flash::HitFlash;
-use crate::game_manager::state::GameState;
-use crate::item::item::{DropEvent, DropTable};
-use crate::menu::pause::not_paused;
-use crate::physic::health::Health;
-use crate::physic::invulnerable::Invulnerable;
+use crate::fx::explosion::spawn_projectile_death;
+use crate::physic::collider::{layers, OverlapEvent};
+use crate::physic::health::{DamageEvent, HitEvent};
 use crate::ui::score::Score;
-use crate::geometry::shape::shape_hits_circle;
-use crate::weapon::projectile::{Projectile, Team};
-
-
-pub struct EnemyPlugin;
-
-impl Plugin for EnemyPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_message::<EnemyDeathEvent>()
-            .add_systems(
-                Update,
-                (
-                    // Framework phases+behaviors (exclusif, séquentiel)
-                    // Systèmes réactifs (ordre après la machine à état)
-                    projectile_enemy_collision,
-                )
-                    .chain()
-                    .run_if(in_state(GameState::Playing))
-                    .run_if(not_paused),
-            );
-    }
-}
+use crate::weapon::projectile::Projectile;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Composant Enemy
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Composant principal de tout ennemi. Porte la config statique et la
-/// machine à état data-driven.
+/// Composant marker pour tout ennemi. Le nom sert au debug uniquement —
+/// la hitbox passe maintenant par le composant `Hitbox` (collider unifié)
+/// et la taille du sprite par `Sprite.custom_size`.
 #[derive(Component)]
 pub struct Enemy {
-    // ─── Config statique (immutable après spawn) ───
-    pub radius: f32,
-    pub sprite_size: f32,
     pub name: &'static str,
-}
-
-/// Config statique d'un ennemi (radius, sons, couleurs). Utilisé pour
-/// construire un `Enemy` via `Enemy::new(config, definition)`.
-pub struct EnemyConfig {
-    pub radius: f32,
-    pub sprite_size: f32,
-    pub hit_sound: &'static str,
-    pub death_explosion_sound: &'static str,
-    pub hit_flash_color: Option<Color>,
 }
 
 impl Enemy {
     pub fn new(data: EnemyData) -> Self {
-        Self {
-            radius: data.config.radius,
-            sprite_size: data.config.sprite_size,
-            name: data.name
-        }
-    }
-
-
-    /// `true` si la phase courante permet de prendre des dégâts.
-    /// Par défaut, une phase est vulnérable (invulnerable=false).
-    pub fn is_vulnerable(&self) -> bool {
-        true
+        Self { name: data.name }
     }
 }
 
@@ -134,59 +88,93 @@ const HIT_FLASH_DURATION: f32 = 0.06;
 
 
 
-/// Collision projectiles joueur → ennemi. Inflige `projectile.damage` PV
-/// à l'ennemi ciblé si celui-ci est dans une phase vulnérable. Le projectile
-/// est toujours détruit au contact, même contre un ennemi invulnérable.
-pub fn projectile_enemy_collision(
+/// Réactif sur `OverlapEvent` : pour chaque overlap projectile joueur ↔
+/// (ennemi | astéroïde), émet un `DamageEvent` et despawn le projectile.
+///
+/// La logique métier (skip Invulnerable, take_damage, émission HitEvent
+/// pour FX) est centralisée dans `apply_damage`. Ce système est juste un
+/// émetteur — il ne sait rien de l'invulnérabilité, du flash, du son, etc.
+pub fn projectile_damage_on_overlap(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut score: ResMut<Score>,
-    projectile_q: Query<(Entity, &Transform, &Projectile)>,
-    mut enemy_q: Query<(Entity, &Transform, &Enemy, &mut Health, Option<&Invulnerable>)>,
+    mut events: MessageReader<OverlapEvent>,
+    projectile_q: Query<(&Transform, &Projectile)>,
+    mut damage_events: MessageWriter<DamageEvent>,
 ) {
     let mut despawned_projectiles = std::collections::HashSet::new();
-    for (enemy_entity, enemy_transform, enemy, mut health, invulnerable) in enemy_q.iter_mut() {
 
-        for (projectile_entity, projectile_transform, projectile) in projectile_q.iter() {
-             
-            if projectile.team != Team::Player {
-                continue;
-            }
-            if despawned_projectiles.contains(&projectile_entity) {
-                continue;
-            }
-            let hit = shape_hits_circle(
-                projectile_transform.translation.truncate(),
-                projectile_transform.rotation,
-                &projectile.hitbox,
-                enemy_transform.translation.truncate(),
-                enemy.radius,
-            );
-            if !hit {
-                continue;
-            }
-            // Le projectile est détruit même contre un ennemi invulnérable.
-            if let Ok(mut e) = commands.get_entity(projectile_entity) {
-                e.try_despawn();
-            }
-            despawned_projectiles.insert(projectile_entity);
+    for ev in events.read() {
+        let Some((proj_e, target_e)) = ev.pick(layers::PLAYER_PROJECTILE) else { continue };
+        let target_layer = if ev.a == target_e { ev.a_layer } else { ev.b_layer };
+        if target_layer & (layers::ENEMY | layers::ASTEROID) == 0 {
+            continue;
+        }
+        if despawned_projectiles.contains(&proj_e) {
+            continue;
+        }
 
-            if enemy.is_vulnerable() && invulnerable.is_none() {
-                health.take_damage(projectile.damage);
-                score.add(1);
+        let Ok((proj_tf, projectile)) = projectile_q.get(proj_e) else { continue };
 
-                if let Ok(mut ent) = commands.get_entity(enemy_entity) {
-                    ent.insert(HitFlash(Timer::from_seconds(
-                        HIT_FLASH_DURATION,
-                        TimerMode::Once,
-                    )));
-                }
-            }
+        spawn_projectile_death(
+            &mut commands,
+            &asset_server,
+            proj_tf.translation,
+            projectile.death_folder,
+        );
+        if let Ok(mut e) = commands.get_entity(proj_e) {
+            e.try_despawn();
+        }
+        despawned_projectiles.insert(proj_e);
 
-            break; // Ce projectile est consommé, passer au suivant
+        damage_events.write(DamageEvent {
+            target: target_e,
+            amount: projectile.damage,
+            source: Some(proj_e),
+        });
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Reactive systems sur HitEvent — feedback "ennemi touché"
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Insère un `HitFlash` sur tout target ENEMY ou ASTEROID qui a pris des
+/// dégâts. PLAYER est exclu (le flash blanc cohabiterait mal avec le blink
+/// d'`Invincible`).
+pub fn hit_flash_on_hit(
+    mut commands: Commands,
+    mut events: MessageReader<HitEvent>,
+) {
+    for ev in events.read() {
+        if ev.target_layer & (layers::ENEMY | layers::ASTEROID) == 0 {
+            continue;
+        }
+        if let Ok(mut e) = commands.get_entity(ev.target) {
+            e.try_insert(HitFlash::white(HIT_FLASH_DURATION));
         }
     }
 }
 
+/// Joue `Sfx::EnemyHit` quand un ENEMY ou ASTEROID prend des dégâts.
+pub fn enemy_hit_sound_on_hit(
+    mut events: MessageReader<HitEvent>,
+    mut sfx: SfxPlayer,
+) {
+    for ev in events.read() {
+        if ev.target_layer & (layers::ENEMY | layers::ASTEROID) != 0 {
+            sfx.play(Sfx::EnemyHit);
+        }
+    }
+}
 
-
+/// +1 au score à chaque hit sur ENEMY ou ASTEROID.
+pub fn score_on_enemy_hit(
+    mut events: MessageReader<HitEvent>,
+    mut score: ResMut<Score>,
+) {
+    for ev in events.read() {
+        if ev.target_layer & (layers::ENEMY | layers::ASTEROID) != 0 {
+            score.add(1);
+        }
+    }
+}

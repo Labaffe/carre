@@ -26,6 +26,8 @@ use crate::movement::bounding_radius::BoundingRadius;
 use crate::movement::movement_zone::MovementZone;
 use crate::movement::movements::Movements;
 use crate::movement::rush::Rush;
+use crate::geometry::shape::Shape;
+use crate::physic::collider::{collider, layers};
 use crate::physic::health::Health;
 use crate::sprite_orient::FaceMovement;
 
@@ -153,6 +155,11 @@ impl EnemyBuilder for GreenUFOBuilder {
                 drops: &GREEN_UFO_DROP_TABLE,
             },
             FaceMovement::faces_left(),
+            collider(
+                Shape::Circle(GREEN_UFO.config.radius),
+                layers::ENEMY,
+                layers::PLAYER | layers::PLAYER_PROJECTILE,
+            ),
         ));
     }
 }
