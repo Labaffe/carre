@@ -39,40 +39,17 @@ use crate::weapon::projectile::Projectile;
 //  Composant Enemy
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Composant principal de tout ennemi. Porte la config statique et la
-/// machine à état data-driven.
+/// Composant marker pour tout ennemi. Le nom sert au debug uniquement —
+/// la hitbox passe maintenant par le composant `Hitbox` (collider unifié)
+/// et la taille du sprite par `Sprite.custom_size`.
 #[derive(Component)]
 pub struct Enemy {
-    // ─── Config statique (immutable après spawn) ───
-    pub radius: f32,
-    pub sprite_size: f32,
     pub name: &'static str,
-}
-
-/// Config statique d'un ennemi (radius, sons, couleurs). Utilisé pour
-/// construire un `Enemy` via `Enemy::new(config, definition)`.
-pub struct EnemyConfig {
-    pub radius: f32,
-    pub sprite_size: f32,
-    pub hit_sound: &'static str,
-    pub death_explosion_sound: &'static str,
-    pub hit_flash_color: Option<Color>,
 }
 
 impl Enemy {
     pub fn new(data: EnemyData) -> Self {
-        Self {
-            radius: data.config.radius,
-            sprite_size: data.config.sprite_size,
-            name: data.name
-        }
-    }
-
-
-    /// `true` si la phase courante permet de prendre des dégâts.
-    /// Par défaut, une phase est vulnérable (invulnerable=false).
-    pub fn is_vulnerable(&self) -> bool {
-        true
+        Self { name: data.name }
     }
 }
 
@@ -128,7 +105,7 @@ pub fn projectile_damage_on_overlap(
     asset_server: Res<AssetServer>,
     mut events: MessageReader<OverlapEvent>,
     projectile_q: Query<(&Transform, &Projectile)>,
-    mut target_q: Query<(&mut Health, Option<&Invulnerable>, Option<&Enemy>)>,
+    mut target_q: Query<(&mut Health, Option<&Invulnerable>)>,
     mut score: ResMut<Score>,
     mut sfx: SfxPlayer,
 ) {
@@ -147,7 +124,7 @@ pub fn projectile_damage_on_overlap(
         }
 
         let Ok((proj_tf, projectile)) = projectile_q.get(proj_e) else { continue };
-        let Ok((mut health, invulnerable, enemy)) = target_q.get_mut(target_e) else { continue };
+        let Ok((mut health, invulnerable)) = target_q.get_mut(target_e) else { continue };
 
         // Despawn projectile + anim de mort (même si cible invulnérable)
         spawn_projectile_death(
@@ -161,10 +138,8 @@ pub fn projectile_damage_on_overlap(
         }
         despawned_projectiles.insert(proj_e);
 
-        // Dégâts si cible vulnérable
-        let is_target_vulnerable = invulnerable.is_none()
-            && enemy.map_or(true, |e| e.is_vulnerable());
-        if is_target_vulnerable {
+        // Dégâts si cible vulnérable (= pas de marker Invulnerable).
+        if invulnerable.is_none() {
             health.take_damage(projectile.damage);
             score.add(1);
             if let Ok(mut ent) = commands.get_entity(target_e) {

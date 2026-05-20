@@ -143,7 +143,7 @@ impl EnemyBuilder for AsteroidBuilder {
             Sprite { custom_size: Some(size), ..default() },
             transform,
             anim,
-            Enemy {radius,sprite_size:size.x,name:"Asteroid"},
+            Enemy { name: "Asteroid" },
             Asteroid { radius, size },
             Health::new(health),
             DropTable {

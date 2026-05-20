@@ -23,17 +23,21 @@ pub struct DeathAnim {
 #[derive(Component,Clone)]
 pub struct DespawnSelf;
 
+/// Marker inséré une fois sur les entités qui ont déclenché leur "die"
+/// message. Empêche `detect_death` de re-fire (sinon le behavior tree
+/// retransiterait à chaque frame tant que HP=0 et entité pas encore despawn).
+#[derive(Component)]
+pub struct Dying;
+
 pub fn detect_death(
     mut commands: Commands,
     time: Res<Time>,
     mut drop_events: MessageWriter<DropEvent>,
     mut death_events: MessageWriter<EnemyDeathEvent>,
-    mut query: Query<(Entity, &mut Health, &Enemy, &Transform, Option<&DropTable>, &mut TransitionMessages)>,
+    mut query: Query<(Entity, &Health, &Enemy, &Transform, Option<&DropTable>, &mut TransitionMessages), Without<Dying>>,
 ) {
-    for (entity, mut health, mut enemy,transform,drop_table,mut messages) in query.iter_mut() {
-        
-        if health.is_dead() & !health.dying {
-            health.dying = true;
+    for (entity, health, _enemy, transform, drop_table, mut messages) in query.iter_mut() {
+        if health.is_dead() {
             if let Some(table) = drop_table {
                 drop_events.write(DropEvent {
                     position: transform.translation,
@@ -45,6 +49,9 @@ pub fn detect_death(
                 entity,
                 position: transform.translation,
             });
+            if let Ok(mut e) = commands.get_entity(entity) {
+                e.insert(Dying);
+            }
         }
     }
 }

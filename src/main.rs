@@ -56,7 +56,6 @@ use ui::countdown::CountdownPlugin;
 use environment::background::{Background, BackgroundPlugin, Planet};
 use physic::collider::ColliderPlugin;
 use physic::collision::CollisionPlugin;
-use physic::health::HealthPlugin;
 use physic::player_detection::PlayerDetectionPlugin;
 
 use debug::debug::DebugPlugin;
@@ -106,7 +105,6 @@ fn main() {
             CrosshairPlugin,
             CollisionPlugin,
             ColliderPlugin,
-            HealthPlugin,
             PlayerDetectionPlugin,
         ))
         // Ennemis

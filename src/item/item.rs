@@ -375,9 +375,9 @@ fn bomb_apply_damage(
         }
     }
 
-    // Dégâts à tous les ennemis actifs (le framework enemy gère la mort automatiquement)
-    for (enemy, mut health, invulnerable) in enemies.iter_mut() {
-        if enemy.is_vulnerable() && invulnerable.is_none() {
+    // Dégâts à tous les ennemis (le framework enemy gère la mort automatiquement)
+    for (_enemy, mut health, invulnerable) in enemies.iter_mut() {
+        if invulnerable.is_none() {
             health.take_damage(BOMB_DAMAGE_ENEMY);
         }
     }

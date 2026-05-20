@@ -19,13 +19,12 @@ use bevy::prelude::*;
 pub struct Health {
     pub current: i32,
     pub max: i32,
-    pub dying:bool
 }
 
 impl Health {
     /// Crée une santé pleine avec une limite donnée.
     pub fn new(max: i32) -> Self {
-        Self { current: max, max,dying:false }
+        Self { current: max, max }
     }
 
     /// Inflige `damage` PV. Clamp `current` à 0 minimum.
@@ -60,20 +59,3 @@ impl Health {
     }
 }
 
-/// Événement émis quand une entité reçoit des dégâts. Peut être utilisé
-/// pour déclencher des FX (flash, son, etc.) sans que le code de collision
-/// ne connaisse ces FX.
-#[derive(Message, Debug)]
-pub struct DamageEvent {
-    pub target: Entity,
-    pub amount: i32,
-    pub source: Option<Entity>,
-}
-
-pub struct HealthPlugin;
-
-impl Plugin for HealthPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_message::<DamageEvent>();
-    }
-}
