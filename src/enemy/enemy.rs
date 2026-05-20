@@ -143,10 +143,7 @@ pub fn projectile_damage_on_overlap(
             health.take_damage(projectile.damage);
             score.add(1);
             if let Ok(mut ent) = commands.get_entity(target_e) {
-                ent.insert(HitFlash(Timer::from_seconds(
-                    HIT_FLASH_DURATION,
-                    TimerMode::Once,
-                )));
+                ent.insert(HitFlash::white(HIT_FLASH_DURATION));
             }
             sfx.play(Sfx::EnemyHit);
         }
