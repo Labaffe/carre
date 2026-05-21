@@ -35,6 +35,7 @@ pub enum Sfx {
     PlayerBomb,
     PlayerHurt,
     PlayerDeath,
+    PlayerDash,
     // ─── Combat (hors EnemyConfigData) ───
     EnemyHit,
     EnemyDie,
@@ -79,6 +80,7 @@ const SFX_PATHS: &[(Sfx, &str)] = &[
     (Sfx::PlayerBomb,       "audio/sfx/bomb.ogg"),
     (Sfx::PlayerHurt,       "audio/sfx/hurt.ogg"),
     (Sfx::PlayerDeath,      "audio/sfx/you_died.ogg"),
+    (Sfx::PlayerDash,       "audio/sfx/player_dash.wav"),
     // Combat
     (Sfx::EnemyHit,         "audio/sfx/hit.wav"),
     (Sfx::EnemyDie,         "audio/sfx/asteroid_die.ogg"),

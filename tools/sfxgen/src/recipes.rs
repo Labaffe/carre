@@ -107,6 +107,20 @@ pub fn octopus_rush() -> Sfx {
         .volume(0.35)
 }
 
+/// Whoosh supersonic du dash joueur — sweep aigu→médium très rapide,
+/// sawtooth pour le grain "déchirure d'air", lowpass mid-high pour garder
+/// du tranchant sans être strident. Court (~0.18s = durée du dash).
+pub fn player_dash() -> Sfx {
+    Sfx::new("player_dash")
+        .wave(Wave::Sawtooth)
+        .freq_sweep(2600.0, 500.0)
+        .duration(0.18)
+        .envelope(0.0, 0.02, 0.6, 0.12)
+        .lowpass(2800.0)
+        .bit_crush(6)
+        .volume(0.35)
+}
+
 /// Cri de mort — sweep descendant grave, triangle bit-crushé filtré lowpass
 /// pour un "gloup" agonisant. Volume soutenu, dure ~0.6s pour couvrir
 /// l'animation de mort.
@@ -133,6 +147,7 @@ pub fn all() -> Vec<Sfx> {
         octopus_shoot(),
         octopus_rush(),
         octopus_die(),
+        player_dash(),
     ]
 }
 
@@ -148,6 +163,7 @@ pub fn by_name(name: &str) -> Option<Sfx> {
         "octopus_shoot" => Some(octopus_shoot()),
         "octopus_rush" => Some(octopus_rush()),
         "octopus_die" => Some(octopus_die()),
+        "player_dash" => Some(player_dash()),
         _ => None,
     }
 }

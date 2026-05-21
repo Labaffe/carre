@@ -323,7 +323,7 @@ fn bomb_input(
     asset_server: Res<AssetServer>,
     mut sfx: SfxPlayer,
 ) {
-    if keyboard.just_pressed(KeyCode::Space) && bombs.count > 0 {
+    if keyboard.just_pressed(KeyCode::ShiftLeft) && bombs.count > 0 {
         bombs.count -= 1;
         bomb_events.write(BombEvent);
 

@@ -49,7 +49,7 @@ fn shoot(
     mouse: Res<ButtonInput<MouseButton>>,
     mut fire_timer: ResMut<FireRateTimer>,
     time: Res<Time>,
-    player_q: Query<(&Transform, &Weapon), With<Player>>,
+    player_q: Query<(&Transform, &Weapon), (With<Player>, Without<crate::player::player::Dashing>)>,
     crosshair_q: Query<&Transform, With<Crosshair>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
