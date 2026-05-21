@@ -47,3 +47,9 @@ pub const KAMIKAZE: EnemyData = EnemyData {
     config: EnemyConfigData::new(25.0, 128.0),
     total_hp: 2,
 };
+
+pub const OCTOPUS: EnemyData = EnemyData {
+    name: "Octopus",
+    config: EnemyConfigData::new(50.0, 128.0),
+    total_hp: 70,
+};

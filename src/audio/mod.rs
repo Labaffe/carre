@@ -46,6 +46,8 @@ pub enum Sfx {
     // ─── Ennemis spécifiques ───
     KamikazeScream,
     KamikazeLaugh,
+    OctopusSound,
+    OctopusShoot,
     MineBeep,
     MineExplode,
     BossStart,
@@ -86,6 +88,8 @@ const SFX_PATHS: &[(Sfx, &str)] = &[
     // Ennemis
     (Sfx::KamikazeScream,   "audio/sfx/kamikaze_scream.wav"),
     (Sfx::KamikazeLaugh,    "audio/sfx/kamikaze_laugh.wav"),
+    (Sfx::OctopusSound,     "audio/sfx/octopus_sound.wav"),
+    (Sfx::OctopusShoot,     "audio/sfx/octopus_shoot.wav"),
     (Sfx::MineBeep,         "audio/sfx/t_1.ogg"),
     (Sfx::MineExplode,      "audio/sfx/bomb.ogg"),
     (Sfx::BossStart,        "audio/sfx/boss_start.ogg"),

@@ -9,6 +9,7 @@ pub mod green_ufo;
 pub mod hit_flash;
 pub mod kamikaze;
 pub mod mine;
+pub mod octopus;
 pub mod death;
 use bevy::prelude::*;
 use crate::enemy::anim_bank::*;
@@ -30,6 +31,10 @@ use crate::enemy::kamikaze::{
     KamikazeBuilder,
 };
 use crate::enemy::mine::{blink_red_system, mine_countdown_audio, mine_explode_system, MineBuilder};
+use crate::enemy::octopus::{
+    octopus_fire_shots, octopus_setup_curve, octopus_shoot_start_sound, octopus_spawn_sound,
+    OctopusBuilder,
+};
 use crate::GameState;
 use crate::menu::pause::not_paused;
 pub struct EnemyPlugin;
@@ -44,6 +49,7 @@ impl Plugin for EnemyPlugin {
                 .with(AsteroidBuilder::new())
                 .with(MineBuilder::new())
                 .with(KamikazeBuilder::new())
+                .with(OctopusBuilder::new())
             )
             .insert_resource(AnimBank::new())
             .add_systems(Startup, preload_frames)
@@ -76,6 +82,10 @@ impl Plugin for EnemyPlugin {
                     kamikaze_laugh_stop_system,
                     kamikaze_speed_ramp_system,
                     asteroid_death_fx_system,
+                    octopus_spawn_sound,
+                    octopus_setup_curve,
+                    octopus_shoot_start_sound,
+                    octopus_fire_shots,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing))
