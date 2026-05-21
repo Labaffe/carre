@@ -109,6 +109,13 @@ const ENTERING_OPACITY: f32 = 0.6;
 /// du dossier `images/octopus/death` — la durée par frame est recalculée
 /// automatiquement à l'init via `Animation::with_total_duration`.
 const OCTOPUS_DEATH_DURATION: f32 = 0.8;
+/// Durée du télégraphe avant un swoop (s). Trois `Sfx::OctopusRush` sont
+/// joués sur cette durée pour annoncer l'attaque ; le 3e coïncide avec le
+/// début effectif du swoop (joué par `octopus_setup_curve`).
+const PRE_SWOOP_DURATION: f32 = 0.6;
+/// Nombre de sons joués DANS la phase pre-swoop. Le 3e son total vient du
+/// début de la phase swoop (via `octopus_setup_curve`).
+const PRE_SWOOP_SOUNDS_IN_PHASE: u8 = 1;
 
 // ─── Composants ────────────────────────────────────────────────────
 
@@ -154,6 +161,16 @@ pub struct OctopusAlive;
 pub struct OctopusTelegraph {
     pub elapsed: f32,
     pub fired: bool,
+}
+
+/// Posé pendant la phase pre-swoop (idle télégraphe de 1.2s avant chaque
+/// rush). Ticked par `octopus_pre_swoop_tick` qui joue 2 `Sfx::OctopusRush`
+/// espacés (le 3e son vient du début de la phase swoop via
+/// `octopus_setup_curve`). `sounds_played` gate pour ne pas spammer.
+#[derive(Component, Clone, Default)]
+pub struct OctopusPreSwoop {
+    pub elapsed: f32,
+    pub sounds_played: u8,
 }
 
 // ─── Builder ───────────────────────────────────────────────────────
@@ -245,8 +262,20 @@ impl EnemyBuilder for OctopusBuilder {
                 Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
             )));
 
-        // État 1 = swoop. Sur completion → retour à telegraph.
+        // État 1 = swoop. 2 sous-phases : pre-swoop (1.2s, idle + 2 sons
+        // OctopusRush), puis swoop réel (1.8s, anim rush). Le 3e son
+        // OctopusRush est joué au début du swoop réel par
+        // `octopus_setup_curve`. Sur completion → retour à telegraph.
         let swoop = BehaviorBuilder::first(
+            Duration::from_secs_f32(PRE_SWOOP_DURATION),
+            BehaviorBuilder::multiple()
+                .with(BehaviorBuilder::from_component(OctopusPreSwoop::default()))
+                .with(BehaviorBuilder::from_component(Animation::new(
+                    "octopus_idle",
+                    Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
+                ))),
+        )
+        .then(
             Duration::from_secs_f32(SWOOP_DURATION),
             BehaviorBuilder::multiple()
                 .with(BehaviorBuilder::from_component(OctopusMoving))
@@ -378,12 +407,35 @@ pub fn octopus_entering_idle_sound(
 
 /// Joue `OctopusDie` quand le marker `Dying` est inséré sur l'octopus
 /// (= HP=0 détecté par `detect_death`). Fire une seule fois par mort.
-pub fn octopus_die_sound(
-    mut sfx: SfxPlayer,
-    query: Query<(), (With<Octopus>, Added<Dying>)>,
-) {
+pub fn octopus_die_sound(mut sfx: SfxPlayer, query: Query<(), (With<Octopus>, Added<Dying>)>) {
     for _ in &query {
         sfx.play(Sfx::OctopusDie);
+    }
+}
+
+/// Tick chaque `OctopusPreSwoop` actif et joue `Sfx::OctopusRush` aux
+/// thresholds : t=0, t=PRE_SWOOP_DURATION/2 (= 0.6s à 1.2s total). Le 3e
+/// son du télégraphe est joué au début de la phase swoop par
+/// `octopus_setup_curve` (via `Added<OctopusMoving>`), donnant un trio
+/// régulier 0 / 0.6 / 1.2 où le 3e coïncide avec le début du rush.
+pub fn octopus_pre_swoop_tick(
+    time: Res<Time>,
+    mut sfx: SfxPlayer,
+    mut query: Query<&mut OctopusPreSwoop>,
+) {
+    let dt = time.delta_secs();
+    let interval = PRE_SWOOP_DURATION / PRE_SWOOP_SOUNDS_IN_PHASE as f32;
+    for mut state in &mut query {
+        state.elapsed += dt;
+        while state.sounds_played < PRE_SWOOP_SOUNDS_IN_PHASE {
+            let threshold = state.sounds_played as f32 * interval;
+            if state.elapsed >= threshold {
+                sfx.play(Sfx::OctopusRush);
+                state.sounds_played += 1;
+            } else {
+                break;
+            }
+        }
     }
 }
 
@@ -403,7 +455,11 @@ pub fn octopus_telegraph_tick(
         }
         telegraph.elapsed += dt;
         if telegraph.elapsed >= TELEGRAPH_DURATION {
-            let action = if fastrand::bool() { "do_swoop" } else { "do_shoot" };
+            let action = if fastrand::bool() {
+                "do_swoop"
+            } else {
+                "do_shoot"
+            };
             msgs.messages.push(action.to_string());
             telegraph.fired = true;
         }
