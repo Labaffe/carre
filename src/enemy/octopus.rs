@@ -1,19 +1,28 @@
-//! Octopus — ennemi qui alterne déplacement courbe et tir éventail.
+//! Octopus — ennemi qui apparaît par un rush depuis un bord, puis alterne
+//! déplacement courbe et tir éventail.
 //!
 //! Cycle :
-//! 1. **moving** : insère le marker `OctopusMoving` + anim `octopus_idle`.
-//!    Un système réactif sur `Added<OctopusMoving>` pick un point cible
-//!    aléatoire dans l'écran et un point de contrôle aux alentours du joueur,
-//!    puis insère `Movements::new().with(Bezier::new(...))`. La courbe
-//!    quadratique passe près du joueur en route vers la cible.
-//! 2. **shoot windup** : insère `OctopusShooting` + anim `octopus_shoot`
-//!    (one-shot). `Added<OctopusShooting>` joue le son `OctopusSound`.
-//! 3. **shoot fire** : insère `OctopusFireShots`. `Added<OctopusFireShots>`
-//!    joue `OctopusShoot` et spawn 3 projectiles en éventail vers le joueur.
+//! 0. **entering** (intangible) : spawn sans collider, sprite à `ENTERING_OPACITY`.
+//!    Deux sous-phases :
+//!    - `entering_rush` (RUSH_IN_DURATION) : `OctopusEnteringRush` + anim `rush`
+//!      + `Goto` rectiligne depuis le bord G/D (random) vers le spawn point.
+//!      `Added<OctopusEnteringRush>` joue `Sfx::OctopusRush`.
+//!    - `entering_idle` (IDLE_PAUSE_DURATION) : `OctopusEnteringIdle` + anim `idle`,
+//!      immobile à destination. `Added<OctopusEnteringIdle>` joue `Sfx::OctopusSound`
+//!      (annonce d'arrivée).
+//!    À la fin → état `alive`. `Added<OctopusAlive>` insère le collider et
+//!    restaure l'alpha à 1.0 (l'octopus devient tangible et attaquable).
+//! 1. **moving** : `OctopusMoving` + anim `rush`. Réactif `octopus_setup_curve`
+//!    pick une cible random + point traversé près du joueur, insère `Movements`
+//!    avec `Bezier::passing_through`. Joue `Sfx::OctopusRush`.
+//! 2. **shoot windup** : `OctopusShooting` + anim `shoot` (one-shot).
+//!    Joue `Sfx::OctopusSound`.
+//! 3. **shoot fire** : `OctopusFireShots`. Joue `Sfx::OctopusShoot` et spawn
+//!    3 projectiles en éventail vers le joueur.
 //! 4. Retour à `moving` via `on_complete` → boucle.
 //!
-//! Son de spawn (`OctopusSound`) joué une fois sur `Added<Octopus>`.
 //! Mort = `DespawnSelf` immédiat (pas d'animation de mort pour l'instant).
+//! L'octopus ne peut pas mourir pendant `entering` (pas de collider).
 
 use std::time::Duration;
 
@@ -34,6 +43,7 @@ use crate::geometry::shape::Shape;
 use crate::item::item::{DropTable, ItemType};
 use crate::movement::bezier::Bezier;
 use crate::movement::bounding_radius::BoundingRadius;
+use crate::movement::goto::Goto;
 use crate::movement::movement_zone::MovementZone;
 use crate::movement::movements::Movements;
 use crate::physic::collider::{collider, layers};
@@ -65,11 +75,25 @@ const OCTOPUS_SHOT_SPREAD_DEG: f32 = 22.0;
 const TARGET_PICK_MARGIN: f32 = 80.0;
 /// Distance min (px) entre la position courante et la cible pickée. Évite
 /// une cible quasi-sur-place qui dégénère la courbe en quasi-point.
-const MIN_TRAVEL_DISTANCE: f32 = 400.0;
+const MIN_TRAVEL_DISTANCE: f32 = 500.0;
 /// Rayon (px) d'un petit offset random ajouté à la position du joueur pour
 /// le point traversé au milieu de la courbe. Petit = la courbe passe vraiment
 /// près du joueur (pas à 200px).
-const PLAYER_PASSTHROUGH_JITTER: f32 = 50.0;
+const PLAYER_PASSTHROUGH_JITTER: f32 = 30.0;
+/// Durée max (s) du rush rectiligne depuis le bord vers le spawn point.
+/// Avec RUSH_IN_SPEED=900 et une largeur d'écran ~1280px, distance ~640px
+/// ⇒ arrivée en ~0.7s. La durée laisse une marge confortable.
+const RUSH_IN_DURATION: f32 = 1.0;
+/// Vitesse du rush d'apparition (px/s). Rapide — l'octopus déboule.
+const RUSH_IN_SPEED: f32 = 900.0;
+/// Petit idle à l'arrivée avant de basculer en alive (s).
+const IDLE_PAUSE_DURATION: f32 = 0.5;
+/// Offset (px) au-delà du bord pour la position d'entrée. L'octopus part
+/// hors écran et glisse vers son spawn.
+const ENTRY_OFFSCREEN_OFFSET: f32 = 80.0;
+/// Alpha du sprite pendant `entering` (intangible). Indique visuellement
+/// au joueur que tirer dessus est inutile.
+const ENTERING_OPACITY: f32 = 0.6;
 
 static OCTOPUS_DROP_TABLE: [(ItemType, f32); 2] =
     [(ItemType::Bomb, 0.20), (ItemType::BonusScore, 0.30)];
@@ -94,6 +118,21 @@ pub struct OctopusShooting;
 /// `OctopusShoot` et spawn les 3 projectiles vers le joueur.
 #[derive(Component, Clone)]
 pub struct OctopusFireShots;
+
+/// Sous-phase 1 de l'apparition : rush rectiligne depuis le bord G/D vers
+/// le spawn point. `Added<OctopusEnteringRush>` joue `Sfx::OctopusRush`.
+#[derive(Component, Clone)]
+pub struct OctopusEnteringRush;
+
+/// Sous-phase 2 de l'apparition : petit idle à destination.
+/// `Added<OctopusEnteringIdle>` joue `Sfx::OctopusSound` (annonce d'arrivée).
+#[derive(Component, Clone)]
+pub struct OctopusEnteringIdle;
+
+/// Posé quand l'octopus quitte `entering` et devient tangible.
+/// `Added<OctopusAlive>` attache le collider et restaure l'alpha à 1.0.
+#[derive(Component, Clone)]
+pub struct OctopusAlive;
 
 // ─── Builder ───────────────────────────────────────────────────────
 
@@ -131,10 +170,48 @@ impl EnemyBuilder for OctopusBuilder {
         spawn_pos: SpawnPosition,
         asset_server: &Res<AssetServer>,
     ) {
-        let pos = spawn_pos.resolve(window, OCTOPUS.config.sprite_size / 2.0);
+        let final_pos = spawn_pos.resolve(window, OCTOPUS.config.sprite_size / 2.0);
 
-        // Sub-behavior "moving" : marker + anim rush bouclée pendant la
-        // courbe Bézier. Au `on_complete`, pousse "shoot_ready" → shooting.
+        // Position d'entrée : hors écran à gauche ou à droite (random), à la
+        // même hauteur que le spawn point — la trajectoire est ainsi purement
+        // horizontale, plus lisible que diagonale.
+        let half_w = window.width() / 2.0;
+        let from_right = fastrand::bool();
+        let entry_x = if from_right {
+            half_w + ENTRY_OFFSCREEN_OFFSET
+        } else {
+            -(half_w + ENTRY_OFFSCREEN_OFFSET)
+        };
+        let entry_pos = Vec2::new(entry_x, final_pos.y);
+
+        // ─── Sous-behavior "entering" ─────────────────────────────
+        // Phase A : rush rectiligne vers le spawn point.
+        // Phase B : petit idle stationnaire à destination.
+        // `on_complete` pousse "entering_done" → choice transite en alive.
+        let entering = BehaviorBuilder::first(
+            Duration::from_secs_f32(RUSH_IN_DURATION),
+            BehaviorBuilder::multiple()
+                .with(BehaviorBuilder::from_component(OctopusEnteringRush))
+                .with(BehaviorBuilder::from_component(Animation::new(
+                    "octopus_rush",
+                    Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
+                )))
+                .with(BehaviorBuilder::from_component(
+                    Movements::new().with(Goto::new(final_pos, RUSH_IN_SPEED)),
+                )),
+        )
+        .then(
+            Duration::from_secs_f32(IDLE_PAUSE_DURATION),
+            BehaviorBuilder::multiple()
+                .with(BehaviorBuilder::from_component(OctopusEnteringIdle))
+                .with(BehaviorBuilder::from_component(Animation::new(
+                    "octopus_idle",
+                    Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
+                ))),
+        )
+        .on_complete("entering_done");
+
+        // ─── Sous-behavior "moving" (cycle alive) ─────────────────
         let moving = BehaviorBuilder::first(
             Duration::from_secs_f32(MOVE_DURATION),
             BehaviorBuilder::multiple()
@@ -146,12 +223,7 @@ impl EnemyBuilder for OctopusBuilder {
         )
         .on_complete("shoot_ready");
 
-        // Sub-behavior "shooting" : 2 phases successives via .then.
-        // - wind-up (SHOOT_WINDUP_DURATION) : marker OctopusShooting + anim
-        //   one-shot. Le son d'amorçage joue sur Added<OctopusShooting>.
-        // - fire (FIRE_RELEASE_DURATION) : marker OctopusFireShots. Le tir +
-        //   son OctopusShoot partent sur Added<OctopusFireShots>.
-        // `on_complete` pousse "move_ready" → retour au déplacement.
+        // ─── Sous-behavior "shooting" (cycle alive) ──────────────
         let shooting = BehaviorBuilder::first(
             Duration::from_secs_f32(SHOOT_WINDUP_DURATION),
             BehaviorBuilder::multiple()
@@ -170,34 +242,50 @@ impl EnemyBuilder for OctopusBuilder {
         )
         .on_complete("move_ready");
 
-        let alive = BehaviorBuilder::choice()
+        // Cycle alive interne (loop moving/shooting), wrappé avec
+        // `OctopusAlive` pour signaler "tangible". `Added<OctopusAlive>` →
+        // octopus_become_alive insère le collider et restaure l'alpha.
+        let alive_cycle = BehaviorBuilder::choice()
             .with(moving) // 0
             .with(shooting) // 1
             .add_transition(0, 1, "shoot_ready")
             .add_transition(1, 0, "move_ready");
+        let alive = BehaviorBuilder::multiple()
+            .with(BehaviorBuilder::from_component(OctopusAlive))
+            .with(alive_cycle);
 
-        // Mort instantanée : pas d'anim de mort pour l'instant (pas d'assets).
+        // Mort instantanée : pas d'anim de mort pour l'instant.
         let dying = BehaviorBuilder::from_component(DespawnSelf);
 
+        // ─── Outer choice : entering → alive → dying ─────────────
+        // Pas de transition "die" depuis entering : sans collider, l'octopus
+        // ne peut pas prendre de dégâts pendant cette phase.
         let behavior = BehaviorBuilder::choice()
-            .with(alive)
-            .with(dying)
-            .add_transition(0, 1, "die");
+            .with(entering) // 0
+            .with(alive) // 1
+            .with(dying) // 2
+            .add_transition(0, 1, "entering_done")
+            .add_transition(1, 2, "die");
 
         commands.spawn((
             Sprite {
                 image: asset_server.load("images/octopus/frame000.png"),
                 custom_size: Some(Vec2::splat(OCTOPUS.config.sprite_size)),
+                // Alpha réduit pendant entering — restauré à 1.0 par
+                // `octopus_become_alive` à l'entrée du state alive.
+                color: Color::srgba(1.0, 1.0, 1.0, ENTERING_OPACITY),
                 ..default()
             },
-            Transform::from_xyz(pos.x, pos.y, 0.5),
+            Transform::from_xyz(entry_pos.x, entry_pos.y, 0.5),
             TransitionMessages::new(),
             Enemy::new(OCTOPUS),
             Health::new(OCTOPUS.total_hp),
             Octopus,
             BoundingRadius(OCTOPUS.config.sprite_size / 2.0),
-            // MovementZone pleine écran (margin = 0) : empêche l'octopus de
-            // sortir de l'écran si la Bézier le pousserait dehors.
+            // MovementZone pleine écran (margin = 0). Pendant entering la
+            // position de départ est hors écran : le clamp ne s'applique pas
+            // au start (le tick suivant le `Goto` ramène l'octopus dans la
+            // zone, le clamp prend le relais à l'entrée à l'écran).
             MovementZone::new(Vec2::ZERO),
             BehaviorComponent::new(behavior),
             DropTable {
@@ -206,21 +294,50 @@ impl EnemyBuilder for OctopusBuilder {
             // Sprite naturel orienté à droite → flip quand l'octopus part
             // vers la gauche.
             FaceMovement::faces_right(),
-            collider(
-                Shape::Circle(OCTOPUS.config.radius),
-                layers::ENEMY,
-                layers::PLAYER | layers::PLAYER_PROJECTILE,
-            ),
+            // PAS de collider ici : l'octopus est intangible pendant entering.
+            // `octopus_become_alive` (Added<OctopusAlive>) l'insère ensuite.
         ));
     }
 }
 
 // ─── Systèmes réactifs ─────────────────────────────────────────────
 
-/// Joue le son d'apparition une fois sur `Added<Octopus>`.
-pub fn octopus_spawn_sound(mut sfx: SfxPlayer, query: Query<(), Added<Octopus>>) {
+/// Joue `OctopusRush` au démarrage de la sous-phase 1 d'entering.
+pub fn octopus_entering_rush_sound(
+    mut sfx: SfxPlayer,
+    query: Query<(), Added<OctopusEnteringRush>>,
+) {
+    for _ in &query {
+        sfx.play(Sfx::OctopusRush);
+    }
+}
+
+/// Joue `OctopusSound` à l'arrivée (sous-phase 2 d'entering) — l'octopus
+/// "s'annonce" avant de devenir agressif.
+pub fn octopus_entering_idle_sound(
+    mut sfx: SfxPlayer,
+    query: Query<(), Added<OctopusEnteringIdle>>,
+) {
     for _ in &query {
         sfx.play(Sfx::OctopusSound);
+    }
+}
+
+/// `Added<OctopusAlive>` : l'octopus quitte entering, devient tangible.
+/// Insère le collider et restaure l'alpha du sprite à 1.0.
+pub fn octopus_become_alive(
+    mut commands: Commands,
+    mut query: Query<(Entity, &mut Sprite), Added<OctopusAlive>>,
+) {
+    for (entity, mut sprite) in &mut query {
+        sprite.color = Color::WHITE;
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.insert(collider(
+                Shape::Circle(OCTOPUS.config.radius),
+                layers::ENEMY,
+                layers::PLAYER | layers::PLAYER_PROJECTILE,
+            ));
+        }
     }
 }
 

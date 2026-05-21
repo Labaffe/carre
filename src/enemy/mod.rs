@@ -32,8 +32,8 @@ use crate::enemy::kamikaze::{
 };
 use crate::enemy::mine::{blink_red_system, mine_countdown_audio, mine_explode_system, MineBuilder};
 use crate::enemy::octopus::{
-    octopus_fire_shots, octopus_setup_curve, octopus_shoot_start_sound, octopus_spawn_sound,
-    OctopusBuilder,
+    octopus_become_alive, octopus_entering_idle_sound, octopus_entering_rush_sound,
+    octopus_fire_shots, octopus_setup_curve, octopus_shoot_start_sound, OctopusBuilder,
 };
 use crate::GameState;
 use crate::menu::pause::not_paused;
@@ -82,15 +82,29 @@ impl Plugin for EnemyPlugin {
                     kamikaze_laugh_stop_system,
                     kamikaze_speed_ramp_system,
                     asteroid_death_fx_system,
-                    octopus_spawn_sound,
-                    octopus_setup_curve,
-                    octopus_shoot_start_sound,
-                    octopus_fire_shots,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),
-            ).add_systems(
+            )
+            // Systèmes Octopus dans leur propre tuple : la limite de `.chain()`
+            // (15 systèmes) est atteinte sur le bloc enemy générique au-dessus.
+            // Ces systèmes sont tous des réactifs sur `Added<…>` indépendants
+            // les uns des autres — pas besoin de chain entre eux.
+            .add_systems(
+                Update,
+                (
+                    octopus_entering_rush_sound,
+                    octopus_entering_idle_sound,
+                    octopus_become_alive,
+                    octopus_setup_curve,
+                    octopus_shoot_start_sound,
+                    octopus_fire_shots,
+                )
+                    .run_if(in_state(GameState::Playing))
+                    .run_if(not_paused),
+            )
+            .add_systems(
                 Update,
                 detect_death.run_if(in_state(GameState::Playing)),
             )
