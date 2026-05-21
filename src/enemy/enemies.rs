@@ -44,7 +44,7 @@ pub const MINE: EnemyData = EnemyData {
 
 pub const KAMIKAZE: EnemyData = EnemyData {
     name: "Kamikaze",
-    config: EnemyConfigData::new(25.0, 128.0),
+    config: EnemyConfigData::new(18.0, 90.0),
     total_hp: 2,
 };
 

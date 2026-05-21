@@ -45,7 +45,7 @@ use crate::sprite_orient::FaceMovement;
 
 /// Vitesse de poursuite de base (px/s). Esquivable au début, devient
 /// progressivement plus rapide via `KamikazeSpeedRamp`.
-const KAMIKAZE_CHASE_SPEED: f32 = 250.0;
+const KAMIKAZE_CHASE_SPEED: f32 = 340.0;
 /// Bonus de vitesse gagné par seconde de vie (px/s par seconde). Cumulé
 /// linéairement avec `KAMIKAZE_CHASE_SPEED`. Plus le kamikaze survit
 /// longtemps, plus il devient dangereux — pousse à le prioriser.
