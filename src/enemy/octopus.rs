@@ -45,7 +45,6 @@ use crate::enemy::enemy::Enemy;
 use crate::enemy::enemy_builder::EnemyBuilder;
 use crate::game_manager::difficulty::{Difficulty, SpawnPosition};
 use crate::geometry::shape::Shape;
-use crate::item::item::{DropTable, ItemType};
 use crate::movement::bezier::Bezier;
 use crate::movement::bounding_radius::BoundingRadius;
 use crate::movement::goto::Goto;
@@ -107,9 +106,6 @@ const ENTERING_OPACITY: f32 = 0.6;
 /// du dossier `images/octopus/death` — la durée par frame est recalculée
 /// automatiquement à l'init via `Animation::with_total_duration`.
 const OCTOPUS_DEATH_DURATION: f32 = 0.8;
-
-static OCTOPUS_DROP_TABLE: [(ItemType, f32); 2] =
-    [(ItemType::Bomb, 0.20), (ItemType::BonusScore, 0.30)];
 
 // ─── Composants ────────────────────────────────────────────────────
 
@@ -336,9 +332,7 @@ impl EnemyBuilder for OctopusBuilder {
             // zone, le clamp prend le relais à l'entrée à l'écran).
             MovementZone::new(Vec2::ZERO),
             BehaviorComponent::new(behavior),
-            DropTable {
-                drops: &OCTOPUS_DROP_TABLE,
-            },
+            // Pas de `DropTable` → l'octopus ne drop rien à la mort.
             // Sprite naturel orienté à droite → flip quand l'octopus part
             // vers la gauche.
             FaceMovement::faces_right(),
