@@ -1,28 +1,33 @@
-//! Octopus — ennemi qui apparaît par un rush depuis un bord, puis alterne
-//! déplacement courbe et tir éventail.
+//! Octopus — pattern "pendule" déterministe avec double swoop télégraphié.
 //!
-//! Cycle :
-//! 0. **entering** (intangible) : spawn sans collider, sprite à `ENTERING_OPACITY`.
-//!    Deux sous-phases :
-//!    - `entering_rush` (RUSH_IN_DURATION) : `OctopusEnteringRush` + anim `rush`
-//!      + `Goto` rectiligne depuis le bord G/D (random) vers le spawn point.
-//!      `Added<OctopusEnteringRush>` joue `Sfx::OctopusRush`.
-//!    - `entering_idle` (IDLE_PAUSE_DURATION) : `OctopusEnteringIdle` + anim `idle`,
-//!      immobile à destination. `Added<OctopusEnteringIdle>` joue `Sfx::OctopusSound`
-//!      (annonce d'arrivée).
-//!    À la fin → état `alive`. `Added<OctopusAlive>` insère le collider et
-//!    restaure l'alpha à 1.0 (l'octopus devient tangible et attaquable).
-//! 1. **moving** : `OctopusMoving` + anim `rush`. Réactif `octopus_setup_curve`
-//!    pick une cible random + point traversé près du joueur, insère `Movements`
-//!    avec `Bezier::passing_through`. Joue `Sfx::OctopusRush`.
-//! 2. **shoot windup** : `OctopusShooting` + anim `shoot` (one-shot).
-//!    Joue `Sfx::OctopusSound`.
-//! 3. **shoot fire** : `OctopusFireShots`. Joue `Sfx::OctopusShoot` et spawn
-//!    3 projectiles en éventail vers le joueur.
-//! 4. Retour à `moving` via `on_complete` → boucle.
+//! Phase **entering** (intangible) : spawn sans collider, sprite à
+//! `ENTERING_OPACITY`. Deux sous-phases :
+//! - `entering_rush` (RUSH_IN_DURATION) : `OctopusEnteringRush` + anim `rush`
+//!   + `Goto` rectiligne depuis le bord G/D (random) vers le spawn point.
+//!   `Added<OctopusEnteringRush>` joue `Sfx::OctopusRush`.
+//! - `entering_idle` (IDLE_PAUSE_DURATION) : `OctopusEnteringIdle` + anim `idle`,
+//!   immobile à destination. `Added<OctopusEnteringIdle>` joue `Sfx::OctopusSound`.
+//! À la fin → état `alive`. `Added<OctopusAlive>` insère le collider et
+//! restaure l'alpha à 1.0.
 //!
-//! Mort = `DespawnSelf` immédiat (pas d'animation de mort pour l'instant).
-//! L'octopus ne peut pas mourir pendant `entering` (pas de collider).
+//! Phase **alive** : `OrderedNodeList` qui boucle indéfiniment :
+//! 1. **telegraph** (TELEGRAPH_DURATION) : anim `idle`, stationnaire — annonce
+//!    le swoop suivant. Donne au joueur le temps de lire le pattern.
+//! 2. **swoop** (SWOOP_DURATION) : `OctopusMoving` + anim `rush`.
+//!    `octopus_setup_curve` calcule `target = 2·player − start` (miroir
+//!    parfait par rapport au joueur) avec un petit jitter en Y. Bézier passe
+//!    par `player + perp·SWOOP_BULGE_OFFSET` à t=0.5 (arc visible, joueur
+//!    touché sauf déplacement perpendiculaire). Joue `Sfx::OctopusRush`.
+//! 3. **telegraph 2** + **swoop 2** : 2e itération du couple précédent. Le
+//!    2nd swoop part de la fin du 1er → enchaînement naturel en pendule.
+//! 4. **shoot windup** (SHOOT_WINDUP_DURATION) : `OctopusShooting` + anim `shoot`
+//!    one-shot. Joue `Sfx::OctopusSound`.
+//! 5. **shoot fire** (FIRE_RELEASE_DURATION) : `OctopusFireShots`. Joue
+//!    `Sfx::OctopusShoot` + spawn 3 projectiles éventail.
+//! 6. Loop (`should_loop`).
+//!
+//! Mort = `DespawnSelf` immédiat. L'octopus ne peut pas mourir pendant
+//! `entering` (pas de collider).
 
 use std::time::Duration;
 
@@ -54,9 +59,12 @@ use crate::weapon::projectile::{ProjectileSpawn, ProjectileSprite, Team, spawn_p
 
 // ─── Constantes ────────────────────────────────────────────────────
 
-/// Durée d'un déplacement (s). Trajet complet de la courbe Bézier.
-/// Court : l'octopus traverse l'écran rapidement.
-const MOVE_DURATION: f32 = 1.5;
+/// Durée du télégraphe avant chaque swoop (s) — l'octopus pause en idle
+/// pour annoncer le rush imminent. Donne au joueur un signal visuel clair.
+const TELEGRAPH_DURATION: f32 = 0.4;
+/// Durée d'un swoop (s). Bézier qui traverse le joueur du start au miroir.
+/// Plus court que l'ancien MOVE_DURATION pour un rythme plus dynamique.
+const SWOOP_DURATION: f32 = 1.8;
 /// Durée du wind-up de l'animation `shoot` (s) avant que les projectiles partent.
 const SHOOT_WINDUP_DURATION: f32 = 0.6;
 /// Durée de la phase "fire release" (s) — court, juste pour laisser le son
@@ -70,19 +78,20 @@ const OCTOPUS_PROJECTILE_SPEED: f32 = 700.0;
 const OCTOPUS_PROJECTILE_SIZE: Vec2 = Vec2::new(12.0, 28.0);
 /// Demi-angle d'ouverture de l'éventail des 3 tirs (degrés).
 const OCTOPUS_SHOT_SPREAD_DEG: f32 = 22.0;
-/// Marge intérieure (px) pour le pick du point cible — évite qu'il colle
+/// Marge intérieure (px) pour le clamp du point cible — évite qu'il colle
 /// au bord exact de l'écran.
 const TARGET_PICK_MARGIN: f32 = 80.0;
-/// Distance min (px) entre la position courante et la cible pickée. Évite
-/// une cible quasi-sur-place qui dégénère la courbe en quasi-point.
-const MIN_TRAVEL_DISTANCE: f32 = 500.0;
-/// Rayon (px) d'un petit offset random ajouté à la position du joueur pour
-/// le point traversé au milieu de la courbe. Petit = la courbe passe vraiment
-/// près du joueur (pas à 200px).
-const PLAYER_PASSTHROUGH_JITTER: f32 = 30.0;
+/// Jitter Y (px) ajouté à la position miroir du swoop. Seul élément
+/// aléatoire conservé pour éviter le 100% prévisible — l'arrivée varie
+/// légèrement en hauteur sans changer le passage par le joueur.
+const ARRIVAL_Y_JITTER: f32 = 60.0;
+/// Offset perpendiculaire (px) appliqué au pass-through pour donner un arc
+/// visible. Direction = règle main droite (CCW) du segment, donc alterne
+/// naturellement entre les swoops aller et retour. À 60px, le joueur
+/// stationnaire est touché (combined radii ~120), mais peut esquiver en
+/// se déplaçant perpendiculairement.
+const SWOOP_BULGE_OFFSET: f32 = 60.0;
 /// Durée max (s) du rush rectiligne depuis le bord vers le spawn point.
-/// Avec RUSH_IN_SPEED=900 et une largeur d'écran ~1280px, distance ~640px
-/// ⇒ arrivée en ~0.7s. La durée laisse une marge confortable.
 const RUSH_IN_DURATION: f32 = 1.0;
 /// Vitesse du rush d'apparition (px/s). Rapide — l'octopus déboule.
 const RUSH_IN_SPEED: f32 = 900.0;
@@ -211,9 +220,18 @@ impl EnemyBuilder for OctopusBuilder {
         )
         .on_complete("entering_done");
 
-        // ─── Sous-behavior "moving" (cycle alive) ─────────────────
-        let moving = BehaviorBuilder::first(
-            Duration::from_secs_f32(MOVE_DURATION),
+        // ─── Cycle alive : OrderedNodeList bouclée ──────────────
+        // 6 phases en séquence : telegraph 1, swoop 1, telegraph 2, swoop 2,
+        // shoot windup, fire. `.should_loop()` reprend à 0 après fire.
+        let alive_cycle = BehaviorBuilder::first(
+            Duration::from_secs_f32(TELEGRAPH_DURATION),
+            BehaviorBuilder::from_component(Animation::new(
+                "octopus_idle",
+                Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
+            )),
+        )
+        .then(
+            Duration::from_secs_f32(SWOOP_DURATION),
             BehaviorBuilder::multiple()
                 .with(BehaviorBuilder::from_component(OctopusMoving))
                 .with(BehaviorBuilder::from_component(Animation::new(
@@ -221,10 +239,23 @@ impl EnemyBuilder for OctopusBuilder {
                     Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
                 ))),
         )
-        .on_complete("shoot_ready");
-
-        // ─── Sous-behavior "shooting" (cycle alive) ──────────────
-        let shooting = BehaviorBuilder::first(
+        .then(
+            Duration::from_secs_f32(TELEGRAPH_DURATION),
+            BehaviorBuilder::from_component(Animation::new(
+                "octopus_idle",
+                Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
+            )),
+        )
+        .then(
+            Duration::from_secs_f32(SWOOP_DURATION),
+            BehaviorBuilder::multiple()
+                .with(BehaviorBuilder::from_component(OctopusMoving))
+                .with(BehaviorBuilder::from_component(Animation::new(
+                    "octopus_rush",
+                    Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
+                ))),
+        )
+        .then(
             Duration::from_secs_f32(SHOOT_WINDUP_DURATION),
             BehaviorBuilder::multiple()
                 .with(BehaviorBuilder::from_component(OctopusShooting))
@@ -240,16 +271,11 @@ impl EnemyBuilder for OctopusBuilder {
             Duration::from_secs_f32(FIRE_RELEASE_DURATION),
             BehaviorBuilder::from_component(OctopusFireShots),
         )
-        .on_complete("move_ready");
+        .should_loop();
 
-        // Cycle alive interne (loop moving/shooting), wrappé avec
-        // `OctopusAlive` pour signaler "tangible". `Added<OctopusAlive>` →
-        // octopus_become_alive insère le collider et restaure l'alpha.
-        let alive_cycle = BehaviorBuilder::choice()
-            .with(moving) // 0
-            .with(shooting) // 1
-            .add_transition(0, 1, "shoot_ready")
-            .add_transition(1, 0, "move_ready");
+        // Wrap dans un multiple avec `OctopusAlive` pour gating du collider.
+        // `Added<OctopusAlive>` → `octopus_become_alive` insère le collider
+        // et restaure l'alpha à 1.0 (sortie de la phase entering).
         let alive = BehaviorBuilder::multiple()
             .with(BehaviorBuilder::from_component(OctopusAlive))
             .with(alive_cycle);
@@ -341,9 +367,11 @@ pub fn octopus_become_alive(
     }
 }
 
-/// Sur `Added<OctopusMoving>` : pick une cible aléatoire dans l'écran et un
-/// point de contrôle aux alentours du joueur, insère `Movements` avec une
-/// Bézier qui va de la position courante à la cible en passant près du joueur.
+/// Sur `Added<OctopusMoving>` : configure le swoop déterministe.
+/// `target = 2·player − start` (miroir parfait par rapport au joueur, à un
+/// petit jitter Y près), `pass_through = player + perp · SWOOP_BULGE_OFFSET`
+/// (offset perpendiculaire au segment, règle main droite). La courbe traverse
+/// donc systématiquement la zone du joueur avec un arc visible.
 pub fn octopus_setup_curve(
     mut commands: Commands,
     mut sfx: SfxPlayer,
@@ -365,34 +393,29 @@ pub fn octopus_setup_curve(
     for (entity, octopus_tf) in &octopus_q {
         let start = octopus_tf.translation.truncate();
 
-        // Cible random sur l'écran, retry jusqu'à ce qu'elle soit au moins
-        // MIN_TRAVEL_DISTANCE plus loin que la position courante. Évite les
-        // cibles quasi-sur-place qui produiraient une courbe dégénérée.
-        // Cap 6 essais → si rien trouvé (rare), prend le dernier candidat.
-        let mut target = Vec2::ZERO;
-        for _ in 0..6 {
-            target = Vec2::new(
-                (fastrand::f32() * 2.0 - 1.0) * target_x_range,
-                (fastrand::f32() * 2.0 - 1.0) * target_y_range,
-            );
-            if (target - start).length() >= MIN_TRAVEL_DISTANCE {
-                break;
-            }
-        }
+        // Target = miroir de start par rapport au joueur, + petit jitter Y
+        // pour ne pas être 100% prévisible sur la hauteur d'arrivée.
+        let y_jitter = (fastrand::f32() * 2.0 - 1.0) * ARRIVAL_Y_JITTER;
+        let mut target = 2.0 * player_pos - start;
+        target.y += y_jitter;
+        target.x = target.x.clamp(-target_x_range, target_x_range);
+        target.y = target.y.clamp(-target_y_range, target_y_range);
 
-        // Point traversé au milieu de la courbe : position du joueur + petit
-        // jitter random (cercle PLAYER_PASSTHROUGH_JITTER) pour varier sans
-        // s'éloigner. La courbe passera *exactement* par ce point à t=0.5.
-        let angle = fastrand::f32() * std::f32::consts::TAU;
-        let radius = fastrand::f32() * PLAYER_PASSTHROUGH_JITTER;
-        let pass_through = player_pos + Vec2::new(angle.cos() * radius, angle.sin() * radius);
+        // Pass-through = joueur + offset perpendiculaire au segment (règle
+        // main droite). Donne un arc visible et déterministe ; la direction
+        // de l'offset alterne naturellement entre swoops aller/retour (le
+        // segment change de sens).
+        let segment = target - start;
+        let segment_len = segment.length().max(1.0);
+        let perp = Vec2::new(-segment.y, segment.x) / segment_len;
+        let pass_through = player_pos + perp * SWOOP_BULGE_OFFSET;
 
         if let Ok(mut e) = commands.get_entity(entity) {
             e.insert(Movements::new().with(Bezier::passing_through(
                 start,
                 pass_through,
                 target,
-                Duration::from_secs_f32(MOVE_DURATION),
+                Duration::from_secs_f32(SWOOP_DURATION),
             )));
         }
         sfx.play(Sfx::OctopusRush);
