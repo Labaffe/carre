@@ -42,6 +42,7 @@ use crate::weapon::projectile::Projectile;
 /// la hitbox passe maintenant par le composant `Hitbox` (collider unifié)
 /// et la taille du sprite par `Sprite.custom_size`.
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 pub struct Enemy {
     pub name: &'static str,
 }

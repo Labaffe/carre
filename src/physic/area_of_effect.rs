@@ -28,6 +28,7 @@ use crate::physic::collider::{collider, layers, OverlapEvent};
 use crate::physic::health::DamageEvent;
 
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 pub struct AreaOfEffect {
     pub shape: Shape,
     pub lifetime: f32,

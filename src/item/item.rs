@@ -95,6 +95,7 @@ impl ItemType {
 
 /// Un item ramassable qui descend à l'écran.
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 pub struct Droppable {
     pub item_type: ItemType,
 }

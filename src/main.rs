@@ -23,7 +23,7 @@ mod movement;
 mod geometry;
 // ─── Imports ───────────────────────────────────────────────────────
 use game_manager::state::GameState;
-use game_manager::game::{GamePlugin, MusicOutro};
+use game_manager::game::GamePlugin;
 use game_manager::difficulty::DifficultyPlugin;
 
 use editor::EditorPlugin;
@@ -31,18 +31,16 @@ use behavior::BehaviorPlugin;
 
 use level::level::{LevelConfig, LevelPlugin};
 
-use player::player::{Player, PlayerPlugin};
+use player::player::PlayerPlugin;
 use weapon::weapon::WeaponPlugin;
 use weapon::player_fire::PlayerFirePlugin;
-use weapon::projectile::{Projectile, ProjectilePlugin};
+use weapon::projectile::ProjectilePlugin;
 
-use enemy::{enemy::Enemy, EnemyPlugin};
-use enemy::boss::{ MusicBoss};
-use enemy::asteroid::{Asteroid};
+use enemy::EnemyPlugin;
 
 use crate::movement::despawn_off_screen::DespawnOffScreenPlugin;
-use fx::explosion::{Explosion, ExplosionPlugin};
-use item::item::{Droppable, ItemPlugin};
+use fx::explosion::ExplosionPlugin;
+use item::item::ItemPlugin;
 
 use menu::mainmenu::MainMenuPlugin;
 use menu::pause::PausePlugin;
@@ -53,7 +51,7 @@ use ui::crosshair::CrosshairPlugin;
 use ui::score::ScorePlugin;
 use ui::countdown::CountdownPlugin;
 
-use environment::background::{Background, BackgroundPlugin, Planet};
+use environment::background::BackgroundPlugin;
 use physic::collider::ColliderPlugin;
 use physic::collision::CollisionPlugin;
 use physic::player_detection::PlayerDetectionPlugin;
@@ -151,7 +149,21 @@ impl Default for GameSettings {
     }
 }
 
+/// Marker apposé sur **toutes les entités de gameplay** qui doivent
+/// disparaître quand on quitte l'état `Playing` (retour menu, game over, etc.).
+///
+/// Ajouté automatiquement via `#[require(GameplayEntity)]` sur les composants
+/// racines de chaque type d'entité (Player, Enemy, Projectile, AreaOfEffect,
+/// Background, Planet, Explosion, Droppable, MusicMain/Boss/Outro…). Plus
+/// besoin de lister 11 query types dans le cleanup — un seul suffit.
+///
+/// Si un nouveau type d'entité de jeu apparaît, il suffit d'ajouter le
+/// `#[require(GameplayEntity)]` sur son marker pour qu'il soit cleané auto.
+#[derive(Component, Default, Clone)]
+pub struct GameplayEntity;
+
 #[derive(Component)]
+#[require(GameplayEntity)]
 pub struct MusicMain;
 
 #[derive(Component)]
@@ -164,34 +176,15 @@ fn setup(mut commands: Commands, settings: Res<GameSettings>) {
     });
 }
 
-/// Nettoyage de toutes les entités de jeu quand on quitte l'état Playing.
+/// Nettoyage unifié : despawn toutes les entités portant `GameplayEntity`
+/// quand on quitte l'état Playing. Le marker est ajouté automatiquement via
+/// `#[require(GameplayEntity)]` sur les composants racines (voir leurs
+/// définitions respectives).
 fn cleanup_playing(
     mut commands: Commands,
-    players: Query<Entity, With<Player>>,
-    asteroids: Query<Entity, With<Asteroid>>,
-    projectiles: Query<Entity, With<Projectile>>,
-    explosions: Query<Entity, With<Explosion>>,
-    backgrounds: Query<Entity, With<Background>>,
-    planets: Query<Entity, With<Planet>>,
-    enemies: Query<Entity, With<Enemy>>,
-    music: Query<Entity, With<MusicMain>>,
-    boss_music: Query<Entity, With<MusicBoss>>,
-    outro_music: Query<Entity, With<MusicOutro>>,
-    droppables: Query<Entity, With<Droppable>>,
+    entities: Query<Entity, With<GameplayEntity>>,
 ) {
-    let all_entities = players.iter()
-        .chain(asteroids.iter())
-        .chain(projectiles.iter())
-        .chain(explosions.iter())
-        .chain(backgrounds.iter())
-        .chain(planets.iter())
-        .chain(enemies.iter())
-        .chain(music.iter())
-        .chain(boss_music.iter())
-        .chain(outro_music.iter())
-        .chain(droppables.iter());
-
-    for entity in all_entities {
+    for entity in entities.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
             e.try_despawn();
         }

@@ -40,6 +40,7 @@ const BOOM_FLASH_DURATION: f32 = 0.25;
 // ─── Composants ────────────────────────────────────────────────────
 
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 pub struct Player;
 
 /// Invincibilité temporaire après un hit.
