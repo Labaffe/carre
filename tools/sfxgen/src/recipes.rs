@@ -107,6 +107,20 @@ pub fn octopus_rush() -> Sfx {
         .volume(0.35)
 }
 
+/// Cri de mort — sweep descendant grave, triangle bit-crushé filtré lowpass
+/// pour un "gloup" agonisant. Volume soutenu, dure ~0.6s pour couvrir
+/// l'animation de mort.
+pub fn octopus_die() -> Sfx {
+    Sfx::new("octopus_die")
+        .wave(Wave::Triangle)
+        .freq_sweep(420.0, 70.0)
+        .duration(0.6)
+        .envelope(0.0, 0.06, 0.6, 0.45)
+        .lowpass(800.0)
+        .bit_crush(4)
+        .volume(0.55)
+}
+
 pub fn all() -> Vec<Sfx> {
     vec![
         shoot(),
@@ -118,6 +132,7 @@ pub fn all() -> Vec<Sfx> {
         octopus_sound(),
         octopus_shoot(),
         octopus_rush(),
+        octopus_die(),
     ]
 }
 
@@ -132,6 +147,7 @@ pub fn by_name(name: &str) -> Option<Sfx> {
         "octopus_sound" => Some(octopus_sound()),
         "octopus_shoot" => Some(octopus_shoot()),
         "octopus_rush" => Some(octopus_rush()),
+        "octopus_die" => Some(octopus_die()),
         _ => None,
     }
 }

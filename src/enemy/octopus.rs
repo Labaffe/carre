@@ -39,7 +39,7 @@ use crate::behavior::BehaviorBuilder;
 use crate::behavior::behavior::BehaviorComponent;
 use crate::behavior::choice_list::TransitionMessages;
 use crate::enemy::anim_bank::Animation;
-use crate::enemy::death::DespawnSelf;
+use crate::enemy::death::{DespawnSelf, Dying};
 use crate::enemy::enemies::OCTOPUS;
 use crate::enemy::enemy::Enemy;
 use crate::enemy::enemy_builder::EnemyBuilder;
@@ -103,6 +103,10 @@ const ENTRY_OFFSCREEN_OFFSET: f32 = 80.0;
 /// Alpha du sprite pendant `entering` (intangible). Indique visuellement
 /// au joueur que tirer dessus est inutile.
 const ENTERING_OPACITY: f32 = 0.6;
+/// Durée totale de l'animation de mort (s). Indépendant du nombre de frames
+/// du dossier `images/octopus/death` — la durée par frame est recalculée
+/// automatiquement à l'init via `Animation::with_total_duration`.
+const OCTOPUS_DEATH_DURATION: f32 = 0.8;
 
 static OCTOPUS_DROP_TABLE: [(ItemType, f32); 2] =
     [(ItemType::Bomb, 0.20), (ItemType::BonusScore, 0.30)];
@@ -169,6 +173,7 @@ impl EnemyBuilder for OctopusBuilder {
             ("octopus_idle", "images/octopus/idle"),
             ("octopus_rush", "images/octopus/rush"),
             ("octopus_shoot", "images/octopus/shoot"),
+            ("octopus_death", "images/octopus/death"),
         ])
     }
     fn spawn(
@@ -280,8 +285,25 @@ impl EnemyBuilder for OctopusBuilder {
             .with(BehaviorBuilder::from_component(OctopusAlive))
             .with(alive_cycle);
 
-        // Mort instantanée : pas d'anim de mort pour l'instant.
-        let dying = BehaviorBuilder::from_component(DespawnSelf);
+        // Mort : stoppe le mouvement, joue l'animation de mort one-shot sur
+        // OCTOPUS_DEATH_DURATION (la durée par frame est recalculée auto à
+        // l'init selon le nombre de frames du dossier). Puis DespawnSelf.
+        let dying = BehaviorBuilder::first(
+            Duration::from_secs_f32(OCTOPUS_DEATH_DURATION),
+            BehaviorBuilder::multiple()
+                .with(BehaviorBuilder::from_component(Movements::new()))
+                .with(BehaviorBuilder::from_component(
+                    Animation::with_total_duration(
+                        "octopus_death",
+                        Duration::from_secs_f32(OCTOPUS_DEATH_DURATION),
+                    )
+                    .one_shot(),
+                )),
+        )
+        .then(
+            Duration::from_secs_f32(0.1),
+            BehaviorBuilder::from_component(DespawnSelf),
+        );
 
         // ─── Outer choice : entering → alive → dying ─────────────
         // Pas de transition "die" depuis entering : sans collider, l'octopus
@@ -346,6 +368,17 @@ pub fn octopus_entering_idle_sound(
 ) {
     for _ in &query {
         sfx.play(Sfx::OctopusSound);
+    }
+}
+
+/// Joue `OctopusDie` quand le marker `Dying` est inséré sur l'octopus
+/// (= HP=0 détecté par `detect_death`). Fire une seule fois par mort.
+pub fn octopus_die_sound(
+    mut sfx: SfxPlayer,
+    query: Query<(), (With<Octopus>, Added<Dying>)>,
+) {
+    for _ in &query {
+        sfx.play(Sfx::OctopusDie);
     }
 }
 
