@@ -5,6 +5,7 @@ pub mod translate;
 pub mod chase;
 pub mod rush;
 pub mod goto;
+pub mod bezier;
 pub mod shake;
 pub mod rotate;
 pub mod spin;

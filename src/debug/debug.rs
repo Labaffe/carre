@@ -18,6 +18,9 @@ use crate::game_manager::difficulty::Difficulty;
 use crate::game_manager::game::{IntroSound, LevelPhase, LevelPhaseKind};
 use crate::level::level::{LevelRunner, Trigger};
 use crate::menu::pause::PauseState;
+use crate::movement::bounding_radius::BoundingRadius;
+use crate::movement::movement_zone::MovementZone;
+use crate::physic::area_of_effect::AreaOfEffect;
 use crate::physic::collider::{layers, CollisionLayer, Hitbox};
 use crate::physic::health::Health;
 use crate::physic::invulnerable::Invulnerable;
@@ -47,6 +50,7 @@ impl Plugin for DebugPlugin {
                     manage_asteroid_labels,
                     debug_mouse_coords,
                     debug_kill_player,
+                    draw_zone_labels,
                 ),
             );
     }
@@ -54,6 +58,11 @@ impl Plugin for DebugPlugin {
 
 #[derive(Component)]
 struct AsteroidLabel(Entity);
+
+/// Marker sur les `Text2d` de labels de zones débug. Recréés chaque frame
+/// (despawn-tous-puis-respawn).
+#[derive(Component)]
+struct DebugZoneLabel;
 
 #[derive(Resource)]
 pub struct DebugMode(pub bool);
@@ -693,7 +702,7 @@ fn draw_hitboxes(
         &crate::movement::movement_zone::MovementZone,
         Option<&crate::movement::bounding_radius::BoundingRadius>,
     )>,
-    sprite_q: Query<(&Transform, &Sprite)>,
+    sprite_q: Query<(&Transform, &Sprite), Without<AreaOfEffect>>,
     windows: Query<&Window>,
     camera_q: Query<&Projection>,
 ) {
@@ -706,7 +715,9 @@ fn draw_hitboxes(
 
     // Boîtes blanches semi-transparentes : taille effective des sprites
     // (Sprite.custom_size). Utile pour comparer la taille rendue avec le
-    // BoundingRadius et la MovementZone.
+    // BoundingRadius et la MovementZone. Skip les AOE — leur sprite est un
+    // PNG carré à fond transparent qui dépasse de la vraie zone circulaire ;
+    // afficher le carré induit en erreur. Le collider magenta suffit.
     for (transform, sprite) in sprite_q.iter() {
         if let Some(size) = sprite.custom_size {
             gizmos.rect_2d(
@@ -772,3 +783,162 @@ fn draw_hitboxes(
 // Dessin debug des tourelles/mothership retiré avec la suppression des
 // modules correspondants. À réimplémenter quand gatling/mothership seront
 // réécrits.
+
+/// Étiquette texte affichée pour un layer de collision. Renvoie `None` pour
+/// les types trop nombreux à labeliser (projectiles).
+fn collider_label(layer: u32) -> Option<&'static str> {
+    if layer & layers::PLAYER != 0 {
+        Some("PLAYER")
+    } else if layer & layers::AOE != 0 {
+        Some("AOE")
+    } else if layer & layers::ASTEROID != 0 {
+        Some("ASTEROID")
+    } else if layer & layers::ENEMY != 0 {
+        Some("ENEMY")
+    } else if layer & layers::ITEM != 0 {
+        Some("ITEM")
+    } else {
+        // Projectiles (P-PROJ, E-PROJ) : trop nombreux, on n'étiquette pas.
+        None
+    }
+}
+
+/// Spawn des `Text2d` flottants au-dessus de chaque zone debug pour rendre
+/// la lecture immédiate (PLAYER / AOE / ENEMY / DETECT / MOVE ZONE / CAMERA).
+/// Pattern immediate-mode : tous les labels sont despawn au début de la frame
+/// puis recréés. Acceptable au volume actuel (~10 labels/frame).
+fn draw_zone_labels(
+    mut commands: Commands,
+    debug: Res<DebugMode>,
+    existing: Query<Entity, With<DebugZoneLabel>>,
+    collider_q: Query<(&Transform, &Hitbox, &CollisionLayer, Option<&AreaOfEffect>)>,
+    detection_q: Query<(&Transform, &PlayerDetection)>,
+    zone_q: Query<(&MovementZone, Option<&BoundingRadius>)>,
+    camera_q: Query<&Projection>,
+    windows: Query<&Window>,
+) {
+    // 1. Despawn previous frame labels
+    for e in existing.iter() {
+        if let Ok(mut ec) = commands.get_entity(e) {
+            ec.try_despawn();
+        }
+    }
+
+    if !debug.0 {
+        return;
+    }
+
+    const FONT_SIZE: f32 = 11.0;
+    const Z_LABEL: f32 = 10.0;
+    const PADDING: f32 = 6.0;
+
+    // 2. Colliders — labelisés par layer (sauf projectiles, trop nombreux).
+    for (transform, hitbox, layer, aoe) in collider_q.iter() {
+        let Some(name) = collider_label(layer.0) else { continue };
+        // AOE bonus : afficher la durée restante.
+        let text = if let Some(aoe) = aoe {
+            let remaining = (aoe.lifetime - aoe.elapsed).max(0.0);
+            format!("AOE ({:.1}s)", remaining)
+        } else {
+            name.to_string()
+        };
+        let y_offset = match &hitbox.0 {
+            Shape::Circle(r) => *r + PADDING,
+            Shape::Rect { half_length, .. } => *half_length + PADDING,
+        };
+        commands.spawn((
+            Text2d::new(text),
+            TextFont {
+                font_size: FONT_SIZE,
+                ..default()
+            },
+            TextColor(color_for_layer(layer.0)),
+            Transform::from_xyz(
+                transform.translation.x,
+                transform.translation.y + y_offset,
+                Z_LABEL,
+            ),
+            DebugZoneLabel,
+        ));
+    }
+
+    // 3. Detection zones (magenta — distinguer des AOE).
+    for (transform, detection) in detection_q.iter() {
+        let y_offset = match &detection.shape {
+            Shape::Circle(r) => *r + PADDING,
+            Shape::Rect { half_length, .. } => *half_length + PADDING,
+        };
+        let color = if detection.inside {
+            Color::srgb(1.0, 0.4, 0.4)
+        } else {
+            Color::srgb(1.0, 0.5, 1.0)
+        };
+        commands.spawn((
+            Text2d::new("DETECT"),
+            TextFont {
+                font_size: FONT_SIZE,
+                ..default()
+            },
+            TextColor(color),
+            Transform::from_xyz(
+                transform.translation.x,
+                transform.translation.y + y_offset,
+                Z_LABEL,
+            ),
+            DebugZoneLabel,
+        ));
+    }
+
+    // 4. MovementZone — un seul label (toutes les entités partagent la même
+    // zone écran, donc 1 rectangle visuel = 1 label).
+    if let Ok(window) = windows.single() {
+        let h = window.physical_height() as f32;
+        if let Some((zone, bounding)) = zone_q.iter().next() {
+            let max_y_raw = (0.5 - zone.margin.y) * h;
+            commands.spawn((
+                Text2d::new("MOVE ZONE"),
+                TextFont {
+                    font_size: FONT_SIZE,
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 0.0, 1.0)),
+                Transform::from_xyz(0.0, max_y_raw - FONT_SIZE - 2.0, Z_LABEL),
+                DebugZoneLabel,
+            ));
+            if let Some(b) = bounding {
+                let eff_max_y = max_y_raw - b.0;
+                commands.spawn((
+                    Text2d::new("EFFECTIVE ZONE"),
+                    TextFont {
+                        font_size: FONT_SIZE * 0.85,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(1.0, 0.5, 0.8)),
+                    Transform::from_xyz(0.0, eff_max_y - FONT_SIZE - 2.0, Z_LABEL),
+                    DebugZoneLabel,
+                ));
+            }
+        }
+    }
+
+    // 5. Caméra — label au coin haut-gauche de la zone visible.
+    for projection in camera_q.iter() {
+        if let Projection::Orthographic(ortho) = projection {
+            commands.spawn((
+                Text2d::new("CAMERA"),
+                TextFont {
+                    font_size: FONT_SIZE,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.0, 1.0, 0.0)),
+                Transform::from_xyz(
+                    ortho.area.min.x + 60.0,
+                    ortho.area.max.y - FONT_SIZE - 2.0,
+                    Z_LABEL,
+                ),
+                DebugZoneLabel,
+            ));
+            break;
+        }
+    }
+}

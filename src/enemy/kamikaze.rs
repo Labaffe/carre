@@ -37,7 +37,7 @@ use crate::item::item::{DropTable, ItemType};
 use crate::movement::chase::Chase;
 use crate::movement::despawn_off_screen::DespawnOffScreen;
 use crate::movement::movements::Movements;
-use crate::physic::area_of_effect::{AoeAssets, spawn_aoe};
+use crate::physic::area_of_effect::spawn_aoe_animated;
 use crate::physic::collider::{collider, layers};
 use crate::physic::health::Health;
 use crate::physic::player_detection::PlayerDetection;
@@ -45,7 +45,7 @@ use crate::sprite_orient::FaceMovement;
 
 /// Vitesse de poursuite de base (px/s). Esquivable au début, devient
 /// progressivement plus rapide via `KamikazeSpeedRamp`.
-const KAMIKAZE_CHASE_SPEED: f32 = 250.0;
+const KAMIKAZE_CHASE_SPEED: f32 = 340.0;
 /// Bonus de vitesse gagné par seconde de vie (px/s par seconde). Cumulé
 /// linéairement avec `KAMIKAZE_CHASE_SPEED`. Plus le kamikaze survit
 /// longtemps, plus il devient dangereux — pousse à le prioriser.
@@ -58,8 +58,11 @@ const KAMIKAZE_DETECTION_RADIUS: f32 = 200.0;
 /// Rayon de l'AOE explosion (px). Légèrement plus large que la détection.
 const KAMIKAZE_AOE_RADIUS: f32 = 180.0;
 /// Durée de vie de l'AOE (secondes). Bref — pas zone denial, juste un
-/// gros punch instantané.
-const KAMIKAZE_AOE_LIFETIME: f32 = 0.8;
+/// gros punch instantané. L'animation d'explosion joue sur cette durée.
+const KAMIKAZE_AOE_LIFETIME: f32 = 0.4;
+/// Taille du sprite de l'AOE (px). Plus large que le radius (×2 = diamètre)
+/// pour que l'animation déborde un peu sur la zone d'impact.
+const KAMIKAZE_AOE_SPRITE_SIZE: f32 = KAMIKAZE_AOE_RADIUS * 2.0;
 /// Période du clignotement rouge pendant le countdown.
 const KAMIKAZE_BLINK_PERIOD: f32 = 0.15;
 /// Durée par frame des animations (chase warm-up + explosion).
@@ -136,6 +139,7 @@ impl EnemyBuilder for KamikazeBuilder {
         HashMap::from([
             ("kamikaze_chase", "images/kamikaze/chase"),
             ("kamikaze_explode", "images/kamikaze/explode"),
+            ("kamikaze_explosion", "images/kamikaze/explosion"),
         ])
     }
     fn spawn(
@@ -305,16 +309,18 @@ pub fn kamikaze_force_boom_system(
 pub fn kamikaze_boom_system(
     mut commands: Commands,
     mut sfx: SfxPlayer,
-    aoe_assets: Res<AoeAssets>,
+    anim_bank: Res<crate::enemy::anim_bank::AnimBank>,
     query: Query<(Entity, &Transform), Added<KamikazeBoom>>,
 ) {
     for (entity, transform) in &query {
-        spawn_aoe(
+        spawn_aoe_animated(
             &mut commands,
-            &aoe_assets,
+            &anim_bank,
             transform.translation,
             Shape::Circle(KAMIKAZE_AOE_RADIUS),
             KAMIKAZE_AOE_LIFETIME,
+            "kamikaze_explosion",
+            KAMIKAZE_AOE_SPRITE_SIZE,
         );
         sfx.play(Sfx::Explosion);
         // DespawnSelf au lieu de try_despawn direct : évite la race avec les

@@ -30,9 +30,11 @@ impl Plugin for BackgroundPlugin {
 }
 
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 pub struct Background;
 
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 pub struct Planet;
 
 // ─── Constantes background ─────────────────────────────────────────

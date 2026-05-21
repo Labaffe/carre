@@ -41,6 +41,9 @@ const RUSH_DURATION: f32 = 1.0;
 /// Durée de l'idle entre deux rushes (secondes).
 const IDLE_DURATION: f32 = 1.5;
 const GREEN_UFO_ANIM_FPS: f32 = 12.0;
+/// Durée totale de l'animation de mort (s) — durée par frame recalculée
+/// auto via `with_total_duration`.
+const GREEN_UFO_DEATH_DURATION: f32 = 0.45;
 
 static GREEN_UFO_DROP_TABLE: [(ItemType, f32); 2] =
     [(ItemType::Bomb, 0.10), (ItemType::BonusScore, 0.15)];
@@ -109,15 +112,19 @@ impl EnemyBuilder for GreenUFOBuilder {
             .add_transition(1, 0, "wall_top")
             .add_transition(1, 0, "wall_bottom");
 
-        // Mort : 10 frames de death animation (one-shot) à 12fps = 0.83s
-        // puis DespawnSelf. Movements::new() pour stopper le rush en cours.
+        // Mort : anim death one-shot sur GREEN_UFO_DEATH_DURATION (durée
+        // par frame recalculée auto), puis DespawnSelf. `Movements::new()`
+        // pour stopper le rush en cours.
         let dying = BehaviorBuilder::first(
-            Duration::from_secs_f32(0.83),
+            Duration::from_secs_f32(GREEN_UFO_DEATH_DURATION),
             BehaviorBuilder::multiple()
                 .with(BehaviorBuilder::from_component(Movements::new()))
                 .with(BehaviorBuilder::from_component(
-                    Animation::new("green_ufo_death", Duration::from_secs_f32(1.0 / 12.0))
-                        .one_shot(),
+                    Animation::with_total_duration(
+                        "green_ufo_death",
+                        Duration::from_secs_f32(GREEN_UFO_DEATH_DURATION),
+                    )
+                    .one_shot(),
                 )),
         )
         .then(

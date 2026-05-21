@@ -35,6 +35,7 @@ static ASTEROID_DROP_TABLE: [(ItemType, f32); 2] = [
 
 
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 pub struct Asteroid {
     pub radius: f32,
     pub size: Vec2,

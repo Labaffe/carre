@@ -35,6 +35,7 @@ pub enum Sfx {
     PlayerBomb,
     PlayerHurt,
     PlayerDeath,
+    PlayerDash,
     // ─── Combat (hors EnemyConfigData) ───
     EnemyHit,
     EnemyDie,
@@ -46,6 +47,10 @@ pub enum Sfx {
     // ─── Ennemis spécifiques ───
     KamikazeScream,
     KamikazeLaugh,
+    OctopusSound,
+    OctopusShoot,
+    OctopusRush,
+    OctopusDie,
     MineBeep,
     MineExplode,
     BossStart,
@@ -75,6 +80,7 @@ const SFX_PATHS: &[(Sfx, &str)] = &[
     (Sfx::PlayerBomb,       "audio/sfx/bomb.ogg"),
     (Sfx::PlayerHurt,       "audio/sfx/hurt.ogg"),
     (Sfx::PlayerDeath,      "audio/sfx/you_died.ogg"),
+    (Sfx::PlayerDash,       "audio/sfx/player_dash.wav"),
     // Combat
     (Sfx::EnemyHit,         "audio/sfx/hit.wav"),
     (Sfx::EnemyDie,         "audio/sfx/asteroid_die.ogg"),
@@ -86,6 +92,10 @@ const SFX_PATHS: &[(Sfx, &str)] = &[
     // Ennemis
     (Sfx::KamikazeScream,   "audio/sfx/kamikaze_scream.wav"),
     (Sfx::KamikazeLaugh,    "audio/sfx/kamikaze_laugh.wav"),
+    (Sfx::OctopusSound,     "audio/sfx/octopus_sound.wav"),
+    (Sfx::OctopusShoot,     "audio/sfx/octopus_shoot.wav"),
+    (Sfx::OctopusRush,      "audio/sfx/octopus_rush.wav"),
+    (Sfx::OctopusDie,       "audio/sfx/octopus_die.wav"),
     (Sfx::MineBeep,         "audio/sfx/t_1.ogg"),
     (Sfx::MineExplode,      "audio/sfx/bomb.ogg"),
     (Sfx::BossStart,        "audio/sfx/boss_start.ogg"),

@@ -65,8 +65,14 @@ pub struct Animation {
     /// Si `true`, l'animation s'arrête sur la dernière frame au lieu de reboucler.
     one_shot: bool,
     completed: bool,
+    /// Si présent, la durée par frame est recalculée à l'init en fonction du
+    /// nombre de frames chargées : `per_frame = total_duration / frame_count`.
+    /// Utile pour piloter la durée totale d'une animation (ex: mort) sans
+    /// dépendre du nombre exact de frames.
+    total_duration: Option<Duration>,
 }
 impl Animation {
+    /// Constructeur par durée par frame.
     pub fn new(name: &str, duration: Duration) -> Animation {
         Self {
             name: name.to_string(),
@@ -75,6 +81,23 @@ impl Animation {
             init: false,
             one_shot: false,
             completed: false,
+            total_duration: None,
+        }
+    }
+    /// Constructeur par durée totale : la durée par frame est calculée
+    /// automatiquement à l'initialisation, une fois les frames chargées.
+    /// Indépendant du nombre de frames du dossier — ajoute/retire des frames
+    /// sans toucher au code.
+    pub fn with_total_duration(name: &str, total: Duration) -> Animation {
+        Self {
+            name: name.to_string(),
+            current_frame: 0,
+            // Timer placeholder, sera recalculé à l'init.
+            timer: Timer::new(Duration::from_millis(100), TimerMode::Repeating),
+            init: false,
+            one_shot: false,
+            completed: false,
+            total_duration: Some(total),
         }
     }
     pub fn one_shot(mut self) -> Self {
@@ -107,6 +130,12 @@ pub fn animate(
         if !anim.init {
             anim.current_frame = 0;
             sprite.image = f[0].clone();
+            // Si une durée totale a été fournie, recalcule la durée par
+            // frame maintenant que le nombre de frames est connu.
+            if let Some(total) = anim.total_duration {
+                let per_frame = total / (f.len() as u32);
+                anim.timer = Timer::new(per_frame, TimerMode::Repeating);
+            }
             anim.init = true;
         }
 

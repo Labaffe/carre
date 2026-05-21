@@ -20,6 +20,7 @@ impl Plugin for ExplosionPlugin {
 }
 
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 pub struct Explosion {
     frames: Vec<Handle<Image>>,
     current_frame: usize,

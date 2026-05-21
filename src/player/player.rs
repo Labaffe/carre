@@ -5,6 +5,7 @@
 //! L'ancien système de phases temporelles (Phase1/2/3 via timer + boss music)
 //! a été retiré.
 
+use crate::audio::{Sfx, SfxPlayer};
 use crate::game_manager::difficulty::BoomEvent;
 use crate::game_manager::state::GameState;
 use crate::geometry::shape::Shape;
@@ -12,6 +13,7 @@ use crate::level::level::{LevelConfig, LevelSetupSet};
 use crate::menu::pause::not_paused;
 use crate::physic::collider::{collider, layers};
 use crate::physic::health::Health;
+use crate::physic::invulnerable::Invulnerable;
 use crate::ui::crosshair::Crosshair;
 use crate::weapon::weapon::Weapon;
 use bevy::prelude::*;
@@ -36,10 +38,23 @@ const PLAYER_SPRITE_SIZE: f32 = 128.0;
 const PLAYER_HITBOX_RADIUS: f32 = 45.0;
 /// Durée du flash blanc autour du joueur lors d'un boom.
 const BOOM_FLASH_DURATION: f32 = 0.25;
+/// Distance maximale d'un dash (px). Si le réticule est plus loin, le dash
+/// est plafonné à cette distance dans la direction visée.
+const DASH_MAX_DISTANCE: f32 = 350.0;
+/// Durée d'un dash (s). Très court — l'effet "blink" qui rend invulnérable
+/// (via insert/remove de `Invulnerable` sur la même fenêtre).
+const DASH_DURATION: f32 = 0.14;
+/// Cooldown du dash (s). Long pour forcer le joueur à choisir son moment.
+const DASH_COOLDOWN: f32 = 5.0;
+/// Largeur de la barre de cooldown en UI (px).
+const DASH_UI_BAR_WIDTH: f32 = 120.0;
+/// Hauteur de la barre de cooldown en UI (px).
+const DASH_UI_BAR_HEIGHT: f32 = 8.0;
 
 // ─── Composants ────────────────────────────────────────────────────
 
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 pub struct Player;
 
 /// Invincibilité temporaire après un hit.
@@ -58,30 +73,76 @@ struct LifeIcon(i32);
 #[derive(Component)]
 struct BoomFlash(Timer);
 
+/// Composant inséré sur le joueur pendant un dash en cours. Lerp entre
+/// `start` et `target` sur `DASH_DURATION`. Tant que ce composant est là :
+/// déplacement, tir et rotation sont bloqués (via `Without<Dashing>` dans
+/// les queries des systèmes correspondants).
+#[derive(Component)]
+pub struct Dashing {
+    pub start: Vec2,
+    pub target: Vec2,
+    pub elapsed: f32,
+}
+
+/// Ressource globale qui suit le cooldown du dash. Timer Once. Quand
+/// `is_finished()` → dash dispo. `reset()` au déclenchement → timer ré-tick
+/// pendant `DASH_COOLDOWN` secondes avant que le dash soit re-dispo.
+#[derive(Resource)]
+pub struct DashCooldown {
+    pub timer: Timer,
+}
+
+impl Default for DashCooldown {
+    fn default() -> Self {
+        // État initial = prêt : on tick immédiatement le timer à sa durée
+        // complète pour que `is_finished()` soit true au spawn.
+        let mut timer = Timer::from_seconds(DASH_COOLDOWN, TimerMode::Once);
+        timer.tick(std::time::Duration::from_secs_f32(DASH_COOLDOWN));
+        Self { timer }
+    }
+}
+
+/// Marqueurs UI pour la jauge de dash.
+#[derive(Component)]
+struct DashUI;
+#[derive(Component)]
+struct DashUIText;
+#[derive(Component)]
+struct DashUIBar;
+
 // ─── Plugin ────────────────────────────────────────────────────────
 
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            OnEnter(GameState::Playing),
-            (setup_player, setup_lives_ui).after(LevelSetupSet),
-        )
-        .add_systems(OnExit(GameState::Playing), cleanup_lives_ui)
-        .add_systems(
-            Update,
-            (
-                movement,
-                rotate_towards_crosshair,
-                boom_flash_trigger,
-                boom_flash_update,
-                update_invincibility,
-                update_lives_ui,
+        app.init_resource::<DashCooldown>()
+            .add_systems(
+                OnEnter(GameState::Playing),
+                (setup_player, setup_lives_ui, setup_dash_ui, reset_dash_cooldown)
+                    .after(LevelSetupSet),
             )
-                .run_if(in_state(GameState::Playing))
-                .run_if(not_paused),
-        );
+            .add_systems(
+                OnExit(GameState::Playing),
+                (cleanup_lives_ui, cleanup_dash_ui),
+            )
+            .add_systems(
+                Update,
+                (
+                    movement,
+                    rotate_towards_crosshair,
+                    boom_flash_trigger,
+                    boom_flash_update,
+                    update_invincibility,
+                    update_lives_ui,
+                    dash_input,
+                    update_dash,
+                    dash_cooldown_tick,
+                    update_dash_ui,
+                )
+                    .run_if(in_state(GameState::Playing))
+                    .run_if(not_paused),
+            );
     }
 }
 
@@ -136,7 +197,7 @@ pub fn spawn_player(
 fn movement(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut query: Query<&mut Transform, With<Player>>,
+    mut query: Query<&mut Transform, (With<Player>, Without<Dashing>)>,
     windows: Query<&Window>,
 ) {
     let window = windows.single().unwrap();
@@ -160,7 +221,7 @@ fn movement(
 
 fn rotate_towards_crosshair(
     crosshair_q: Query<&Transform, (With<Crosshair>, Without<Player>)>,
-    mut player_q: Query<&mut Transform, (With<Player>, Without<Crosshair>)>,
+    mut player_q: Query<&mut Transform, (With<Player>, Without<Crosshair>, Without<Dashing>)>,
 ) {
     let Ok(crosshair_tf) = crosshair_q.single() else { return };
     let Ok(mut player_transform) = player_q.single_mut() else { return };
@@ -283,6 +344,186 @@ fn update_lives_ui(
 }
 
 fn cleanup_lives_ui(mut commands: Commands, query: Query<Entity, With<LivesUI>>) {
+    for entity in query.iter() {
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
+        }
+    }
+}
+
+// ─── Dash : input, motion, cooldown ─────────────────────────────────
+
+/// Reset du cooldown à chaque entrée en Playing (sinon le timer hérité d'une
+/// partie précédente reste en cours).
+fn reset_dash_cooldown(mut cooldown: ResMut<DashCooldown>) {
+    *cooldown = DashCooldown::default();
+}
+
+/// Déclenche un dash si :
+/// - Espace pressé
+/// - cooldown prêt
+/// - aucun dash déjà en cours (Without<Dashing> dans la query)
+///
+/// La cible = position du réticule au moment du clic, plafonnée à
+/// `DASH_MAX_DISTANCE` dans la direction visée.
+fn dash_input(
+    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut cooldown: ResMut<DashCooldown>,
+    mut sfx: SfxPlayer,
+    crosshair_q: Query<&Transform, (With<Crosshair>, Without<Player>)>,
+    player_q: Query<(Entity, &Transform), (With<Player>, Without<Dashing>, Without<Crosshair>)>,
+) {
+    if !keyboard.just_pressed(KeyCode::Space) {
+        return;
+    }
+    if !cooldown.timer.is_finished() {
+        return;
+    }
+    let Ok((player_e, player_tf)) = player_q.single() else { return };
+    let Ok(crosshair_tf) = crosshair_q.single() else { return };
+
+    let start = player_tf.translation.truncate();
+    let crosshair_pos = crosshair_tf.translation.truncate();
+    let to_crosshair = crosshair_pos - start;
+    let dist = to_crosshair.length();
+    let dir = to_crosshair.normalize_or_zero();
+    if dir == Vec2::ZERO {
+        return;
+    }
+    let actual_dist = dist.min(DASH_MAX_DISTANCE);
+    let target = start + dir * actual_dist;
+
+    // Insère Dashing + Invulnerable simultanément. Le joueur est intouchable
+    // pendant toute la fenêtre du dash. `update_dash` retire les deux à la fin.
+    commands.entity(player_e).insert((
+        Dashing {
+            start,
+            target,
+            elapsed: 0.0,
+        },
+        Invulnerable,
+    ));
+    cooldown.timer.reset();
+    sfx.play(Sfx::PlayerDash);
+}
+
+/// Anime le dash en cours : lerp start → target sur `DASH_DURATION`. À la
+/// fin, retire `Dashing` + `Invulnerable` pour rendre le contrôle au joueur.
+/// Note : si F1 (debug mode) est actif, `debug_player_invulnerability` ré-
+/// insérera `Invulnerable` la frame suivante.
+fn update_dash(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut Transform, &mut Dashing)>,
+) {
+    let dt = time.delta_secs();
+    for (entity, mut transform, mut dashing) in &mut query {
+        dashing.elapsed += dt;
+        let t = (dashing.elapsed / DASH_DURATION).clamp(0.0, 1.0);
+        let pos = dashing.start.lerp(dashing.target, t);
+        transform.translation.x = pos.x;
+        transform.translation.y = pos.y;
+        if t >= 1.0 {
+            if let Ok(mut e) = commands.get_entity(entity) {
+                e.remove::<Dashing>();
+                e.remove::<Invulnerable>();
+            }
+        }
+    }
+}
+
+/// Tick le timer de cooldown chaque frame. Une fois finished, le dash est
+/// dispo (`dash_input` autorise un nouveau déclenchement).
+fn dash_cooldown_tick(time: Res<Time>, mut cooldown: ResMut<DashCooldown>) {
+    cooldown.timer.tick(time.delta());
+}
+
+// ─── Dash UI : label "ESPACE" + jauge ───────────────────────────────
+
+fn setup_dash_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(20.0),
+                left: Val::Percent(50.0),
+                // margin négatif pour centrer (~ demi-largeur du bloc).
+                margin: UiRect::left(Val::Px(-DASH_UI_BAR_WIDTH / 2.0)),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                row_gap: Val::Px(4.0),
+                ..default()
+            },
+            DashUI,
+        ))
+        .with_children(|parent| {
+            // Label "ESPACE"
+            parent.spawn((
+                Text::new("ESPACE"),
+                TextFont {
+                    font,
+                    font_size: 16.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+                DashUIText,
+            ));
+            // Track de la barre (fond sombre)
+            parent
+                .spawn((
+                    Node {
+                        width: Val::Px(DASH_UI_BAR_WIDTH),
+                        height: Val::Px(DASH_UI_BAR_HEIGHT),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.15, 0.15, 0.15, 0.8)),
+                ))
+                .with_children(|track| {
+                    // Fill (largeur animée par update_dash_ui)
+                    track.spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            height: Val::Percent(100.0),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(1.0, 0.85, 0.0, 1.0)),
+                        DashUIBar,
+                    ));
+                });
+        });
+}
+
+/// Met à jour le label (couleur) et la barre (largeur + couleur) selon
+/// l'état du cooldown. Dispo = jaune vif, en cooldown = gris + barre cyan
+/// qui se remplit.
+fn update_dash_ui(
+    cooldown: Res<DashCooldown>,
+    mut text_q: Query<&mut TextColor, With<DashUIText>>,
+    mut bar_q: Query<(&mut Node, &mut BackgroundColor), With<DashUIBar>>,
+) {
+    let ready = cooldown.timer.is_finished();
+    let fraction = cooldown.timer.fraction(); // 0 (vient de claquer) → 1 (dispo)
+
+    if let Ok(mut color) = text_q.single_mut() {
+        color.0 = if ready {
+            Color::srgba(1.0, 0.85, 0.0, 1.0) // jaune vif
+        } else {
+            Color::srgba(0.45, 0.45, 0.45, 1.0) // gris
+        };
+    }
+    if let Ok((mut node, mut bg)) = bar_q.single_mut() {
+        node.width = Val::Percent(fraction * 100.0);
+        bg.0 = if ready {
+            Color::srgba(1.0, 0.85, 0.0, 1.0) // jaune (plein)
+        } else {
+            Color::srgba(0.3, 0.7, 1.0, 1.0) // cyan (en charge)
+        };
+    }
+}
+
+fn cleanup_dash_ui(mut commands: Commands, query: Query<Entity, With<DashUI>>) {
     for entity in query.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
             e.try_despawn();

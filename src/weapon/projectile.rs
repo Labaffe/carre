@@ -32,6 +32,7 @@ pub enum Team {
 /// Projectile générique. Se déplace en ligne droite à vitesse constante,
 /// despawné automatiquement hors écran.
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 pub struct Projectile {
     pub velocity: Vec3,
     pub hitbox: Shape,

@@ -68,6 +68,73 @@ pub fn kamikaze_laugh() -> Sfx {
         .volume(0.4)
 }
 
+/// Cri d'éveil de l'octopus — bref motif descendant en triangle, grave et
+/// "organique". Joué à l'apparition et au wind-up du shoot. Lowpass + bit
+/// crush pour un grain rétro étouffé "sous-marin".
+pub fn octopus_sound() -> Sfx {
+    Sfx::new("octopus_sound")
+        .wave(Wave::Triangle)
+        .freq_sweep(520.0, 180.0)
+        .duration(0.28)
+        .envelope(0.01, 0.05, 0.7, 0.18)
+        .lowpass(1400.0)
+        .bit_crush(5)
+        .volume(0.45)
+}
+
+/// Tir des 3 projectiles : sawtooth qui descend vite, bit-crush prononcé
+/// pour un côté "blob" plutôt qu'un laser propre. Court et claquant.
+pub fn octopus_shoot() -> Sfx {
+    Sfx::new("octopus_shoot")
+        .wave(Wave::Sawtooth)
+        .freq_sweep(680.0, 220.0)
+        .duration(0.14)
+        .envelope(0.0, 0.01, 0.5, 0.12)
+        .lowpass(2200.0)
+        .bit_crush(5)
+        .volume(0.4)
+}
+
+/// Whoosh de dash — noise filtré passe-bas, attaque rapide puis release
+/// pour un effet de "passage rapide". Joué au début de chaque courbe Bézier.
+pub fn octopus_rush() -> Sfx {
+    Sfx::new("octopus_rush")
+        .wave(Wave::Noise)
+        .freq(1.0) // peu importe pour Noise
+        .duration(0.35)
+        .envelope(0.015, 0.08, 0.65, 0.25)
+        .lowpass(900.0)
+        .volume(0.35)
+}
+
+/// Whoosh supersonic du dash joueur — sweep aigu→médium très rapide,
+/// sawtooth pour le grain "déchirure d'air", lowpass mid-high pour garder
+/// du tranchant sans être strident. Court (~0.18s = durée du dash).
+pub fn player_dash() -> Sfx {
+    Sfx::new("player_dash")
+        .wave(Wave::Sawtooth)
+        .freq_sweep(2600.0, 500.0)
+        .duration(0.18)
+        .envelope(0.0, 0.02, 0.6, 0.12)
+        .lowpass(2800.0)
+        .bit_crush(6)
+        .volume(0.35)
+}
+
+/// Cri de mort — sweep descendant grave, triangle bit-crushé filtré lowpass
+/// pour un "gloup" agonisant. Volume soutenu, dure ~0.6s pour couvrir
+/// l'animation de mort.
+pub fn octopus_die() -> Sfx {
+    Sfx::new("octopus_die")
+        .wave(Wave::Triangle)
+        .freq_sweep(420.0, 70.0)
+        .duration(0.6)
+        .envelope(0.0, 0.06, 0.6, 0.45)
+        .lowpass(800.0)
+        .bit_crush(4)
+        .volume(0.55)
+}
+
 pub fn all() -> Vec<Sfx> {
     vec![
         shoot(),
@@ -76,6 +143,11 @@ pub fn all() -> Vec<Sfx> {
         pickup(),
         kamikaze_scream(),
         kamikaze_laugh(),
+        octopus_sound(),
+        octopus_shoot(),
+        octopus_rush(),
+        octopus_die(),
+        player_dash(),
     ]
 }
 
@@ -87,6 +159,11 @@ pub fn by_name(name: &str) -> Option<Sfx> {
         "pickup" => Some(pickup()),
         "kamikaze_scream" => Some(kamikaze_scream()),
         "kamikaze_laugh" => Some(kamikaze_laugh()),
+        "octopus_sound" => Some(octopus_sound()),
+        "octopus_shoot" => Some(octopus_shoot()),
+        "octopus_rush" => Some(octopus_rush()),
+        "octopus_die" => Some(octopus_die()),
+        "player_dash" => Some(player_dash()),
         _ => None,
     }
 }

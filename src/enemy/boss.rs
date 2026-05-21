@@ -65,6 +65,7 @@ pub struct BossMarker;
 
 /// Marqueur sur l'entité audio qui joue la musique du boss.
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 pub struct MusicBoss;
 
 /// Suivi du palier de vie courant du boss. Démarre à 1.

@@ -158,6 +158,7 @@ pub struct IntroSound;
 
 /// Marqueur pour la musique de l'outro.
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 pub struct MusicOutro;
 
 // ─── Constantes ─────────────────────────────────────────────────────
