@@ -8,17 +8,21 @@
 //! (via `aoe_damage_enemies_on_overlap` + tracking `AoeAlreadyHit`).
 //! L'AOE persiste pour sa `lifetime` puis se despawn (`aoe_lifecycle`).
 //!
-//! **Visuel** : utilise des `Mesh2d` partagés (cercle unité + quad unité)
-//! stockés dans [`AoeAssets`]. Le scale du `Transform` adapte la taille.
-//! La forme de collision (`Shape`) est respectée visuellement : Circle → vrai
-//! cercle, Rect → rectangle.
-//!
-//! Spawn via [`spawn_aoe`] (signature avec assets) ou manuellement.
+//! **Visuel** — deux modes :
+//! 1. [`spawn_aoe`] : `Mesh2d` partagé (cercle unité ou quad unité) coloré
+//!    rouge translucide, scaled par le `Transform`. Cercle/Rect respecté.
+//! 2. [`spawn_aoe_animated`] : `Sprite` avec une animation jouée en one-shot
+//!    sur toute la `lifetime` de l'AOE (durée par frame recalculée auto).
+//!    L'animation doit être préchargée dans [`AnimBank`] via le `preload_anim`
+//!    de l'ennemi qui spawn l'AOE.
+
+use std::time::Duration;
 
 use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use bevy::sprite_render::{ColorMaterial, MeshMaterial2d};
 
+use crate::enemy::anim_bank::Animation;
 use crate::geometry::shape::Shape;
 use crate::physic::collider::{collider, layers, OverlapEvent};
 use crate::physic::health::DamageEvent;
@@ -104,6 +108,47 @@ pub fn spawn_aoe(
             Mesh2d(mesh),
             MeshMaterial2d(aoe_assets.material.clone()),
             Transform::from_translation(position).with_scale(scale),
+            AreaOfEffect {
+                shape,
+                lifetime,
+                elapsed: 0.0,
+            },
+            AoeAlreadyHit::default(),
+            collider(
+                shape_clone,
+                layers::AOE,
+                layers::PLAYER | layers::ENEMY | layers::ASTEROID,
+            ),
+        ))
+        .id()
+}
+
+/// Helper de spawn : crée une AOE avec un `Sprite` animé à la place du mesh.
+/// L'animation est jouée en one-shot sur toute la `lifetime` (la durée par
+/// frame est calculée automatiquement : `lifetime / frame_count`).
+///
+/// `anim_name` doit avoir été préchargé dans `AnimBank` via le `preload_anim`
+/// d'un `EnemyBuilder`. `sprite_size` est la taille (px, monde) du sprite —
+/// indépendante de la `shape` du collider, pour permettre un visuel plus
+/// large ou plus serré que la zone d'impact.
+pub fn spawn_aoe_animated(
+    commands: &mut Commands,
+    position: Vec3,
+    shape: Shape,
+    lifetime: f32,
+    anim_name: &'static str,
+    sprite_size: f32,
+) -> Entity {
+    let shape_clone = shape.clone();
+    commands
+        .spawn((
+            Sprite {
+                custom_size: Some(Vec2::splat(sprite_size)),
+                ..default()
+            },
+            Animation::with_total_duration(anim_name, Duration::from_secs_f32(lifetime))
+                .one_shot(),
+            Transform::from_translation(position),
             AreaOfEffect {
                 shape,
                 lifetime,

@@ -31,7 +31,7 @@ use crate::geometry::shape::Shape;
 use crate::movement::despawn_off_screen::DespawnOffScreen;
 use crate::movement::movements::Movements;
 use crate::movement::translate::Translate;
-use crate::physic::area_of_effect::{spawn_aoe, AoeAssets};
+use crate::physic::area_of_effect::spawn_aoe_animated;
 use crate::physic::collider::{collider, layers};
 use crate::physic::harmless::Harmless;
 use crate::physic::health::Health;
@@ -40,11 +40,16 @@ use crate::physic::player_detection::PlayerDetection;
 
 const MINE_FALL_SPEED: f32 = 250.0;
 const MINE_DETECTION_RADIUS: f32 = 225.0;
-/// Rayon de l'AOE = rayon de détection × 1.3 → légèrement plus large que la
-/// zone qui a déclenché le countdown.
-const MINE_AOE_RADIUS: f32 = MINE_DETECTION_RADIUS * 1.3;
+/// Rayon du collider AOE (px). Découplé du sprite : doit matcher le cercle
+/// **visible** à l'intérieur du PNG (qui a une marge transparente). Garde
+/// donc une valeur < `MINE_AOE_SPRITE_SIZE / 2`.
+const MINE_AOE_RADIUS: f32 = 105.0;
 const MINE_COUNTDOWN_DURATION: f32 = 1.5;
-const MINE_AOE_LIFETIME: f32 = 1.0;
+/// Durée de vie de l'AOE de la mine (s). Zone de denial qui persiste.
+const MINE_AOE_LIFETIME: f32 = 2.5;
+/// Taille rendue du sprite AOE (px). Indépendant du collider — correspond
+/// aux dimensions natives du PNG (marge transparente incluse).
+const MINE_AOE_SPRITE_SIZE: f32 = 270.0;
 /// Période du clignotement rouge pendant le countdown (secondes par cycle).
 const MINE_BLINK_PERIOD: f32 = 0.25;
 /// Intervalle entre les 3 bips du countdown (secondes). Avec une durée de
@@ -110,7 +115,10 @@ impl EnemyBuilder for MineBuilder {
         "mine"
     }
     fn preload_anim(&self) -> HashMap<&str, &str> {
-        HashMap::from([("mine", "images/mine")])
+        HashMap::from([
+            ("mine", "images/mine"),
+            ("mine_explosion", "images/mine/explosion"),
+        ])
     }
     fn spawn(
         &self,
@@ -198,16 +206,16 @@ impl EnemyBuilder for MineBuilder {
 pub fn mine_explode_system(
     mut commands: Commands,
     mut sfx: SfxPlayer,
-    aoe_assets: Res<AoeAssets>,
     query: Query<(Entity, &Transform), With<MineExplode>>,
 ) {
     for (entity, transform) in &query {
-        spawn_aoe(
+        spawn_aoe_animated(
             &mut commands,
-            &aoe_assets,
             transform.translation,
             Shape::Circle(MINE_AOE_RADIUS),
             MINE_AOE_LIFETIME,
+            "mine_explosion",
+            MINE_AOE_SPRITE_SIZE,
         );
         sfx.play(Sfx::MineExplode);
         // DespawnSelf au lieu de try_despawn direct : évite la race avec les
