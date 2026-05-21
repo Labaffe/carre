@@ -428,9 +428,10 @@ pub fn build_level_1() -> Vec<LevelStep> {
             ))
             .with(Action::Log("Niveau 1 démarré")),
         // ─── Countdown (7-10s) ──────────────────────────────────
-        LevelStep::at(7.0, "countdown")
-            .with(Action::PlaySound(crate::audio::Sfx::UiCountdownReady))
-            .with(Action::StartCountdown),
+        // Pas de PlaySound(UiCountdownReady) ici : `StartCountdown` envoie
+        // `CountdownEvent`, qui déclenche `start_countdown` (countdown.rs)
+        // qui joue déjà le son. Doubler créerait un effet d'écho.
+        LevelStep::at(7.0, "countdown").with(Action::StartCountdown),
         // Note : le countdown envoie un BoomEvent au "GO!" (10s)
 
         // ─── Phase 2 : montée en difficulté ─────────────────────
@@ -506,9 +507,8 @@ pub fn build_level_chaos() -> Vec<LevelStep> {
             .with(Action::StartMusic("audio/music/gradius.ogg"))
             .with(Action::SetDifficulty(2.0))
             .with(Action::Log("Niveau Chaos — spawn al\u{e9}atoire d\u{e9}marr\u{e9}")),
-        LevelStep::at(7.0, "chaos_countdown")
-            .with(Action::PlaySound(crate::audio::Sfx::UiCountdownReady))
-            .with(Action::StartCountdown),
+        // Cf. niveau 1 : `StartCountdown` joue déjà le son ready côté UI.
+        LevelStep::at(7.0, "chaos_countdown").with(Action::StartCountdown),
     ]
 }
 

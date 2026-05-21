@@ -14,9 +14,15 @@ pub struct CountdownPlugin;
 impl Plugin for CountdownPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<CountdownEvent>()
+            .add_systems(OnEnter(GameState::Playing), warmup_countdown_fonts)
             .add_systems(
                 Update,
-                (start_countdown, update_countdown, animate_countdown_text)
+                (
+                    start_countdown,
+                    update_countdown,
+                    animate_countdown_text,
+                    cleanup_warmup_fonts,
+                )
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(OnExit(GameState::Playing), cleanup_countdown);
@@ -48,8 +54,27 @@ const POP_DURATION: f32 = 0.35;
 /// Scale max au pic de l'overshoot.
 const POP_OVERSHOOT: f32 = 1.4;
 
+/// Pas de quantification du `font_size` pendant le pop. Aligne les tailles
+/// rendues avec celles du warmup (`warmup_countdown_fonts`), pour que tous
+/// les rasterizations d'atlas de glyphes soient déjà en cache. Sans ça, le
+/// pop génère ~21 tailles uniques en 0.35s = autant de re-rastérisations.
+const FONT_SIZE_QUANTUM: f32 = 4.0;
+
+/// Plus grande `font_size` attendue pendant le pop (max BaseFontSize 120
+/// × POP_OVERSHOOT 1.4 ≈ 168, arrondi). Tous les multiples de
+/// FONT_SIZE_QUANTUM de 4 à FONT_SIZE_MAX_WARMUP sont précompilés.
+const FONT_SIZE_MAX_WARMUP: f32 = 172.0;
+
 #[derive(Component)]
 struct CountdownUI;
+
+/// Marker sur le container off-screen qui contient les textes warmup.
+/// Auto-despawn après que son timer expire (le temps que Bevy rastérise les
+/// glyphes au 1er render de chaque taille).
+#[derive(Component)]
+struct CountdownFontWarmup {
+    timer: Timer,
+}
 
 /// Animation de pop sur le texte du countdown.
 #[derive(Component)]
@@ -207,7 +232,9 @@ fn animate_countdown_text(
             POP_OVERSHOOT + (1.0 - POP_OVERSHOOT) * ease
         };
 
-        text_font.font_size = base.0 * scale;
+        // Quantification : aligne sur le cache pré-rastérisé par le warmup.
+        let raw_size = base.0 * scale;
+        text_font.font_size = (raw_size / FONT_SIZE_QUANTUM).round() * FONT_SIZE_QUANTUM;
 
         let alpha = if pop.timer > pop.duration + 0.2 {
             let fade_t = ((pop.timer - pop.duration - 0.2) / 0.15).clamp(0.0, 1.0);
@@ -223,6 +250,65 @@ fn animate_countdown_text(
             base_srgba.blue,
             alpha,
         );
+    }
+}
+
+/// À l'entrée du state Playing : spawn des textes "READY 3210 GO!" invisibles
+/// (off-screen) à toutes les tailles quantifiées que le pop animation va
+/// utiliser. Force Bevy à rastériser et cacher les atlas de glyphes au 1er
+/// frame du niveau (lag invisible) plutôt qu'au moment du countdown (lag
+/// visible). Auto-despawn après 0.5s (cache déjà chaud après 1-2 frames).
+fn warmup_countdown_fonts(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
+    // Tous les caractères qui apparaîtront pendant le countdown.
+    let chars = "READY 3210 GO!";
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                // Très loin hors écran — le rendu se fait quand même
+                // (Bevy ne cull pas via Node.position négative), donc les
+                // glyphes sont rastérisés, mais pas visibles pour le joueur.
+                top: Val::Px(-10000.0),
+                left: Val::Px(-10000.0),
+                ..default()
+            },
+            CountdownFontWarmup {
+                timer: Timer::from_seconds(0.5, TimerMode::Once),
+            },
+        ))
+        .with_children(|parent| {
+            let mut size = FONT_SIZE_QUANTUM;
+            while size <= FONT_SIZE_MAX_WARMUP {
+                parent.spawn((
+                    Text::new(chars),
+                    TextFont {
+                        font: font.clone(),
+                        font_size: size,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                ));
+                size += FONT_SIZE_QUANTUM;
+            }
+        });
+}
+
+/// Tick le timer du warmup ; despawn dès qu'expiré. La courte durée (0.5s)
+/// laisse à Bevy le temps de rendre les textes une fois (= rastériser tous
+/// les atlas) avant cleanup.
+fn cleanup_warmup_fonts(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut CountdownFontWarmup)>,
+) {
+    for (entity, mut warmup) in query.iter_mut() {
+        warmup.timer.tick(time.delta());
+        if warmup.timer.is_finished() {
+            if let Ok(mut e) = commands.get_entity(entity) {
+                e.try_despawn();
+            }
+        }
     }
 }
 
