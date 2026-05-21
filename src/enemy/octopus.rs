@@ -39,7 +39,8 @@ use crate::movement::movements::Movements;
 use crate::physic::collider::{collider, layers};
 use crate::physic::health::Health;
 use crate::player::player::Player;
-use crate::weapon::projectile::{spawn_projectile, ProjectileSpawn, ProjectileSprite, Team};
+use crate::sprite_orient::FaceMovement;
+use crate::weapon::projectile::{ProjectileSpawn, ProjectileSprite, Team, spawn_projectile};
 
 // ─── Constantes ────────────────────────────────────────────────────
 
@@ -62,10 +63,13 @@ const OCTOPUS_SHOT_SPREAD_DEG: f32 = 22.0;
 /// Marge intérieure (px) pour le pick du point cible — évite qu'il colle
 /// au bord exact de l'écran.
 const TARGET_PICK_MARGIN: f32 = 80.0;
-/// Distance min (px) du point de contrôle au joueur. Évite un control
-/// pile sur le joueur → courbe trop "plate".
-const CONTROL_OFFSET_MIN: f32 = 80.0;
-const CONTROL_OFFSET_MAX: f32 = 220.0;
+/// Distance min (px) entre la position courante et la cible pickée. Évite
+/// une cible quasi-sur-place qui dégénère la courbe en quasi-point.
+const MIN_TRAVEL_DISTANCE: f32 = 400.0;
+/// Rayon (px) d'un petit offset random ajouté à la position du joueur pour
+/// le point traversé au milieu de la courbe. Petit = la courbe passe vraiment
+/// près du joueur (pas à 200px).
+const PLAYER_PASSTHROUGH_JITTER: f32 = 50.0;
 
 static OCTOPUS_DROP_TABLE: [(ItemType, f32); 2] =
     [(ItemType::Bomb, 0.20), (ItemType::BonusScore, 0.30)];
@@ -115,6 +119,7 @@ impl EnemyBuilder for OctopusBuilder {
     fn preload_anim(&self) -> HashMap<&str, &str> {
         HashMap::from([
             ("octopus_idle", "images/octopus/idle"),
+            ("octopus_rush", "images/octopus/rush"),
             ("octopus_shoot", "images/octopus/shoot"),
         ])
     }
@@ -128,14 +133,14 @@ impl EnemyBuilder for OctopusBuilder {
     ) {
         let pos = spawn_pos.resolve(window, OCTOPUS.config.sprite_size / 2.0);
 
-        // Sub-behavior "moving" : marker + anim idle en boucle pendant MOVE_DURATION.
-        // Au `on_complete`, pousse "shoot_ready" → choice transite vers shooting.
+        // Sub-behavior "moving" : marker + anim rush bouclée pendant la
+        // courbe Bézier. Au `on_complete`, pousse "shoot_ready" → shooting.
         let moving = BehaviorBuilder::first(
             Duration::from_secs_f32(MOVE_DURATION),
             BehaviorBuilder::multiple()
                 .with(BehaviorBuilder::from_component(OctopusMoving))
                 .with(BehaviorBuilder::from_component(Animation::new(
-                    "octopus_idle",
+                    "octopus_rush",
                     Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
                 ))),
         )
@@ -198,6 +203,9 @@ impl EnemyBuilder for OctopusBuilder {
             DropTable {
                 drops: &OCTOPUS_DROP_TABLE,
             },
+            // Sprite naturel orienté à droite → flip quand l'octopus part
+            // vers la gauche.
+            FaceMovement::faces_right(),
             collider(
                 Shape::Circle(OCTOPUS.config.radius),
                 layers::ENEMY,
@@ -210,10 +218,7 @@ impl EnemyBuilder for OctopusBuilder {
 // ─── Systèmes réactifs ─────────────────────────────────────────────
 
 /// Joue le son d'apparition une fois sur `Added<Octopus>`.
-pub fn octopus_spawn_sound(
-    mut sfx: SfxPlayer,
-    query: Query<(), Added<Octopus>>,
-) {
+pub fn octopus_spawn_sound(mut sfx: SfxPlayer, query: Query<(), Added<Octopus>>) {
     for _ in &query {
         sfx.play(Sfx::OctopusSound);
     }
@@ -224,7 +229,8 @@ pub fn octopus_spawn_sound(
 /// Bézier qui va de la position courante à la cible en passant près du joueur.
 pub fn octopus_setup_curve(
     mut commands: Commands,
-    octopus_q: Query<Entity, (With<Octopus>, Added<OctopusMoving>)>,
+    mut sfx: SfxPlayer,
+    octopus_q: Query<(Entity, &Transform), (With<Octopus>, Added<OctopusMoving>)>,
     player_q: Query<&Transform, (With<Player>, Without<Octopus>)>,
     windows: Query<&Window>,
 ) {
@@ -239,35 +245,45 @@ pub fn octopus_setup_curve(
         .map(|t| t.translation.truncate())
         .unwrap_or(Vec2::ZERO);
 
-    for entity in &octopus_q {
-        let target = Vec2::new(
-            (fastrand::f32() * 2.0 - 1.0) * target_x_range,
-            (fastrand::f32() * 2.0 - 1.0) * target_y_range,
-        );
+    for (entity, octopus_tf) in &octopus_q {
+        let start = octopus_tf.translation.truncate();
 
-        // Control point : random offset autour du joueur sur un anneau
-        // [CONTROL_OFFSET_MIN, CONTROL_OFFSET_MAX]. La courbe bulge donc
-        // vers le joueur sans passer pile dessus.
-        let angle = fastrand::f32() * std::f32::consts::TAU;
-        let radius = CONTROL_OFFSET_MIN
-            + fastrand::f32() * (CONTROL_OFFSET_MAX - CONTROL_OFFSET_MIN);
-        let control = player_pos + Vec2::new(angle.cos() * radius, angle.sin() * radius);
-
-        // Bezier capture sa position de départ à la 1re évaluation.
-        if let Ok(mut e) = commands.get_entity(entity) {
-            e.insert(
-                Movements::new()
-                    .with(Bezier::new(control, target, Duration::from_secs_f32(MOVE_DURATION))),
+        // Cible random sur l'écran, retry jusqu'à ce qu'elle soit au moins
+        // MIN_TRAVEL_DISTANCE plus loin que la position courante. Évite les
+        // cibles quasi-sur-place qui produiraient une courbe dégénérée.
+        // Cap 6 essais → si rien trouvé (rare), prend le dernier candidat.
+        let mut target = Vec2::ZERO;
+        for _ in 0..6 {
+            target = Vec2::new(
+                (fastrand::f32() * 2.0 - 1.0) * target_x_range,
+                (fastrand::f32() * 2.0 - 1.0) * target_y_range,
             );
+            if (target - start).length() >= MIN_TRAVEL_DISTANCE {
+                break;
+            }
         }
+
+        // Point traversé au milieu de la courbe : position du joueur + petit
+        // jitter random (cercle PLAYER_PASSTHROUGH_JITTER) pour varier sans
+        // s'éloigner. La courbe passera *exactement* par ce point à t=0.5.
+        let angle = fastrand::f32() * std::f32::consts::TAU;
+        let radius = fastrand::f32() * PLAYER_PASSTHROUGH_JITTER;
+        let pass_through = player_pos + Vec2::new(angle.cos() * radius, angle.sin() * radius);
+
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.insert(Movements::new().with(Bezier::passing_through(
+                start,
+                pass_through,
+                target,
+                Duration::from_secs_f32(MOVE_DURATION),
+            )));
+        }
+        sfx.play(Sfx::OctopusRush);
     }
 }
 
 /// Joue le son d'amorçage du tir sur `Added<OctopusShooting>`.
-pub fn octopus_shoot_start_sound(
-    mut sfx: SfxPlayer,
-    query: Query<(), Added<OctopusShooting>>,
-) {
+pub fn octopus_shoot_start_sound(mut sfx: SfxPlayer, query: Query<(), Added<OctopusShooting>>) {
     for _ in &query {
         sfx.play(Sfx::OctopusSound);
     }
@@ -282,7 +298,9 @@ pub fn octopus_fire_shots(
     octopus_q: Query<&Transform, Added<OctopusFireShots>>,
     player_q: Query<&Transform, (With<Player>, Without<Octopus>)>,
 ) {
-    let Ok(player_tf) = player_q.single() else { return };
+    let Ok(player_tf) = player_q.single() else {
+        return;
+    };
     let player_pos = player_tf.translation.truncate();
     let spread = OCTOPUS_SHOT_SPREAD_DEG.to_radians();
     let angles = [-spread, 0.0, spread];
