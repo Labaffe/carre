@@ -206,11 +206,13 @@ impl EnemyBuilder for MineBuilder {
 pub fn mine_explode_system(
     mut commands: Commands,
     mut sfx: SfxPlayer,
+    anim_bank: Res<crate::enemy::anim_bank::AnimBank>,
     query: Query<(Entity, &Transform), With<MineExplode>>,
 ) {
     for (entity, transform) in &query {
         spawn_aoe_animated(
             &mut commands,
+            &anim_bank,
             transform.translation,
             Shape::Circle(MINE_AOE_RADIUS),
             MINE_AOE_LIFETIME,

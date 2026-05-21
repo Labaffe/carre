@@ -1,4 +1,4 @@
-//! Octopus — pattern "pendule" déterministe avec double swoop télégraphié.
+//! Octopus — telegraph + action aléatoire (swoop ou shoot) à chaque cycle.
 //!
 //! Phase **entering** (intangible) : spawn sans collider, sprite à
 //! `ENTERING_OPACITY`. Deux sous-phases :
@@ -10,24 +10,28 @@
 //! À la fin → état `alive`. `Added<OctopusAlive>` insère le collider et
 //! restaure l'alpha à 1.0.
 //!
-//! Phase **alive** : `OrderedNodeList` qui boucle indéfiniment :
-//! 1. **telegraph** (TELEGRAPH_DURATION) : anim `idle`, stationnaire — annonce
-//!    le swoop suivant. Donne au joueur le temps de lire le pattern.
-//! 2. **swoop** (SWOOP_DURATION) : `OctopusMoving` + anim `rush`.
-//!    `octopus_setup_curve` calcule `target = 2·player − start` (miroir
-//!    parfait par rapport au joueur) avec un petit jitter en Y. Bézier passe
-//!    par `player + perp·SWOOP_BULGE_OFFSET` à t=0.5 (arc visible, joueur
-//!    touché sauf déplacement perpendiculaire). Joue `Sfx::OctopusRush`.
-//! 3. **telegraph 2** + **swoop 2** : 2e itération du couple précédent. Le
-//!    2nd swoop part de la fin du 1er → enchaînement naturel en pendule.
-//! 4. **shoot windup** (SHOOT_WINDUP_DURATION) : `OctopusShooting` + anim `shoot`
-//!    one-shot. Joue `Sfx::OctopusSound`.
-//! 5. **shoot fire** (FIRE_RELEASE_DURATION) : `OctopusFireShots`. Joue
-//!    `Sfx::OctopusShoot` + spawn 3 projectiles éventail.
-//! 6. Loop (`should_loop`).
+//! Phase **alive** : `ChoiceNodeList` à 3 états cyclant indéfiniment :
+//! 1. **telegraph** : `OctopusTelegraph` + anim `idle`, stationnaire. Le
+//!    système `octopus_telegraph_tick` tick son timer interne ; à
+//!    `TELEGRAPH_DURATION` il pousse aléatoirement `"do_swoop"` ou
+//!    `"do_shoot"` (50/50) dans `TransitionMessages`.
+//! 2. **swoop** (SWOOP_DURATION, sur `"do_swoop"`) : `OctopusMoving` + anim
+//!    `rush`. `octopus_setup_curve` calcule `target = 2·player − start`
+//!    (miroir + jitter Y). Bézier passe par `player + perp·SWOOP_BULGE_OFFSET`
+//!    à t=0.5. Joue `Sfx::OctopusRush`. `on_complete("back_to_telegraph")`.
+//! 3. **shoot** (SHOOT_WINDUP_DURATION + FIRE_RELEASE_DURATION, sur `"do_shoot"`) :
+//!    `OctopusShooting` + anim `shoot` one-shot → `OctopusFireShots`. Sons
+//!    `OctopusSound` puis `OctopusShoot` + spawn 3 projectiles éventail.
+//!    `on_complete("back_to_telegraph")`.
 //!
-//! Mort = `DespawnSelf` immédiat. L'octopus ne peut pas mourir pendant
-//! `entering` (pas de collider).
+//! Transitions choice :
+//! - 0 → 1 sur `"do_swoop"`
+//! - 0 → 2 sur `"do_shoot"`
+//! - 1 → 0 sur `"back_to_telegraph"`
+//! - 2 → 0 sur `"back_to_telegraph"`
+//!
+//! Mort = anim octopus_death one-shot puis `DespawnSelf`. L'octopus ne peut
+//! pas mourir pendant `entering` (pas de collider).
 
 use std::time::Duration;
 
@@ -62,7 +66,6 @@ use crate::weapon::projectile::{ProjectileSpawn, ProjectileSprite, Team, spawn_p
 /// pour annoncer le rush imminent. Donne au joueur un signal visuel clair.
 const TELEGRAPH_DURATION: f32 = 0.4;
 /// Durée d'un swoop (s). Bézier qui traverse le joueur du start au miroir.
-/// Plus court que l'ancien MOVE_DURATION pour un rythme plus dynamique.
 const SWOOP_DURATION: f32 = 1.8;
 /// Durée du wind-up de l'animation `shoot` (s) avant que les projectiles partent.
 const SHOOT_WINDUP_DURATION: f32 = 0.6;
@@ -143,6 +146,16 @@ pub struct OctopusEnteringIdle;
 #[derive(Component, Clone)]
 pub struct OctopusAlive;
 
+/// Timer interne de l'état telegraph. Ticked par `octopus_telegraph_tick`,
+/// qui pousse aléatoirement `"do_swoop"` ou `"do_shoot"` dans
+/// `TransitionMessages` quand `elapsed >= TELEGRAPH_DURATION`. `fired` gate
+/// pour ne pas re-pousser à chaque frame une fois écoulé.
+#[derive(Component, Clone, Default)]
+pub struct OctopusTelegraph {
+    pub elapsed: f32,
+    pub fired: bool,
+}
+
 // ─── Builder ───────────────────────────────────────────────────────
 
 pub struct OctopusBuilder {
@@ -221,17 +234,19 @@ impl EnemyBuilder for OctopusBuilder {
         )
         .on_complete("entering_done");
 
-        // ─── Cycle alive : OrderedNodeList bouclée ──────────────
-        // 6 phases en séquence : telegraph 1, swoop 1, telegraph 2, swoop 2,
-        // shoot windup, fire. `.should_loop()` reprend à 0 après fire.
-        let alive_cycle = BehaviorBuilder::first(
-            Duration::from_secs_f32(TELEGRAPH_DURATION),
-            BehaviorBuilder::from_component(Animation::new(
+        // ─── Cycle alive : choice à 3 états ─────────────────────
+        // État 0 = telegraph (pas de durée fixée par le BT — le marker
+        // `OctopusTelegraph` est ticked par `octopus_telegraph_tick` qui
+        // pousse `"do_swoop"` ou `"do_shoot"` random après TELEGRAPH_DURATION).
+        let telegraph = BehaviorBuilder::multiple()
+            .with(BehaviorBuilder::from_component(OctopusTelegraph::default()))
+            .with(BehaviorBuilder::from_component(Animation::new(
                 "octopus_idle",
                 Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
-            )),
-        )
-        .then(
+            )));
+
+        // État 1 = swoop. Sur completion → retour à telegraph.
+        let swoop = BehaviorBuilder::first(
             Duration::from_secs_f32(SWOOP_DURATION),
             BehaviorBuilder::multiple()
                 .with(BehaviorBuilder::from_component(OctopusMoving))
@@ -240,23 +255,10 @@ impl EnemyBuilder for OctopusBuilder {
                     Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
                 ))),
         )
-        .then(
-            Duration::from_secs_f32(TELEGRAPH_DURATION),
-            BehaviorBuilder::from_component(Animation::new(
-                "octopus_idle",
-                Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
-            )),
-        )
-        .then(
-            Duration::from_secs_f32(SWOOP_DURATION),
-            BehaviorBuilder::multiple()
-                .with(BehaviorBuilder::from_component(OctopusMoving))
-                .with(BehaviorBuilder::from_component(Animation::new(
-                    "octopus_rush",
-                    Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
-                ))),
-        )
-        .then(
+        .on_complete("back_to_telegraph");
+
+        // État 2 = shoot (windup + fire en .then). Sur completion → telegraph.
+        let shoot = BehaviorBuilder::first(
             Duration::from_secs_f32(SHOOT_WINDUP_DURATION),
             BehaviorBuilder::multiple()
                 .with(BehaviorBuilder::from_component(OctopusShooting))
@@ -272,7 +274,16 @@ impl EnemyBuilder for OctopusBuilder {
             Duration::from_secs_f32(FIRE_RELEASE_DURATION),
             BehaviorBuilder::from_component(OctopusFireShots),
         )
-        .should_loop();
+        .on_complete("back_to_telegraph");
+
+        let alive_cycle = BehaviorBuilder::choice()
+            .with(telegraph) // 0
+            .with(swoop) // 1
+            .with(shoot) // 2
+            .add_transition(0, 1, "do_swoop")
+            .add_transition(0, 2, "do_shoot")
+            .add_transition(1, 0, "back_to_telegraph")
+            .add_transition(2, 0, "back_to_telegraph");
 
         // Wrap dans un multiple avec `OctopusAlive` pour gating du collider.
         // `Added<OctopusAlive>` → `octopus_become_alive` insère le collider
@@ -373,6 +384,29 @@ pub fn octopus_die_sound(
 ) {
     for _ in &query {
         sfx.play(Sfx::OctopusDie);
+    }
+}
+
+/// Tick le timer interne de chaque `OctopusTelegraph` actif. Quand le timer
+/// dépasse `TELEGRAPH_DURATION`, pousse aléatoirement `"do_swoop"` ou
+/// `"do_shoot"` (50/50) dans `TransitionMessages` pour que la choice
+/// transitionne vers l'action correspondante. Le flag `fired` garantit
+/// qu'un seul message est poussé par instance de telegraph.
+pub fn octopus_telegraph_tick(
+    time: Res<Time>,
+    mut query: Query<(&mut TransitionMessages, &mut OctopusTelegraph)>,
+) {
+    let dt = time.delta_secs();
+    for (mut msgs, mut telegraph) in &mut query {
+        if telegraph.fired {
+            continue;
+        }
+        telegraph.elapsed += dt;
+        if telegraph.elapsed >= TELEGRAPH_DURATION {
+            let action = if fastrand::bool() { "do_swoop" } else { "do_shoot" };
+            msgs.messages.push(action.to_string());
+            telegraph.fired = true;
+        }
     }
 }
 

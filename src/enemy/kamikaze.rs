@@ -309,11 +309,13 @@ pub fn kamikaze_force_boom_system(
 pub fn kamikaze_boom_system(
     mut commands: Commands,
     mut sfx: SfxPlayer,
+    anim_bank: Res<crate::enemy::anim_bank::AnimBank>,
     query: Query<(Entity, &Transform), Added<KamikazeBoom>>,
 ) {
     for (entity, transform) in &query {
         spawn_aoe_animated(
             &mut commands,
+            &anim_bank,
             transform.translation,
             Shape::Circle(KAMIKAZE_AOE_RADIUS),
             KAMIKAZE_AOE_LIFETIME,

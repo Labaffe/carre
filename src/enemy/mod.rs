@@ -34,7 +34,7 @@ use crate::enemy::mine::{blink_red_system, mine_countdown_audio, mine_explode_sy
 use crate::enemy::octopus::{
     octopus_become_alive, octopus_die_sound, octopus_entering_idle_sound,
     octopus_entering_rush_sound, octopus_fire_shots, octopus_setup_curve,
-    octopus_shoot_start_sound, OctopusBuilder,
+    octopus_shoot_start_sound, octopus_telegraph_tick, OctopusBuilder,
 };
 use crate::GameState;
 use crate::menu::pause::not_paused;
@@ -102,6 +102,7 @@ impl Plugin for EnemyPlugin {
                     octopus_shoot_start_sound,
                     octopus_fire_shots,
                     octopus_die_sound,
+                    octopus_telegraph_tick,
                 )
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),

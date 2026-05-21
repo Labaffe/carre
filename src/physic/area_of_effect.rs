@@ -22,7 +22,7 @@ use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use bevy::sprite_render::{ColorMaterial, MeshMaterial2d};
 
-use crate::enemy::anim_bank::Animation;
+use crate::enemy::anim_bank::{Animation, AnimBank};
 use crate::geometry::shape::Shape;
 use crate::physic::collider::{collider, layers, OverlapEvent};
 use crate::physic::health::DamageEvent;
@@ -128,11 +128,13 @@ pub fn spawn_aoe(
 /// frame est calculée automatiquement : `lifetime / frame_count`).
 ///
 /// `anim_name` doit avoir été préchargé dans `AnimBank` via le `preload_anim`
-/// d'un `EnemyBuilder`. `sprite_size` est la taille (px, monde) du sprite —
-/// indépendante de la `shape` du collider, pour permettre un visuel plus
-/// large ou plus serré que la zone d'impact.
+/// d'un `EnemyBuilder`. La 1ère frame est récupérée depuis l'`AnimBank`
+/// directement pour éviter un flash blanc le temps que le système `animate`
+/// se déclenche à la 1ère tick. `sprite_size` est la taille (px, monde) du
+/// sprite — indépendante de la `shape` du collider.
 pub fn spawn_aoe_animated(
     commands: &mut Commands,
+    anim_bank: &AnimBank,
     position: Vec3,
     shape: Shape,
     lifetime: f32,
@@ -140,9 +142,14 @@ pub fn spawn_aoe_animated(
     sprite_size: f32,
 ) -> Entity {
     let shape_clone = shape.clone();
+    let initial_image = anim_bank
+        .get(&anim_name.to_string())
+        .and_then(|frames| frames.first().cloned())
+        .unwrap_or_default();
     commands
         .spawn((
             Sprite {
+                image: initial_image,
                 custom_size: Some(Vec2::splat(sprite_size)),
                 ..default()
             },
