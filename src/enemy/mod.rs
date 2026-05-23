@@ -13,6 +13,7 @@ pub mod octopus;
 pub mod turret;
 pub mod enemy_group;
 pub mod vaisseau;
+pub mod simple_ufo;
 pub mod death;
 use bevy::prelude::*;
 use crate::enemy::anim_bank::*;
@@ -42,6 +43,7 @@ use crate::enemy::octopus::{
 use crate::enemy::turret::{turret_aim_and_fire, TurretBuilder};
 use crate::enemy::enemy_group::despawn_empty_groups;
 use crate::enemy::vaisseau::VaisseauBuilder;
+use crate::enemy::simple_ufo::{simple_ufo_wave_spawn_system, SimpleUfoBuilder};
 use crate::GameState;
 use crate::menu::pause::not_paused;
 pub struct EnemyPlugin;
@@ -60,6 +62,7 @@ impl Plugin for EnemyPlugin {
                 .with(OctopusGreenBuilder::new())
                 .with(TurretBuilder::new())
                 .with(VaisseauBuilder::new())
+                .with(SimpleUfoBuilder::new())
             )
             .insert_resource(AnimBank::new())
             .add_systems(Startup, preload_frames)
@@ -130,6 +133,7 @@ impl Plugin for EnemyPlugin {
                     octopus_green_bomb_explode,
                     turret_aim_and_fire,
                     despawn_empty_groups,
+                    simple_ufo_wave_spawn_system,
                 )
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),

@@ -159,6 +159,13 @@ pub enum Action {
     StartSpawning(&'static str, usize, f32, SpawnPosition),
     /// Désactive le spawn continu d'un type d'ennemi.
     StopSpawning(&'static str),
+    /// Spawn une **wave de Simple UFOs** en queue le long d'un chemin
+    /// aléatoire commun (calculé au déclenchement de l'action). Tous les
+    /// UFOs de la wave partagent strictement la même Bézier → effet "queue
+    /// leu leu" naturel. Chaîner plusieurs actions de ce type à différents
+    /// temps pour avoir plusieurs waves avec des trajectoires distinctes.
+    /// `(count, interval_secondes)`.
+    SpawnSimpleUfoWave { count: usize, interval: f32 },
 
     // ─── Environnement ──────────────────────────────────────────
     /// Démarre la décélération du fond (durée, vitesse finale).
@@ -396,6 +403,9 @@ impl Action {
                 format!("Start({}×{},{}s{})", count, name, interval, pos_str)
             }
             Action::StopSpawning(name) => format!("Stop({})", name),
+            Action::SpawnSimpleUfoWave { count, interval } => {
+                format!("UfoWave({}×,{}s)", count, interval)
+            }
             Action::StartBgDeceleration {
                 duration,
                 final_speed,
@@ -548,6 +558,21 @@ pub struct EditorTestEnemy(pub &'static str);
 /// Spawn à `UpperMid` (centré X, moitié haute) — résolution-indépendant et
 /// laisse de la place au joueur en bas pour réagir.
 pub fn build_level_test_enemy(enemy_name: &'static str) -> Vec<LevelStep> {
+    // `simple_ufo` : on démontre le système de waves random — 4 vagues
+    // espacées de 4s, chacune envoie 6 UFOs à 0.4s d'intervalle le long
+    // d'un chemin random (différent à chaque wave).
+    if enemy_name == "simple_ufo" {
+        return vec![
+            LevelStep::at(0.0, "wave1")
+                .with(Action::SpawnSimpleUfoWave { count: 6, interval: 0.18 }),
+            LevelStep::at(4.0, "wave2")
+                .with(Action::SpawnSimpleUfoWave { count: 6, interval: 0.18 }),
+            LevelStep::at(8.0, "wave3")
+                .with(Action::SpawnSimpleUfoWave { count: 6, interval: 0.18 }),
+            LevelStep::at(12.0, "wave4")
+                .with(Action::SpawnSimpleUfoWave { count: 6, interval: 0.18 }),
+        ];
+    }
     vec![LevelStep::at(0.0, "test_spawn").with(Action::SpawnEnemy(
         enemy_name,
         1,
@@ -713,6 +738,13 @@ pub(crate) fn execute_action(
         }
         Action::StopSpawning(name) => {
             difficulty.active_spawners.remove(name);
+        }
+        Action::SpawnSimpleUfoWave { count, interval } => {
+            // Le chemin random est calculé au 1er tick du spawner (lazy
+            // init — accès `Window` requis et indisponible ici).
+            commands.spawn(crate::enemy::simple_ufo::SimpleUfoWaveSpawner::new(
+                *count, *interval,
+            ));
         }
         Action::StartBgDeceleration {
             duration,

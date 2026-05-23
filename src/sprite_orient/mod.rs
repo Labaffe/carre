@@ -75,10 +75,96 @@ fn face_movement_system(
     }
 }
 
+// ─── Rotation continue vers la direction de mouvement ───────────────
+
+/// Comme `FaceMovement` mais fait une **vraie rotation** du sprite (pas un
+/// simple flip) pour l'aligner sur la direction du mouvement. Utile pour
+/// les entités qui se déplacent en arc / courbe (ex: simple_ufo qui suit
+/// une Bézier) et dont le sprite doit suivre la tangente.
+///
+/// `natural_facing_rad` = angle (radians) du sprite "au repos" :
+/// - `+π/2` (= `FRAC_PI_2`) → sprite naturellement orienté +Y (haut)
+/// - `0` → sprite orienté +X (droite)
+/// - `π` → sprite orienté -X (gauche)
+/// - `-π/2` → sprite orienté -Y (bas)
+#[derive(Component)]
+pub struct RotateToMovement {
+    pub natural_facing_rad: f32,
+    /// Vitesse minimale (px/s) pour appliquer la rotation. Évite la
+    /// rotation parasite quand la vitesse est quasi nulle.
+    pub min_speed: f32,
+    /// Position frame précédente (interne).
+    pub last_position: Option<Vec2>,
+}
+
+impl RotateToMovement {
+    /// Sprite naturellement orienté vers le **haut** (+Y). Default.
+    pub fn facing_up() -> Self {
+        Self {
+            natural_facing_rad: std::f32::consts::FRAC_PI_2,
+            min_speed: 10.0,
+            last_position: None,
+        }
+    }
+
+    /// Sprite naturellement orienté vers le **bas** (-Y).
+    pub fn facing_down() -> Self {
+        Self {
+            natural_facing_rad: -std::f32::consts::FRAC_PI_2,
+            min_speed: 10.0,
+            last_position: None,
+        }
+    }
+
+    /// Sprite naturellement orienté vers la **droite** (+X).
+    pub fn facing_right() -> Self {
+        Self {
+            natural_facing_rad: 0.0,
+            min_speed: 10.0,
+            last_position: None,
+        }
+    }
+
+    /// Sprite naturellement orienté vers la **gauche** (-X).
+    pub fn facing_left() -> Self {
+        Self {
+            natural_facing_rad: std::f32::consts::PI,
+            min_speed: 10.0,
+            last_position: None,
+        }
+    }
+}
+
+/// Met à jour `Transform.rotation` pour aligner le sprite sur la direction
+/// du déplacement frame-à-frame. Conserve la dernière rotation appliquée
+/// si la vitesse passe sous `min_speed`.
+fn rotate_to_movement_system(
+    time: Res<Time>,
+    mut query: Query<(&mut Transform, &mut RotateToMovement)>,
+) {
+    let dt = time.delta_secs();
+    if dt <= 0.0 {
+        return;
+    }
+    for (mut tf, mut r) in &mut query {
+        let pos = tf.translation.xy();
+        if let Some(last) = r.last_position {
+            let v = (pos - last) / dt;
+            if v.length() >= r.min_speed {
+                // Angle de la vitesse - angle naturel du sprite =
+                // rotation à appliquer.
+                let target_angle = v.y.atan2(v.x) - r.natural_facing_rad;
+                tf.rotation = Quat::from_rotation_z(target_angle);
+            }
+        }
+        r.last_position = Some(pos);
+    }
+}
+
 pub struct SpriteOrientPlugin;
 
 impl Plugin for SpriteOrientPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, face_movement_system);
+        app.add_systems(Update, (face_movement_system, rotate_to_movement_system));
     }
 }

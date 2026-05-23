@@ -78,3 +78,13 @@ pub const TURRET: EnemyData = EnemyData {
     config: EnemyConfigData::new(70.0, 200.0),
     total_hp: 30,
 };
+
+/// UFO "simple" — petit ennemi sans état, suit un chemin Bézier prédéfini.
+/// Pensé pour spawn en queue via `Action::StartSpawning` : N instances
+/// spawn au même point avec un intervalle court → effet "queue leu leu"
+/// le long du chemin.
+pub const SIMPLE_UFO: EnemyData = EnemyData {
+    name: "SimpleUFO",
+    config: EnemyConfigData::new(24.0, 56.0),
+    total_hp: 4,
+};
