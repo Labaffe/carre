@@ -69,9 +69,10 @@ pub struct DamageEvent {
 }
 
 /// Notification que des dégâts ont été appliqués (post-filtrage Invulnerable).
-/// Émis par `apply_damage`. Consommé par les systèmes FX (flash, son, score)
-/// et logique spécifique au target (player → Invincible/GameOver).
-#[derive(Message, Debug, Clone, Copy)]
+/// Émis par `apply_damage` via `commands.trigger(...)`. Consommé par des
+/// **observers globaux** : FX (flash, son, score) dans `enemy.rs` + logique
+/// player (Invincible/GameOver, son hurt) dans `collision.rs`.
+#[derive(Event, Debug, Clone, Copy)]
 pub struct HitEvent {
     pub target: Entity,
     /// Layer de la cible (utilisé pour dispatcher les FX selon le type
@@ -84,10 +85,10 @@ pub struct HitEvent {
 // ─── Système central ─────────────────────────────────────────────────
 
 /// Lit `DamageEvent`, filtre Invulnerable/Invincible, applique à `Health`,
-/// émet `HitEvent` si le dégât a effectivement été infligé.
+/// trigger `HitEvent` si le dégât a effectivement été infligé.
 pub fn apply_damage(
+    mut commands: Commands,
     mut damage_events: MessageReader<DamageEvent>,
-    mut hit_events: MessageWriter<HitEvent>,
     mut q: Query<(
         &mut Health,
         &CollisionLayer,
@@ -109,7 +110,7 @@ pub fn apply_damage(
         health.take_damage(ev.amount);
         let dealt = before - health.current;
         if dealt > 0 {
-            hit_events.write(HitEvent {
+            commands.trigger(HitEvent {
                 target: ev.target,
                 target_layer: layer.0,
                 amount_dealt: dealt,
@@ -125,8 +126,10 @@ pub struct HealthPlugin;
 
 impl Plugin for HealthPlugin {
     fn build(&self, app: &mut App) {
+        // `HitEvent` n'est PAS enregistré via `add_message` : il est dispatché
+        // exclusivement via `commands.trigger` vers les observers (cf. la
+        // chaîne `add_observer(...)` dans `EnemyPlugin` et `CollisionPlugin`).
         app.add_message::<DamageEvent>()
-            .add_message::<HitEvent>()
             .add_systems(
                 Update,
                 apply_damage.run_if(in_state(crate::game_manager::state::GameState::Playing)),

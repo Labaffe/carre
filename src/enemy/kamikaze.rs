@@ -18,10 +18,12 @@
 
 use std::time::Duration;
 
+use bevy::ecs::lifecycle::HookContext;
+use bevy::ecs::world::DeferredWorld;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
-use crate::audio::{Sfx, SfxPlayer};
+use crate::audio::{Sfx, spawn_sfx};
 use crate::behavior::BehaviorBuilder;
 use crate::behavior::behavior::BehaviorComponent;
 use crate::behavior::choice_list::TransitionMessages;
@@ -82,15 +84,26 @@ static KAMIKAZE_DROP_TABLE: [(ItemType, f32); 2] =
 pub struct Kamikaze;
 
 /// Inséré à l'entrée de l'état exploding. `kamikaze_boom_system` détecte
-/// l'`Added` et déclenche AOE + son + reset couleur — une seule fois.
+/// l'`Added` et déclenche AOE + reset couleur — une seule fois. Le son
+/// `Explosion` est joué par le hook `on_insert`.
 #[derive(Component, Clone)]
+#[component(on_insert = play_explosion)]
 pub struct KamikazeBoom;
 
-/// Inséré à l'entrée de l'état armed. `kamikaze_scream_system` détecte
-/// l'`Added` et joue le cri terrifiant — une seule fois par kamikaze, au
-/// moment où il devient dangereux pour le joueur.
+/// Inséré à l'entrée de l'état armed. Le hook `on_insert` joue le cri
+/// `KamikazeScream` — une seule fois par kamikaze, au moment où il devient
+/// dangereux pour le joueur.
 #[derive(Component, Clone)]
+#[component(on_insert = play_kamikaze_scream)]
 pub struct KamikazeArmed;
+
+fn play_explosion(mut world: DeferredWorld, _: HookContext) {
+    spawn_sfx(&mut world, Sfx::Explosion);
+}
+
+fn play_kamikaze_scream(mut world: DeferredWorld, _: HookContext) {
+    spawn_sfx(&mut world, Sfx::KamikazeScream);
+}
 
 /// Inséré pendant la phase pursuing. `kamikaze_laugh_start_system` spawn
 /// un AudioPlayer en loop (le rire) attaché à l'entité. Quand le composant
@@ -305,7 +318,6 @@ pub fn kamikaze_force_boom_system(
 /// grâce à `Added`.
 pub fn kamikaze_boom_system(
     mut commands: Commands,
-    mut sfx: SfxPlayer,
     anim_bank: Res<crate::enemy::anim_bank::AnimBank>,
     query: Query<(Entity, &Transform), Added<KamikazeBoom>>,
 ) {
@@ -319,7 +331,7 @@ pub fn kamikaze_boom_system(
             "kamikaze_explosion",
             KAMIKAZE_AOE_SPRITE_SIZE,
         );
-        sfx.play(Sfx::Explosion);
+        // Son `Explosion` joué par le hook `on_insert` sur `KamikazeBoom`.
         // DespawnSelf au lieu de try_despawn direct : évite la race avec les
         // commandes du behavior tree (cf. collision.rs pour les détails).
         if let Ok(mut e) = commands.get_entity(entity) {
@@ -328,13 +340,8 @@ pub fn kamikaze_boom_system(
     }
 }
 
-/// Détecte `Added<KamikazeArmed>` : joue le cri terrifiant une fois quand
-/// le kamikaze entre en phase armed.
-pub fn kamikaze_scream_system(mut sfx: SfxPlayer, query: Query<(), Added<KamikazeArmed>>) {
-    for _ in &query {
-        sfx.play(Sfx::KamikazeScream);
-    }
-}
+// kamikaze_scream_system retiré — son `KamikazeScream` joué par le hook
+// `on_insert` sur `KamikazeArmed`.
 
 /// Détecte `Added<KamikazeLaughing>` : spawn un AudioPlayer LOOP en CHILD du
 /// kamikaze. La relation parent-enfant assure que si le kamikaze est tué,

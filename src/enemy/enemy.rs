@@ -132,46 +132,32 @@ pub fn projectile_damage_on_overlap(
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  Reactive systems sur HitEvent — feedback "ennemi touché"
+//  Observers sur HitEvent — feedback "ennemi touché"
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Insère un `HitFlash` sur tout target ENEMY ou ASTEROID qui a pris des
 /// dégâts. PLAYER est exclu (le flash blanc cohabiterait mal avec le blink
 /// d'`Invincible`).
-pub fn hit_flash_on_hit(
-    mut commands: Commands,
-    mut events: MessageReader<HitEvent>,
-) {
-    for ev in events.read() {
-        if ev.target_layer & (layers::ENEMY | layers::ASTEROID) == 0 {
-            continue;
-        }
-        if let Ok(mut e) = commands.get_entity(ev.target) {
-            e.try_insert(HitFlash::white(HIT_FLASH_DURATION));
-        }
+pub fn hit_flash_on_hit(trigger: On<HitEvent>, mut commands: Commands) {
+    let ev = trigger.event();
+    if ev.target_layer & (layers::ENEMY | layers::ASTEROID) == 0 {
+        return;
+    }
+    if let Ok(mut e) = commands.get_entity(ev.target) {
+        e.try_insert(HitFlash::white(HIT_FLASH_DURATION));
     }
 }
 
 /// Joue `Sfx::EnemyHit` quand un ENEMY ou ASTEROID prend des dégâts.
-pub fn enemy_hit_sound_on_hit(
-    mut events: MessageReader<HitEvent>,
-    mut sfx: SfxPlayer,
-) {
-    for ev in events.read() {
-        if ev.target_layer & (layers::ENEMY | layers::ASTEROID) != 0 {
-            sfx.play(Sfx::EnemyHit);
-        }
+pub fn enemy_hit_sound_on_hit(trigger: On<HitEvent>, mut sfx: SfxPlayer) {
+    if trigger.event().target_layer & (layers::ENEMY | layers::ASTEROID) != 0 {
+        sfx.play(Sfx::EnemyHit);
     }
 }
 
 /// +1 au score à chaque hit sur ENEMY ou ASTEROID.
-pub fn score_on_enemy_hit(
-    mut events: MessageReader<HitEvent>,
-    mut score: ResMut<Score>,
-) {
-    for ev in events.read() {
-        if ev.target_layer & (layers::ENEMY | layers::ASTEROID) != 0 {
-            score.add(1);
-        }
+pub fn score_on_enemy_hit(trigger: On<HitEvent>, mut score: ResMut<Score>) {
+    if trigger.event().target_layer & (layers::ENEMY | layers::ASTEROID) != 0 {
+        score.add(1);
     }
 }

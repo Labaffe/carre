@@ -15,10 +15,12 @@
 
 use std::time::Duration;
 
+use bevy::ecs::lifecycle::HookContext;
+use bevy::ecs::world::DeferredWorld;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
-use crate::audio::{Sfx, SfxPlayer};
+use crate::audio::{Sfx, SfxPlayer, spawn_sfx};
 use crate::behavior::BehaviorBuilder;
 use crate::behavior::behavior::BehaviorComponent;
 use crate::behavior::choice_list::TransitionMessages;
@@ -65,9 +67,15 @@ const MINE_FRAME_DURATION: f32 = 0.15;
 pub struct Mine;
 
 /// Marker posé par la choice quand la mine doit exploser. Consommé par
-/// `mine_explode_system` (spawn AOE + despawn mine).
+/// `mine_explode_system` (spawn AOE + despawn mine). Le hook `on_insert`
+/// joue `Sfx::MineExplode`.
 #[derive(Component, Clone)]
+#[component(on_insert = play_mine_explode)]
 pub struct MineExplode;
+
+fn play_mine_explode(mut world: DeferredWorld, _: HookContext) {
+    spawn_sfx(&mut world, Sfx::MineExplode);
+}
 
 /// Composant inséré pendant la phase counting_down. Le système
 /// `mine_countdown_audio` tick `elapsed` chaque frame et joue un bip à chaque
@@ -205,7 +213,6 @@ impl EnemyBuilder for MineBuilder {
 /// indépendante, puis despawn la mine.
 pub fn mine_explode_system(
     mut commands: Commands,
-    mut sfx: SfxPlayer,
     anim_bank: Res<crate::enemy::anim_bank::AnimBank>,
     query: Query<(Entity, &Transform), With<MineExplode>>,
 ) {
@@ -219,7 +226,7 @@ pub fn mine_explode_system(
             "mine_explosion",
             MINE_AOE_SPRITE_SIZE,
         );
-        sfx.play(Sfx::MineExplode);
+        // Son `MineExplode` joué par le hook `on_insert` sur `MineExplode`.
         // DespawnSelf au lieu de try_despawn direct : évite la race avec les
         // commandes du behavior tree (cf. collision.rs pour les détails).
         if let Ok(mut e) = commands.get_entity(entity) {

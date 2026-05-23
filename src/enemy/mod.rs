@@ -27,15 +27,12 @@ use crate::enemy::hit_flash::*;
 use crate::enemy::green_ufo::*;
 use crate::enemy::kamikaze::{
     kamikaze_boom_system, kamikaze_force_boom_system, kamikaze_laugh_start_system,
-    kamikaze_laugh_stop_system, kamikaze_scream_system, kamikaze_speed_ramp_system,
-    KamikazeBuilder,
+    kamikaze_laugh_stop_system, kamikaze_speed_ramp_system, KamikazeBuilder,
 };
 use crate::enemy::mine::{blink_red_system, mine_countdown_audio, mine_explode_system, MineBuilder};
 use crate::enemy::octopus::{
-    octopus_become_alive, octopus_die_sound, octopus_entering_idle_sound,
-    octopus_entering_rush_sound, octopus_fire_shots, octopus_pre_swoop_tick,
-    octopus_setup_curve, octopus_shoot_start_sound, octopus_telegraph_tick,
-    OctopusBuilder,
+    octopus_become_alive, octopus_die_sound, octopus_fire_shots, octopus_pre_swoop_tick,
+    octopus_setup_curve, octopus_telegraph_tick, OctopusBuilder,
 };
 use crate::GameState;
 use crate::menu::pause::not_paused;
@@ -68,18 +65,19 @@ impl Plugin for EnemyPlugin {
                 Update,
                 (
                     // Framework phases+behaviors (exclusif, séquentiel)
-                    // Systèmes réactifs (ordre après la machine à état)
+                    // Systèmes réactifs (ordre après la machine à état).
+                    // `hit_flash_on_hit`, `enemy_hit_sound_on_hit`,
+                    // `score_on_enemy_hit` sont maintenant des **observers**
+                    // (cf. `add_observer` plus bas) déclenchés par
+                    // `commands.trigger(HitEvent)` dans `apply_damage`.
                     projectile_damage_on_overlap,
-                    hit_flash_on_hit,
-                    enemy_hit_sound_on_hit,
-                    score_on_enemy_hit,
                     boss_hp_threshold_check,
                     mine_explode_system,
                     mine_countdown_audio,
                     blink_red_system,
                     kamikaze_force_boom_system,
                     kamikaze_boom_system,
-                    kamikaze_scream_system,
+                    // kamikaze_scream_system retiré : hook `on_insert` sur `KamikazeArmed`.
                     kamikaze_laugh_start_system,
                     kamikaze_laugh_stop_system,
                     kamikaze_speed_ramp_system,
@@ -89,6 +87,10 @@ impl Plugin for EnemyPlugin {
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),
             )
+            // Observers globaux sur `HitEvent` (trigger par `apply_damage`).
+            .add_observer(hit_flash_on_hit)
+            .add_observer(enemy_hit_sound_on_hit)
+            .add_observer(score_on_enemy_hit)
             // Systèmes Octopus dans leur propre tuple : la limite de `.chain()`
             // (15 systèmes) est atteinte sur le bloc enemy générique au-dessus.
             // Ces systèmes sont tous des réactifs sur `Added<…>` indépendants
@@ -96,11 +98,12 @@ impl Plugin for EnemyPlugin {
             .add_systems(
                 Update,
                 (
-                    octopus_entering_rush_sound,
-                    octopus_entering_idle_sound,
+                    // Les sons d'apparition (entering_rush, entering_idle),
+                    // d'amorçage (shooting) et de tir (fire_shots) sont gérés
+                    // par des hooks `on_insert` sur les markers correspondants
+                    // dans `octopus.rs` — pas besoin de système dédié.
                     octopus_become_alive,
                     octopus_setup_curve,
-                    octopus_shoot_start_sound,
                     octopus_fire_shots,
                     octopus_die_sound,
                     octopus_telegraph_tick,

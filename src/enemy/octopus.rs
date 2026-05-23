@@ -35,10 +35,12 @@
 
 use std::time::Duration;
 
+use bevy::ecs::lifecycle::HookContext;
+use bevy::ecs::world::DeferredWorld;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
-use crate::audio::{Sfx, SfxPlayer};
+use crate::audio::{Sfx, SfxPlayer, spawn_sfx};
 use crate::behavior::BehaviorBuilder;
 use crate::behavior::behavior::BehaviorComponent;
 use crate::behavior::choice_list::TransitionMessages;
@@ -125,27 +127,33 @@ pub struct Octopus;
 
 /// Posé par la choice pendant la phase de déplacement. Consommé par
 /// `octopus_setup_curve` qui insère `Movements` avec une Bézier fraîche.
+/// Le hook `on_insert` joue `Sfx::OctopusRush`.
 #[derive(Component, Clone)]
+#[component(on_insert = play_octopus_rush)]
 pub struct OctopusMoving;
 
-/// Posé pendant le wind-up de l'animation de tir. `Added<OctopusShooting>`
+/// Posé pendant le wind-up de l'animation de tir. Le hook `on_insert`
 /// joue le son d'amorçage `OctopusSound`.
 #[derive(Component, Clone)]
+#[component(on_insert = play_octopus_sound)]
 pub struct OctopusShooting;
 
-/// Posé brièvement à la fin du wind-up. `Added<OctopusFireShots>` joue
-/// `OctopusShoot` et spawn les 3 projectiles vers le joueur.
+/// Posé brièvement à la fin du wind-up. Le hook `on_insert` joue
+/// `OctopusShoot` ; `octopus_fire_shots` spawn les 3 projectiles.
 #[derive(Component, Clone)]
+#[component(on_insert = play_octopus_shoot)]
 pub struct OctopusFireShots;
 
 /// Sous-phase 1 de l'apparition : rush rectiligne depuis le bord G/D vers
-/// le spawn point. `Added<OctopusEnteringRush>` joue `Sfx::OctopusRush`.
+/// le spawn point. Le hook `on_insert` joue `Sfx::OctopusRush`.
 #[derive(Component, Clone)]
+#[component(on_insert = play_octopus_rush)]
 pub struct OctopusEnteringRush;
 
 /// Sous-phase 2 de l'apparition : petit idle à destination.
-/// `Added<OctopusEnteringIdle>` joue `Sfx::OctopusSound` (annonce d'arrivée).
+/// Le hook `on_insert` joue `Sfx::OctopusSound` (annonce d'arrivée).
 #[derive(Component, Clone)]
+#[component(on_insert = play_octopus_sound)]
 pub struct OctopusEnteringIdle;
 
 /// Posé quand l'octopus quitte `entering` et devient tangible.
@@ -382,31 +390,29 @@ impl EnemyBuilder for OctopusBuilder {
     }
 }
 
+// ─── Hooks audio (cf. attributs `#[component(on_insert = ...)]`) ──
+
+/// Hook commun joué à l'insertion de `OctopusMoving` et `OctopusEnteringRush`.
+fn play_octopus_rush(mut world: DeferredWorld, _: HookContext) {
+    spawn_sfx(&mut world, Sfx::OctopusRush);
+}
+
+/// Hook commun joué à l'insertion de `OctopusShooting` et `OctopusEnteringIdle`.
+fn play_octopus_sound(mut world: DeferredWorld, _: HookContext) {
+    spawn_sfx(&mut world, Sfx::OctopusSound);
+}
+
+/// Hook joué à l'insertion de `OctopusFireShots`.
+fn play_octopus_shoot(mut world: DeferredWorld, _: HookContext) {
+    spawn_sfx(&mut world, Sfx::OctopusShoot);
+}
+
 // ─── Systèmes réactifs ─────────────────────────────────────────────
-
-/// Joue `OctopusRush` au démarrage de la sous-phase 1 d'entering.
-pub fn octopus_entering_rush_sound(
-    mut sfx: SfxPlayer,
-    query: Query<(), Added<OctopusEnteringRush>>,
-) {
-    for _ in &query {
-        sfx.play(Sfx::OctopusRush);
-    }
-}
-
-/// Joue `OctopusSound` à l'arrivée (sous-phase 2 d'entering) — l'octopus
-/// "s'annonce" avant de devenir agressif.
-pub fn octopus_entering_idle_sound(
-    mut sfx: SfxPlayer,
-    query: Query<(), Added<OctopusEnteringIdle>>,
-) {
-    for _ in &query {
-        sfx.play(Sfx::OctopusSound);
-    }
-}
 
 /// Joue `OctopusDie` quand le marker `Dying` est inséré sur l'octopus
 /// (= HP=0 détecté par `detect_death`). Fire une seule fois par mort.
+/// **Reste un système** car `Dying` est partagé entre tous les ennemis :
+/// on ne peut pas mettre un hook sur `Dying` qui ne fire que pour Octopus.
 pub fn octopus_die_sound(mut sfx: SfxPlayer, query: Query<(), (With<Octopus>, Added<Dying>)>) {
     for _ in &query {
         sfx.play(Sfx::OctopusDie);
@@ -491,7 +497,6 @@ pub fn octopus_become_alive(
 /// donc systématiquement la zone du joueur avec un arc visible.
 pub fn octopus_setup_curve(
     mut commands: Commands,
-    mut sfx: SfxPlayer,
     octopus_q: Query<(Entity, &Transform), (With<Octopus>, Added<OctopusMoving>)>,
     player_q: Query<&Transform, (With<Player>, Without<Octopus>)>,
     window: Single<&Window>,
@@ -534,23 +539,16 @@ pub fn octopus_setup_curve(
                 Duration::from_secs_f32(SWOOP_DURATION),
             )));
         }
-        sfx.play(Sfx::OctopusRush);
+        // Son `OctopusRush` joué par le hook `on_insert` sur `OctopusMoving`.
     }
 }
 
-/// Joue le son d'amorçage du tir sur `Added<OctopusShooting>`.
-pub fn octopus_shoot_start_sound(mut sfx: SfxPlayer, query: Query<(), Added<OctopusShooting>>) {
-    for _ in &query {
-        sfx.play(Sfx::OctopusSound);
-    }
-}
-
-/// Sur `Added<OctopusFireShots>` : joue `OctopusShoot` et spawn 3 projectiles
-/// en éventail (-spread / 0 / +spread degrés) vers le joueur.
+/// Sur `Added<OctopusFireShots>` : spawn 3 projectiles en éventail
+/// (-spread / 0 / +spread degrés) vers le joueur. Le son `OctopusShoot` est
+/// joué par le hook `on_insert` sur `OctopusFireShots`.
 pub fn octopus_fire_shots(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut sfx: SfxPlayer,
     octopus_q: Query<&Transform, Added<OctopusFireShots>>,
     player_tf: Single<&Transform, (With<Player>, Without<Octopus>)>,
 ) {
@@ -587,7 +585,7 @@ pub fn octopus_fire_shots(
                 },
             );
         }
-        sfx.play(Sfx::OctopusShoot);
+        // Son `OctopusShoot` joué par le hook `on_insert` sur `OctopusFireShots`.
     }
 }
 

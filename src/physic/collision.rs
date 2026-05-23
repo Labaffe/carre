@@ -22,17 +22,19 @@ pub struct CollisionPlugin;
 
 impl Plugin for CollisionPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_aoe_assets).add_systems(
-            Update,
-            (
-                player_damage_on_overlap,
-                player_post_hit,
-                player_hurt_sound_on_hit,
-                aoe_damage_enemies_on_overlap,
-                aoe_lifecycle,
+        app.add_systems(Startup, setup_aoe_assets)
+            .add_systems(
+                Update,
+                (
+                    player_damage_on_overlap,
+                    aoe_damage_enemies_on_overlap,
+                    aoe_lifecycle,
+                )
+                    .run_if(in_state(GameState::Playing)),
             )
-                .run_if(in_state(GameState::Playing)),
-        );
+            // Observers globaux sur `HitEvent` (trigger par `apply_damage`).
+            .add_observer(play_player_hurt_sfx)
+            .add_observer(player_post_hit);
     }
 }
 
@@ -97,42 +99,39 @@ fn player_damage_on_overlap(
     }
 }
 
-/// Réagit aux `HitEvent` qui ciblent le joueur : insère `Invincible` ou
-/// transitionne vers GameOver selon que le joueur survit ou pas.
+/// Observer : réagit aux `HitEvent` ciblant le joueur. Insère `Invincible`
+/// ou transitionne vers GameOver selon que le joueur survit ou pas.
 fn player_post_hit(
+    trigger: On<HitEvent>,
     mut commands: Commands,
-    mut events: MessageReader<HitEvent>,
     health_q: Query<&Health, With<Player>>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
-    for ev in events.read() {
-        if ev.target_layer & layers::PLAYER == 0 { continue; }
-        let Ok(health) = health_q.get(ev.target) else { continue };
+    let ev = trigger.event();
+    if ev.target_layer & layers::PLAYER == 0 { return; }
+    let Ok(health) = health_q.get(ev.target) else { return };
 
-        if health.is_dead() {
-            if let Ok(mut e) = commands.get_entity(ev.target) {
-                e.try_despawn();
-            }
-            next_state.set(GameState::GameOver);
-        } else {
-            if let Ok(mut e) = commands.get_entity(ev.target) {
-                e.try_insert(Invincible(Timer::new(
-                    Duration::from_secs_f32(INVINCIBLE_DURATION),
-                    TimerMode::Once,
-                )));
-            }
+    if health.is_dead() {
+        if let Ok(mut e) = commands.get_entity(ev.target) {
+            e.try_despawn();
+        }
+        next_state.set(GameState::GameOver);
+    } else {
+        if let Ok(mut e) = commands.get_entity(ev.target) {
+            e.try_insert(Invincible(Timer::new(
+                Duration::from_secs_f32(INVINCIBLE_DURATION),
+                TimerMode::Once,
+            )));
         }
     }
 }
 
-/// Joue le son de dégât joueur sur HitEvent ciblant PLAYER.
-fn player_hurt_sound_on_hit(
-    mut events: MessageReader<HitEvent>,
-    mut sfx: SfxPlayer,
-) {
-    for ev in events.read() {
-        if ev.target_layer & layers::PLAYER != 0 {
-            sfx.play_at(Sfx::PlayerHurt, 3.0);
-        }
+/// Observer global : joue le son de dégât joueur sur `HitEvent` ciblant
+/// la layer `PLAYER`. Fire en synchrone quand `apply_damage` trigger l'event,
+/// pas besoin d'un système qui poll chaque frame.
+fn play_player_hurt_sfx(trigger: On<HitEvent>, mut sfx: SfxPlayer) {
+    let ev = trigger.event();
+    if ev.target_layer & layers::PLAYER != 0 {
+        sfx.play_at(Sfx::PlayerHurt, 3.0);
     }
 }
