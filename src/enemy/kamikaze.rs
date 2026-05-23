@@ -266,6 +266,7 @@ pub fn kamikaze_boom_system(
             "kamikaze_explosion",
             KAMIKAZE_AOE_SPRITE_SIZE,
         );
+        commands.trigger(crate::fx::screen_shake::ScreenShakeEvent::KAMIKAZE);
         // DespawnSelf au lieu de try_despawn direct : évite la race avec les
         // commandes du behavior tree (cf. collision.rs pour les détails).
         if let Ok(mut e) = commands.get_entity(entity) {

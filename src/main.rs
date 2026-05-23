@@ -40,6 +40,7 @@ use enemy::EnemyPlugin;
 
 use crate::movement::despawn_off_screen::DespawnOffScreenPlugin;
 use fx::explosion::ExplosionPlugin;
+use fx::screen_shake::ScreenShakePlugin;
 use item::item::ItemPlugin;
 
 use menu::mainmenu::MainMenuPlugin;
@@ -117,6 +118,7 @@ fn main() {
         // Entités & effets
         .add_plugins((
             ExplosionPlugin,
+            ScreenShakePlugin,
             ItemPlugin,
         ))
         // UI & écrans

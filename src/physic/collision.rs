@@ -17,6 +17,7 @@ use crate::physic::collider::{layers, OverlapEvent};
 use crate::physic::harmless::Harmless;
 use crate::physic::health::{DamageEvent, Health, HitEvent};
 use crate::player::player::{INVINCIBLE_DURATION, Invincible, Player};
+use crate::fx::screen_shake::ScreenShakeEvent;
 use crate::ui::score::{Combo, Score};
 
 pub struct CollisionPlugin;
@@ -117,6 +118,7 @@ fn player_post_hit(
     let Ok(health) = health_q.get(ev.target) else { return };
 
     combo.reset(&mut score);
+    commands.trigger(ScreenShakeEvent::PLAYER_HIT);
 
     if health.is_dead() {
         if let Ok(mut e) = commands.get_entity(ev.target) {

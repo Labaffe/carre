@@ -379,6 +379,19 @@ impl EnemyBuilder for BossBuilder {
 /// que la phase précédente n'est pas finie, donc même si le boss saute deux
 /// paliers en un seul gros hit, les deux transitionings se déclencheront en
 /// séquence.
+/// Observer : à chaque `EnemyDeathEvent` trigger, si l'entité morte porte
+/// `BossMarker`, déclenche un screen shake épique (synchrone avec la phase
+/// dying du behavior tree qui shake le sprite pendant `DYING_DURATION`).
+pub fn boss_death_screen_shake(
+    trigger: On<crate::enemy::enemy::EnemyDeathEvent>,
+    mut commands: Commands,
+    boss_q: Query<(), With<BossMarker>>,
+) {
+    let ev = trigger.event();
+    if boss_q.get(ev.entity).is_err() { return; }
+    commands.trigger(crate::fx::screen_shake::ScreenShakeEvent::BOSS_DEATH);
+}
+
 pub fn boss_hp_threshold_check(
     invul_q: Query<(), With<Invulnerable>>,
     mut q: Query<

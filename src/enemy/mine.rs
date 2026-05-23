@@ -226,6 +226,7 @@ pub fn mine_explode_system(
             "mine_explosion",
             MINE_AOE_SPRITE_SIZE,
         );
+        commands.trigger(crate::fx::screen_shake::ScreenShakeEvent::MINE);
         // Son `MineExplode` joué par le hook `on_insert` sur `MineExplode`.
         // DespawnSelf au lieu de try_despawn direct : évite la race avec les
         // commandes du behavior tree (cf. collision.rs pour les détails).

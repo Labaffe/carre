@@ -386,6 +386,7 @@ fn bomb_apply_damage(
         return;
     }
     bomb_events.read().for_each(drop);
+    commands.trigger(crate::fx::screen_shake::ScreenShakeEvent::BOMB);
 
     // 1. Damage : DamageEvent pour asteroids + ennemis non-kamikaze
     //    (apply_damage filtre Invulnerable et applique selon Health).
