@@ -81,6 +81,7 @@ fn main() {
             DifficultyPlugin,
             LevelPlugin,
             GamePlugin,
+            game_manager::loading::LoadingPlugin,
             audio::AudioPlugin,
             sprite_orient::SpriteOrientPlugin,
         ))

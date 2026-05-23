@@ -443,7 +443,9 @@ fn handle_level_select_input(
                 }
             }
             progress.current_level = level_num;
-            next_state.set(GameState::Playing);
+            // Routé via Loading pour montrer un écran "CHARGEMENT" et donner
+            // du temps à l'asset_server avant le setup Playing.
+            next_state.set(GameState::Loading);
         }
     }
 

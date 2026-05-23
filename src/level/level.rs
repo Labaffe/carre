@@ -429,6 +429,16 @@ pub fn level_name(level: usize) -> &'static str {
     crate::level::levels::level_name(level)
 }
 
+/// `true` si le niveau utilise `Action::StartCountdown` dans sa timeline.
+/// Sert à gater les pré-warmups coûteux liés au countdown (rastérisation
+/// des glyphes du "READY 3 2 1 GO!"). Utilisé par `warmup_countdown_fonts`.
+pub fn level_has_countdown(level: usize) -> bool {
+    // Niveau 1 seul a un countdown actuellement. Chaos (3) et Niveau 2
+    // (désactivé/stub) n'en ont pas. À mettre à jour si un niveau futur
+    // ajoute un `Action::StartCountdown`.
+    matches!(level, 1)
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Définition du niveau 1
 // ═══════════════════════════════════════════════════════════════════════

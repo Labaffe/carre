@@ -10,6 +10,10 @@ pub enum GameState {
     /// État transitoire entre deux niveaux.
     /// Déclenche OnExit(Playing) → cleanup, puis OnEnter(LevelSelect) → sélecteur.
     LevelTransition,
+    /// Écran de chargement court (~0.6s) joué avant l'entrée en Playing.
+    /// Masque les hitches initiaux (asset decode, glyph rasterization,
+    /// musique). Routé par levelselect/gameover restart avant Playing.
+    Loading,
     Editor,
     /// Écran de fin "Merci d'avoir joué".
     Credits,

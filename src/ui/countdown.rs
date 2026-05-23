@@ -258,7 +258,21 @@ fn animate_countdown_text(
 /// utiliser. Force Bevy à rastériser et cacher les atlas de glyphes au 1er
 /// frame du niveau (lag invisible) plutôt qu'au moment du countdown (lag
 /// visible). Auto-despawn après 0.5s (cache déjà chaud après 1-2 frames).
-fn warmup_countdown_fonts(mut commands: Commands, asset_server: Res<AssetServer>) {
+///
+/// **Skip si le niveau n'a pas de countdown** (ex: chaos) ou en éditeur —
+/// inutile de payer le coût de rastérisation des 40 atlases pour rien.
+fn warmup_countdown_fonts(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    progress: Res<crate::game_manager::game::GameProgress>,
+    editor: Option<Res<crate::level::level::EditorTestEnemy>>,
+) {
+    if editor.is_some() {
+        return;
+    }
+    if !crate::level::level::level_has_countdown(progress.current_level) {
+        return;
+    }
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     // Tous les caractères qui apparaîtront pendant le countdown.
     let chars = "READY 3210 GO!";

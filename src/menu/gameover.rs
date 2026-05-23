@@ -366,7 +366,9 @@ fn handle_restart(
                 e.try_despawn();
             }
         }
-        next_state.set(GameState::Playing);
+        // Via Loading pour bénéficier de l'écran de chargement (le setup
+        // Playing inclut le respawn complet du level → coûteux).
+        next_state.set(GameState::Loading);
     }
 
     // ─── Echap = quitter (hors campagne uniquement) ────────────

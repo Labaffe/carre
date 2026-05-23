@@ -269,6 +269,12 @@ fn level_phase_system(
                     transform.translation.y = start_pos.y;
                     transform.rotation = Quat::from_rotation_z(ship_angle);
                 }
+                // Early return : le son + l'animation démarrent au prochain
+                // frame. Donne le temps à un éventuel `LoadingUI` (transition
+                // depuis le Loading state) de finir sa despawn + render avant
+                // que l'audio de l'intro se lance — évite le chevauchement
+                // "écran de chargement visible + son d'atterissage qui démarre".
+                return;
             }
 
             // Ne pas avancer l'intro pendant la pause
