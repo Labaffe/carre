@@ -50,7 +50,9 @@ pub fn detect_death(
                 position: transform.translation,
             });
             if let Ok(mut e) = commands.get_entity(entity) {
-                e.insert(Dying);
+                // `try_insert` : safe si l'entité est despawn entre `get_entity`
+                // et le flush des commands (ex: tuée la même frame par une bombe).
+                e.try_insert(Dying);
             }
         }
     }

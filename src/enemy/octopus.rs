@@ -1,7 +1,7 @@
 //! Octopus — telegraph + action aléatoire (swoop ou shoot) à chaque cycle.
 //!
 //! Phase **entering** (intangible) : spawn sans collider, sprite à
-//! `ENTERING_OPACITY`. Deux sous-phases :
+//! `OCTOPUS_INTANGIBLE_TINT`. Deux sous-phases :
 //! - `entering_rush` (RUSH_IN_DURATION) : `OctopusEnteringRush` + anim `rush`
 //!   + `Goto` rectiligne depuis le bord G/D (random) vers le spawn point.
 //!   `Added<OctopusEnteringRush>` joue `Sfx::OctopusRush`.
@@ -56,6 +56,7 @@ use crate::movement::bounding_radius::BoundingRadius;
 use crate::movement::goto::Goto;
 use crate::movement::movement_zone::MovementZone;
 use crate::movement::movements::Movements;
+use crate::physic::area_of_effect::spawn_aoe_animated;
 use crate::physic::collider::{collider, layers, CollidesWith, CollisionLayer, Hitbox};
 use crate::physic::health::Health;
 use crate::player::player::Player;
@@ -88,11 +89,26 @@ const OCTOPUS_GREEN_SHOT_COUNT: usize = 4;
 const OCTOPUS_GREEN_SHOT_SPREAD_DEG: f32 = 32.0;
 /// Variante verte : couleur des projectiles (vert vif).
 const OCTOPUS_GREEN_PROJECTILE_COLOR: Color = Color::srgb(0.2, 1.0, 0.4);
-/// Variante verte : teinte appliquée au sprite pendant le swoop (intangible).
-/// Multiplier RGB < 1.0 → assombrit le sprite (vs `ENTERING_OPACITY` qui ne
-/// touchait que l'alpha). Donne un signal visuel clair "tu ne peux pas
-/// me toucher" — l'octopus a l'air "en phase" / hors plan.
-const OCTOPUS_GREEN_SWOOP_TINT: Color = Color::srgba(0.35, 0.35, 0.35, 0.9);
+/// Teinte appliquée au sprite quand l'octopus est **intangible** — utilisée
+/// dans deux contextes : la phase `entering` (apparition, base + vert), et
+/// le swoop du vert. Multiplier RGB < 1.0 → assombrit nettement le sprite,
+/// signal visuel clair "tu ne peux pas me toucher".
+const OCTOPUS_INTANGIBLE_TINT: Color = Color::srgba(0.35, 0.35, 0.35, 0.9);
+
+/// Variante verte : pendant le swoop, l'octopus jette des bombes en cloche
+/// (trajectoire Bézier). Une nouvelle bombe est lancée tous les
+/// `OCTOPUS_GREEN_BOMB_INTERVAL` secondes ; elle explose en AOE quand le
+/// timer `OCTOPUS_GREEN_BOMB_FLIGHT_DURATION` arrive à terme (= moment où
+/// elle "tombe" au point d'impact calculé).
+const OCTOPUS_GREEN_BOMB_INTERVAL: f32 = 0.4;
+const OCTOPUS_GREEN_BOMB_FLIGHT_DURATION: f32 = 1.0;
+/// Hauteur (px) de l'apex de l'arc parabolique au-dessus du segment
+/// start→landing. Plus c'est grand, plus la cloche est haute.
+const OCTOPUS_GREEN_BOMB_ARC_HEIGHT: f32 = 180.0;
+const OCTOPUS_GREEN_BOMB_AOE_RADIUS: f32 = 70.0;
+const OCTOPUS_GREEN_BOMB_AOE_LIFETIME: f32 = 0.4;
+const OCTOPUS_GREEN_BOMB_AOE_SPRITE_SIZE: f32 = 140.0;
+const OCTOPUS_GREEN_BOMB_SPRITE_SIZE: f32 = 48.0;
 /// Marge intérieure (px) pour le clamp du point cible — évite qu'il colle
 /// au bord exact de l'écran.
 const TARGET_PICK_MARGIN: f32 = 80.0;
@@ -115,9 +131,8 @@ const IDLE_PAUSE_DURATION: f32 = 0.5;
 /// Offset (px) au-delà du bord pour la position d'entrée. L'octopus part
 /// hors écran et glisse vers son spawn.
 const ENTRY_OFFSCREEN_OFFSET: f32 = 80.0;
-/// Alpha du sprite pendant `entering` (intangible). Indique visuellement
-/// au joueur que tirer dessus est inutile.
-const ENTERING_OPACITY: f32 = 0.6;
+// Note : la teinte d'intangibilité (entering ET swoop vert) est définie
+// par `OCTOPUS_INTANGIBLE_TINT` plus haut — pas de constante alpha séparée.
 /// Durée totale de l'animation de mort (s). Indépendant du nombre de frames
 /// du dossier `images/octopus/death` — la durée par frame est recalculée
 /// automatiquement à l'init via `Animation::with_total_duration`.
@@ -143,9 +158,28 @@ pub struct Octopus;
 ///
 /// Différences vert vs base :
 /// - Swoop : cible aléatoire (vs miroir-joueur), intangible pendant le rush.
+/// - Swoop : largue des bombes vertes en cloche (cf. `OctopusGreenBombThrower`).
 /// - Tir : 4 projectiles verts (vs 3 roses).
 #[derive(Component, Clone)]
 pub struct OctopusGreen;
+
+/// Posé sur un octopus vert pendant la phase de swoop. Le timer tick chaque
+/// frame ; à chaque `just_finished` une bombe verte est jetée en cloche
+/// (`octopus_green_throw_bombs`). Inséré par `octopus_green_setup_curve`,
+/// retiré par `octopus_green_swoop_end`.
+#[derive(Component)]
+pub struct OctopusGreenBombThrower {
+    pub timer: Timer,
+}
+
+/// Bombe verte en vol parabolique. Le `lifetime` correspond exactement à
+/// la durée de l'arc Bézier ; à expiration l'entité despawn et une AOE est
+/// spawnée à la position courante (= point d'impact).
+#[derive(Component)]
+#[require(crate::GameplayEntity)]
+pub struct OctopusGreenBomb {
+    pub lifetime: Timer,
+}
 
 /// Posé par la choice pendant la phase de déplacement. Consommé par
 /// `octopus_setup_curve` qui insère `Movements` avec une Bézier fraîche.
@@ -377,9 +411,10 @@ fn spawn_octopus_variant<B: Bundle>(
         Sprite {
             image: asset_server.load(anims.base_sprite),
             custom_size: Some(Vec2::splat(data.config.sprite_size)),
-            // Alpha réduit pendant entering — restauré à 1.0 par
-            // `octopus_become_alive` à l'entrée du state alive.
-            color: Color::srgba(1.0, 1.0, 1.0, ENTERING_OPACITY),
+            // Teinte sombre pendant entering — signal d'intangibilité.
+            // Restauré à `Color::WHITE` par `octopus_become_alive` à
+            // l'entrée du state alive.
+            color: OCTOPUS_INTANGIBLE_TINT,
             ..default()
         },
         Transform::from_xyz(entry_pos.x, entry_pos.y, 0.5),
@@ -480,6 +515,9 @@ impl EnemyBuilder for OctopusGreenBuilder {
             ("octopus_green_rush", "images/octopus_green/rush"),
             ("octopus_green_shoot", "images/octopus_green/shoot"),
             ("octopus_green_death", "images/octopus_green/death"),
+            // AOE des bombes vertes — variante hue-shiftée de
+            // `images/mine/explosion` générée via `tools/sprite_hue_shift.py`.
+            ("octopus_green_explosion", "images/octopus_green/explosion"),
         ])
     }
     fn spawn(
@@ -593,7 +631,8 @@ pub fn octopus_become_alive(
     for (entity, mut sprite) in &mut query {
         sprite.color = Color::WHITE;
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.insert(collider(
+            // `try_insert` : safe si despawn entre `get_entity` et le flush.
+            e.try_insert(collider(
                 Shape::Circle(OCTOPUS.config.radius),
                 layers::ENEMY,
                 layers::PLAYER | layers::PLAYER_PROJECTILE,
@@ -647,7 +686,7 @@ pub fn octopus_setup_curve(
         let pass_through = player_pos + perp * SWOOP_BULGE_OFFSET;
 
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.insert(Movements::new().with(Bezier::passing_through(
+            e.try_insert(Movements::new().with(Bezier::passing_through(
                 start,
                 pass_through,
                 target,
@@ -749,7 +788,7 @@ pub fn octopus_green_setup_curve(
         let pass_through = mid + jitter;
 
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.insert(Movements::new().with(Bezier::passing_through(
+            e.try_insert(Movements::new().with(Bezier::passing_through(
                 start,
                 pass_through,
                 target,
@@ -761,9 +800,18 @@ pub fn octopus_green_setup_curve(
             e.try_remove::<Hitbox>();
             e.try_remove::<CollisionLayer>();
             e.try_remove::<CollidesWith>();
+            // Bombardier actif pendant tout le swoop. Premier tir au bout
+            // de `OCTOPUS_GREEN_BOMB_INTERVAL` (timer Repeating, on attend
+            // que `just_finished` fire).
+            e.try_insert(OctopusGreenBombThrower {
+                timer: Timer::from_seconds(
+                    OCTOPUS_GREEN_BOMB_INTERVAL,
+                    TimerMode::Repeating,
+                ),
+            });
         }
         // Sprite assombri pour signaler visuellement l'immortalité.
-        sprite.color = OCTOPUS_GREEN_SWOOP_TINT;
+        sprite.color = OCTOPUS_INTANGIBLE_TINT;
     }
 }
 
@@ -776,7 +824,7 @@ pub fn octopus_green_swoop_tint(
     mut q: Query<&mut Sprite, (With<OctopusGreen>, With<OctopusMoving>)>,
 ) {
     for mut sprite in &mut q {
-        sprite.color = OCTOPUS_GREEN_SWOOP_TINT;
+        sprite.color = OCTOPUS_INTANGIBLE_TINT;
     }
 }
 
@@ -797,11 +845,14 @@ pub fn octopus_green_swoop_end(
         };
         sprite.color = Color::WHITE;
         if let Ok(mut e) = commands.get_entity(entity) {
-            e.insert(collider(
+            e.try_insert(collider(
                 Shape::Circle(OCTOPUS.config.radius),
                 layers::ENEMY,
                 layers::PLAYER | layers::PLAYER_PROJECTILE,
             ));
+            // Stoppe le bombardement (le marker est ce qui gate
+            // `octopus_green_throw_bombs`).
+            e.try_remove::<OctopusGreenBombThrower>();
         }
     }
 }
@@ -851,6 +902,93 @@ pub fn octopus_green_fire_shots(
                     death_folder: None,
                 },
             );
+        }
+    }
+}
+
+/// Tick chaque `OctopusGreenBombThrower` (présent uniquement pendant le swoop
+/// du vert) ; à chaque `just_finished`, lance une bombe en arc parabolique
+/// vers un point aléatoire de la map via une Bézier (start → apex → landing).
+/// La bombe explose à la fin de son arc — cf. `octopus_green_bomb_explode`.
+pub fn octopus_green_throw_bombs(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    time: Res<Time>,
+    window: Single<&Window>,
+    mut thrower_q: Query<(&Transform, &mut OctopusGreenBombThrower)>,
+) {
+    let half_w = window.physical_width() as f32 / 2.0;
+    let half_h = window.physical_height() as f32 / 2.0;
+    let target_x_range = (half_w - TARGET_PICK_MARGIN).max(0.0);
+    let target_y_range = (half_h - TARGET_PICK_MARGIN).max(0.0);
+
+    for (octopus_tf, mut thrower) in &mut thrower_q {
+        thrower.timer.tick(time.delta());
+        if !thrower.timer.just_finished() {
+            continue;
+        }
+
+        let start = octopus_tf.translation.truncate();
+        // Point d'impact 100% aléatoire dans la zone jouable.
+        let landing = Vec2::new(
+            (fastrand::f32() * 2.0 - 1.0) * target_x_range,
+            (fastrand::f32() * 2.0 - 1.0) * target_y_range,
+        );
+        // Apex au-dessus du milieu du segment — donne une cloche visible.
+        // L'axe Y monte (convention Bevy 2D), donc on AJOUTE la hauteur.
+        let apex = (start + landing) * 0.5 + Vec2::Y * OCTOPUS_GREEN_BOMB_ARC_HEIGHT;
+
+        commands.spawn((
+            Sprite {
+                image: asset_server.load("images/bomb/frame000.png"),
+                custom_size: Some(Vec2::splat(OCTOPUS_GREEN_BOMB_SPRITE_SIZE)),
+                // Sprite bombe (skull) teinté vert pour matcher la palette
+                // de l'octopus vert.
+                color: OCTOPUS_GREEN_PROJECTILE_COLOR,
+                ..default()
+            },
+            Transform::from_xyz(start.x, start.y, 0.55),
+            Movements::new().with(Bezier::passing_through(
+                start,
+                apex,
+                landing,
+                Duration::from_secs_f32(OCTOPUS_GREEN_BOMB_FLIGHT_DURATION),
+            )),
+            OctopusGreenBomb {
+                lifetime: Timer::from_seconds(
+                    OCTOPUS_GREEN_BOMB_FLIGHT_DURATION,
+                    TimerMode::Once,
+                ),
+            },
+        ));
+    }
+}
+
+/// Tick le `lifetime` de chaque bombe verte ; quand il termine, spawn une
+/// AOE (réutilise l'anim `mine_explosion`) à la position courante de la
+/// bombe = point de chute calculé par la Bézier, puis despawn la bombe.
+pub fn octopus_green_bomb_explode(
+    mut commands: Commands,
+    time: Res<Time>,
+    anim_bank: Res<crate::enemy::anim_bank::AnimBank>,
+    mut query: Query<(Entity, &Transform, &mut OctopusGreenBomb)>,
+) {
+    for (entity, transform, mut bomb) in &mut query {
+        bomb.lifetime.tick(time.delta());
+        if !bomb.lifetime.is_finished() {
+            continue;
+        }
+        spawn_aoe_animated(
+            &mut commands,
+            &anim_bank,
+            transform.translation,
+            Shape::Circle(OCTOPUS_GREEN_BOMB_AOE_RADIUS),
+            OCTOPUS_GREEN_BOMB_AOE_LIFETIME,
+            "octopus_green_explosion",
+            OCTOPUS_GREEN_BOMB_AOE_SPRITE_SIZE,
+        );
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_despawn();
         }
     }
 }

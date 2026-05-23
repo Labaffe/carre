@@ -31,10 +31,10 @@ use crate::enemy::kamikaze::{
 };
 use crate::enemy::mine::{blink_red_system, mine_countdown_audio, mine_explode_system, MineBuilder};
 use crate::enemy::octopus::{
-    octopus_become_alive, octopus_die_sound, octopus_fire_shots, octopus_green_fire_shots,
-    octopus_green_setup_curve, octopus_green_swoop_end, octopus_green_swoop_tint,
-    octopus_pre_swoop_tick, octopus_setup_curve, octopus_telegraph_tick, OctopusBuilder,
-    OctopusGreenBuilder,
+    octopus_become_alive, octopus_die_sound, octopus_fire_shots, octopus_green_bomb_explode,
+    octopus_green_fire_shots, octopus_green_setup_curve, octopus_green_swoop_end,
+    octopus_green_swoop_tint, octopus_green_throw_bombs, octopus_pre_swoop_tick,
+    octopus_setup_curve, octopus_telegraph_tick, OctopusBuilder, OctopusGreenBuilder,
 };
 use crate::GameState;
 use crate::menu::pause::not_paused;
@@ -117,6 +117,8 @@ impl Plugin for EnemyPlugin {
                     octopus_green_setup_curve,
                     octopus_green_swoop_end,
                     octopus_green_fire_shots,
+                    octopus_green_throw_bombs,
+                    octopus_green_bomb_explode,
                 )
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),

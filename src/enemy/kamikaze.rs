@@ -299,7 +299,10 @@ pub fn kamikaze_force_boom_system(
     for (entity, health) in &kamikaze_hp_q {
         if health.is_dead() {
             if let Ok(mut e) = commands.get_entity(entity) {
-                e.insert(KamikazeBoom);
+                // `try_insert` : safe si l'entité est despawn entre `get_entity`
+                // et le flush (ex: tuée la même frame par une bombe joueur,
+                // qui despawn directement les kamikazes via `bomb_apply_damage`).
+                e.try_insert(KamikazeBoom);
             }
         }
     }
@@ -310,7 +313,7 @@ pub fn kamikaze_force_boom_system(
         // Filtre : c'est un kamikaze (pas un autre Enemy) qui n'a pas déjà KamikazeBoom
         if !kamikaze_marker_q.contains(kam_e) { continue; }
         if let Ok(mut e) = commands.get_entity(kam_e) {
-            e.insert(KamikazeBoom);
+            e.try_insert(KamikazeBoom);
         }
     }
 }
