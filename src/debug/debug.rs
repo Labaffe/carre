@@ -23,7 +23,7 @@ use crate::movement::movement_zone::MovementZone;
 use crate::physic::area_of_effect::AreaOfEffect;
 use crate::physic::collider::{layers, CollisionLayer, Hitbox};
 use crate::physic::health::Health;
-use crate::physic::invulnerable::Invulnerable;
+use crate::physic::invulnerable::DebugInvulnerable;
 use crate::physic::player_detection::PlayerDetection;
 use crate::player::player::Player;
 use crate::ui::score::Score;
@@ -198,21 +198,22 @@ fn toggle_debug(
     }
 }
 
-/// Insère/retire `Invulnerable` sur le joueur selon l'état de `DebugMode`.
-/// Le filtre passe via le pipeline `apply_damage` standard — pas de check
-/// dédié dans les systèmes de collision.
+/// Insère/retire `DebugInvulnerable` sur le joueur selon l'état de
+/// `DebugMode`. Marker distinct de `Invulnerable` pour ne PAS écraser un
+/// `Invulnerable` posé par d'autres systèmes (shield, dash, etc.).
+/// `apply_damage` filtre sur les deux markers.
 pub fn debug_player_invulnerability(
     mut commands: Commands,
     debug: Res<DebugMode>,
-    player_q: Query<(Entity, Option<&Invulnerable>), With<Player>>,
+    player_q: Query<(Entity, Option<&DebugInvulnerable>), With<Player>>,
 ) {
-    let Ok((player_e, has_invuln)) = player_q.single() else { return };
-    match (debug.0, has_invuln) {
+    let Ok((player_e, has_marker)) = player_q.single() else { return };
+    match (debug.0, has_marker) {
         (true, None) => {
-            commands.entity(player_e).insert(Invulnerable);
+            commands.entity(player_e).insert(DebugInvulnerable);
         }
         (false, Some(_)) => {
-            commands.entity(player_e).remove::<Invulnerable>();
+            commands.entity(player_e).remove::<DebugInvulnerable>();
         }
         _ => {}
     }

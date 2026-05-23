@@ -19,7 +19,7 @@
 use bevy::prelude::*;
 
 use crate::physic::collider::CollisionLayer;
-use crate::physic::invulnerable::Invulnerable;
+use crate::physic::invulnerable::{DebugInvulnerable, Invulnerable};
 use crate::player::player::Invincible;
 
 /// Points de vie d'une entité. Fraîchement spawnée, `current == max`.
@@ -92,14 +92,17 @@ pub fn apply_damage(
         &mut Health,
         &CollisionLayer,
         Option<&Invulnerable>,
+        Option<&DebugInvulnerable>,
         Option<&Invincible>,
     )>,
 ) {
     for ev in damage_events.read() {
-        let Ok((mut health, layer, invulnerable, invincible)) = q.get_mut(ev.target) else {
+        let Ok((mut health, layer, invulnerable, debug_invulnerable, invincible)) =
+            q.get_mut(ev.target)
+        else {
             continue;
         };
-        if invulnerable.is_some() || invincible.is_some() {
+        if invulnerable.is_some() || debug_invulnerable.is_some() || invincible.is_some() {
             continue;
         }
         let before = health.current;

@@ -4,6 +4,22 @@
 //! pilotée par le deckbuilding (cartes qui modifient vitesse, arme, etc.).
 //! L'ancien système de phases temporelles (Phase1/2/3 via timer + boss music)
 //! a été retiré.
+//!
+//! ## Abstraction pour le deckbuilding
+//!
+//! **Arme (clic gauche)** : le système `shoot` lit `weapon.def` sur l'entité
+//! joueur. Pour swap d'arme : muter `weapon.def` (ou réinsérer un nouveau
+//! `Weapon`). Pas d'abstraction supplémentaire nécessaire — l'arme courante
+//! est déjà data-driven via `WeaponDef`.
+//!
+//! **Pouvoir (barre Espace)** : pattern **marker-par-pouvoir**. L'entité
+//! joueur porte un marker de pouvoir (ex: `DashPower`). Chaque système
+//! d'input de pouvoir filtre par son marker dédié. Pour swap de pouvoir :
+//! retirer le marker actuel, insérer le nouveau (côté deckbuilding).
+//! Seul le pouvoir équipé répond à l'input Espace.
+//!
+//! Ajouter un nouveau pouvoir = définir son marker + son système d'input
+//! filtré + son UI éventuelle, sans toucher aux pouvoirs existants.
 
 use crate::audio::{Sfx, SfxPlayer};
 use crate::game_manager::difficulty::BoomEvent;
@@ -35,7 +51,8 @@ const PLAYER_MARGIN: f32 = 64.0;
 /// Taille du sprite du joueur (carré, px).
 const PLAYER_SPRITE_SIZE: f32 = 128.0;
 /// Rayon de la hitbox du joueur (px). ~70% de la demi-taille du sprite.
-const PLAYER_HITBOX_RADIUS: f32 = 45.0;
+/// `pub` car le shield s'en sert pour restaurer la hitbox normale après usage.
+pub const PLAYER_HITBOX_RADIUS: f32 = 45.0;
 /// Durée du flash blanc autour du joueur lors d'un boom.
 const BOOM_FLASH_DURATION: f32 = 0.25;
 /// Distance maximale d'un dash (px). Si le réticule est plus loin, le dash
@@ -83,6 +100,13 @@ pub struct Dashing {
     pub target: Vec2,
     pub elapsed: f32,
 }
+
+/// Marker "pouvoir Espace = Dash". `dash_input` ne s'exécute que si le
+/// joueur porte ce marker. Pour le swap de pouvoir via deckbuilding :
+/// retirer `DashPower` et insérer un autre marker (ex: `ShieldPower`),
+/// qui aura son propre système d'input filtré par lui.
+#[derive(Component, Default)]
+pub struct DashPower;
 
 /// Ressource globale qui suit le cooldown du dash. Timer Once. Quand
 /// `is_finished()` → dash dispo. `reset()` au déclenchement → timer ré-tick
@@ -180,6 +204,10 @@ pub fn spawn_player(
         Player,
         Health::new(PLAYER_MAX_LIVES),
         Weapon::default(),
+        // Pouvoir Espace équipé par défaut. Le deckbuilding peut swap ce
+        // marker pour un autre (cf. doc en tête de module). Alternatives
+        // dispo : `DashPower` (cf. player.rs), `ShieldPower` (cf. shield.rs).
+        crate::player::shield::ShieldPower,
         collider(
             Shape::Circle(PLAYER_HITBOX_RADIUS),
             layers::PLAYER,
@@ -372,7 +400,13 @@ fn dash_input(
     mut cooldown: ResMut<DashCooldown>,
     mut sfx: SfxPlayer,
     crosshair_q: Query<&Transform, (With<Crosshair>, Without<Player>)>,
-    player_q: Query<(Entity, &Transform), (With<Player>, Without<Dashing>, Without<Crosshair>)>,
+    // `With<DashPower>` : ce système ne s'active que si Dash est le pouvoir
+    // équipé du joueur. Si le deckbuilding swap pour un autre marker, ce
+    // système ne fait rien et l'autre pouvoir prend la main sur Espace.
+    player_q: Query<
+        (Entity, &Transform),
+        (With<Player>, With<DashPower>, Without<Dashing>, Without<Crosshair>),
+    >,
 ) {
     if !keyboard.just_pressed(KeyCode::Space) {
         return;
@@ -459,9 +493,10 @@ fn setup_dash_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             DashUI,
         ))
         .with_children(|parent| {
-            // Label "ESPACE"
+            // Label = nom du pouvoir (le key Espace est implicite — c'est
+            // la seule touche de pouvoir).
             parent.spawn((
-                Text::new("ESPACE"),
+                Text::new("DASH"),
                 TextFont {
                     font,
                     font_size: 16.0,
@@ -497,12 +532,27 @@ fn setup_dash_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 /// Met à jour le label (couleur) et la barre (largeur + couleur) selon
 /// l'état du cooldown. Dispo = jaune vif, en cooldown = gris + barre cyan
-/// qui se remplit.
+/// qui se remplit. Toggle la visibilité du panneau entier selon que le
+/// joueur a `DashPower` équipé ou non.
 fn update_dash_ui(
     cooldown: Res<DashCooldown>,
+    power_q: Query<(), (With<Player>, With<DashPower>)>,
+    mut ui_q: Query<&mut Visibility, With<DashUI>>,
     mut text_q: Query<&mut TextColor, With<DashUIText>>,
     mut bar_q: Query<(&mut Node, &mut BackgroundColor), With<DashUIBar>>,
 ) {
+    let equipped = !power_q.is_empty();
+    if let Ok(mut vis) = ui_q.single_mut() {
+        *vis = if equipped {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+    }
+    if !equipped {
+        return;
+    }
+
     let ready = cooldown.timer.is_finished();
     let fraction = cooldown.timer.fraction(); // 0 (vient de claquer) → 1 (dispo)
 
