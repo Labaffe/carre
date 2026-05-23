@@ -66,10 +66,11 @@ fn shoot(
         return;
     };
 
+    let def = weapon.0.def();
     // Adapter la cadence de tir à l'arme actuelle
     fire_timer
         .0
-        .set_duration(std::time::Duration::from_secs_f32(weapon.def.fire_rate));
+        .set_duration(std::time::Duration::from_secs_f32(def.fire_rate));
     fire_timer.0.tick(time.delta());
     if !fire_timer.0.just_finished() {
         return;
@@ -83,7 +84,7 @@ fn shoot(
         return;
     }
 
-    let def = &weapon.def;
+    // `def` réutilisé d'au-dessus (déjà obtenu via weapon.0.def()).
     let origin = Vec3::new(player_pos.x, player_pos.y, 0.6); // au-dessus du mothership (0.4)
 
     // Spawn un projectile par angle dans le pattern

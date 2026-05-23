@@ -97,6 +97,7 @@ fn main() {
         // Joueur & armes
         .add_plugins((
             PlayerPlugin,
+            player::power::PowerPlugin,
             player::shield::ShieldPlugin,
             PlayerFirePlugin,
             WeaponPlugin,

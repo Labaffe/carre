@@ -30,6 +30,7 @@ use crate::menu::pause::not_paused;
 use crate::physic::collider::{collider, layers};
 use crate::physic::health::Health;
 use crate::physic::invulnerable::Invulnerable;
+use crate::player::power::{EquippedPower, PowerCooldowns, PowerKind};
 use crate::ui::crosshair::Crosshair;
 use crate::weapon::weapon::Weapon;
 use bevy::prelude::*;
@@ -60,13 +61,8 @@ const BOOM_FLASH_DURATION: f32 = 0.25;
 const DASH_MAX_DISTANCE: f32 = 350.0;
 /// Durée d'un dash (s). Très court — l'effet "blink" qui rend invulnérable
 /// (via insert/remove de `Invulnerable` sur la même fenêtre).
+/// Cooldown : `PowerKind::Dash.cooldown_seconds()` dans `power.rs`.
 const DASH_DURATION: f32 = 0.14;
-/// Cooldown du dash (s). Long pour forcer le joueur à choisir son moment.
-const DASH_COOLDOWN: f32 = 5.0;
-/// Largeur de la barre de cooldown en UI (px).
-const DASH_UI_BAR_WIDTH: f32 = 120.0;
-/// Hauteur de la barre de cooldown en UI (px).
-const DASH_UI_BAR_HEIGHT: f32 = 8.0;
 
 // ─── Composants ────────────────────────────────────────────────────
 
@@ -101,72 +97,32 @@ pub struct Dashing {
     pub elapsed: f32,
 }
 
-/// Marker "pouvoir Espace = Dash". `dash_input` ne s'exécute que si le
-/// joueur porte ce marker. Pour le swap de pouvoir via deckbuilding :
-/// retirer `DashPower` et insérer un autre marker (ex: `ShieldPower`),
-/// qui aura son propre système d'input filtré par lui.
-#[derive(Component, Default)]
-pub struct DashPower;
-
-/// Ressource globale qui suit le cooldown du dash. Timer Once. Quand
-/// `is_finished()` → dash dispo. `reset()` au déclenchement → timer ré-tick
-/// pendant `DASH_COOLDOWN` secondes avant que le dash soit re-dispo.
-#[derive(Resource)]
-pub struct DashCooldown {
-    pub timer: Timer,
-}
-
-impl Default for DashCooldown {
-    fn default() -> Self {
-        // État initial = prêt : on tick immédiatement le timer à sa durée
-        // complète pour que `is_finished()` soit true au spawn.
-        let mut timer = Timer::from_seconds(DASH_COOLDOWN, TimerMode::Once);
-        timer.tick(std::time::Duration::from_secs_f32(DASH_COOLDOWN));
-        Self { timer }
-    }
-}
-
-/// Marqueurs UI pour la jauge de dash.
-#[derive(Component)]
-struct DashUI;
-#[derive(Component)]
-struct DashUIText;
-#[derive(Component)]
-struct DashUIBar;
-
 // ─── Plugin ────────────────────────────────────────────────────────
 
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<DashCooldown>()
-            .add_systems(
-                OnEnter(GameState::Playing),
-                (setup_player, setup_lives_ui, setup_dash_ui, reset_dash_cooldown)
-                    .after(LevelSetupSet),
+        app.add_systems(
+            OnEnter(GameState::Playing),
+            (setup_player, setup_lives_ui).after(LevelSetupSet),
+        )
+        .add_systems(OnExit(GameState::Playing), cleanup_lives_ui)
+        .add_systems(
+            Update,
+            (
+                movement,
+                rotate_towards_crosshair,
+                boom_flash_trigger,
+                boom_flash_update,
+                update_invincibility,
+                update_lives_ui,
+                dash_input,
+                update_dash,
             )
-            .add_systems(
-                OnExit(GameState::Playing),
-                (cleanup_lives_ui, cleanup_dash_ui),
-            )
-            .add_systems(
-                Update,
-                (
-                    movement,
-                    rotate_towards_crosshair,
-                    boom_flash_trigger,
-                    boom_flash_update,
-                    update_invincibility,
-                    update_lives_ui,
-                    dash_input,
-                    update_dash,
-                    dash_cooldown_tick,
-                    update_dash_ui,
-                )
-                    .run_if(in_state(GameState::Playing))
-                    .run_if(not_paused),
-            );
+                .run_if(in_state(GameState::Playing))
+                .run_if(not_paused),
+        );
     }
 }
 
@@ -204,10 +160,9 @@ pub fn spawn_player(
         Player,
         Health::new(PLAYER_MAX_LIVES),
         Weapon::default(),
-        // Pouvoir Espace équipé par défaut. Le deckbuilding peut swap ce
-        // marker pour un autre (cf. doc en tête de module). Alternatives
-        // dispo : `DashPower` (cf. player.rs), `ShieldPower` (cf. shield.rs).
-        crate::player::shield::ShieldPower,
+        // Pouvoir Espace équipé. Single source of truth via enum. Swap
+        // depuis le deckbuilding = mutation directe de `equipped.0`.
+        EquippedPower(PowerKind::Shield),
         collider(
             Shape::Circle(PLAYER_HITBOX_RADIUS),
             layers::PLAYER,
@@ -379,17 +334,12 @@ fn cleanup_lives_ui(mut commands: Commands, query: Query<Entity, With<LivesUI>>)
     }
 }
 
-// ─── Dash : input, motion, cooldown ─────────────────────────────────
-
-/// Reset du cooldown à chaque entrée en Playing (sinon le timer hérité d'une
-/// partie précédente reste en cours).
-fn reset_dash_cooldown(mut cooldown: ResMut<DashCooldown>) {
-    *cooldown = DashCooldown::default();
-}
+// ─── Dash : input, motion ───────────────────────────────────────────
 
 /// Déclenche un dash si :
 /// - Espace pressé
-/// - cooldown prêt
+/// - `EquippedPower` du joueur == `PowerKind::Dash`
+/// - cooldown prêt via `PowerCooldowns`
 /// - aucun dash déjà en cours (Without<Dashing> dans la query)
 ///
 /// La cible = position du réticule au moment du clic, plafonnée à
@@ -397,24 +347,24 @@ fn reset_dash_cooldown(mut cooldown: ResMut<DashCooldown>) {
 fn dash_input(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut cooldown: ResMut<DashCooldown>,
+    mut cooldowns: ResMut<PowerCooldowns>,
     mut sfx: SfxPlayer,
     crosshair_q: Query<&Transform, (With<Crosshair>, Without<Player>)>,
-    // `With<DashPower>` : ce système ne s'active que si Dash est le pouvoir
-    // équipé du joueur. Si le deckbuilding swap pour un autre marker, ce
-    // système ne fait rien et l'autre pouvoir prend la main sur Espace.
     player_q: Query<
-        (Entity, &Transform),
-        (With<Player>, With<DashPower>, Without<Dashing>, Without<Crosshair>),
+        (Entity, &Transform, &EquippedPower),
+        (With<Player>, Without<Dashing>, Without<Crosshair>),
     >,
 ) {
     if !keyboard.just_pressed(KeyCode::Space) {
         return;
     }
-    if !cooldown.timer.is_finished() {
+    let Ok((player_e, player_tf, equipped)) = player_q.single() else { return };
+    if equipped.0 != PowerKind::Dash {
         return;
     }
-    let Ok((player_e, player_tf)) = player_q.single() else { return };
+    if !cooldowns.is_ready(PowerKind::Dash) {
+        return;
+    }
     let Ok(crosshair_tf) = crosshair_q.single() else { return };
 
     let start = player_tf.translation.truncate();
@@ -438,7 +388,7 @@ fn dash_input(
         },
         Invulnerable,
     ));
-    cooldown.timer.reset();
+    cooldowns.trigger(PowerKind::Dash);
     sfx.play(Sfx::PlayerDash);
 }
 
@@ -467,116 +417,6 @@ fn update_dash(
     }
 }
 
-/// Tick le timer de cooldown chaque frame. Une fois finished, le dash est
-/// dispo (`dash_input` autorise un nouveau déclenchement).
-fn dash_cooldown_tick(time: Res<Time>, mut cooldown: ResMut<DashCooldown>) {
-    cooldown.timer.tick(time.delta());
-}
-
-// ─── Dash UI : label "ESPACE" + jauge ───────────────────────────────
-
-fn setup_dash_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
-    commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                bottom: Val::Px(20.0),
-                left: Val::Percent(50.0),
-                // margin négatif pour centrer (~ demi-largeur du bloc).
-                margin: UiRect::left(Val::Px(-DASH_UI_BAR_WIDTH / 2.0)),
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                row_gap: Val::Px(4.0),
-                ..default()
-            },
-            DashUI,
-        ))
-        .with_children(|parent| {
-            // Label = nom du pouvoir (le key Espace est implicite — c'est
-            // la seule touche de pouvoir).
-            parent.spawn((
-                Text::new("DASH"),
-                TextFont {
-                    font,
-                    font_size: 16.0,
-                    ..default()
-                },
-                TextColor(Color::WHITE),
-                DashUIText,
-            ));
-            // Track de la barre (fond sombre)
-            parent
-                .spawn((
-                    Node {
-                        width: Val::Px(DASH_UI_BAR_WIDTH),
-                        height: Val::Px(DASH_UI_BAR_HEIGHT),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(0.15, 0.15, 0.15, 0.8)),
-                ))
-                .with_children(|track| {
-                    // Fill (largeur animée par update_dash_ui)
-                    track.spawn((
-                        Node {
-                            width: Val::Percent(100.0),
-                            height: Val::Percent(100.0),
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgba(1.0, 0.85, 0.0, 1.0)),
-                        DashUIBar,
-                    ));
-                });
-        });
-}
-
-/// Met à jour le label (couleur) et la barre (largeur + couleur) selon
-/// l'état du cooldown. Dispo = jaune vif, en cooldown = gris + barre cyan
-/// qui se remplit. Toggle la visibilité du panneau entier selon que le
-/// joueur a `DashPower` équipé ou non.
-fn update_dash_ui(
-    cooldown: Res<DashCooldown>,
-    power_q: Query<(), (With<Player>, With<DashPower>)>,
-    mut ui_q: Query<&mut Visibility, With<DashUI>>,
-    mut text_q: Query<&mut TextColor, With<DashUIText>>,
-    mut bar_q: Query<(&mut Node, &mut BackgroundColor), With<DashUIBar>>,
-) {
-    let equipped = !power_q.is_empty();
-    if let Ok(mut vis) = ui_q.single_mut() {
-        *vis = if equipped {
-            Visibility::Inherited
-        } else {
-            Visibility::Hidden
-        };
-    }
-    if !equipped {
-        return;
-    }
-
-    let ready = cooldown.timer.is_finished();
-    let fraction = cooldown.timer.fraction(); // 0 (vient de claquer) → 1 (dispo)
-
-    if let Ok(mut color) = text_q.single_mut() {
-        color.0 = if ready {
-            Color::srgba(1.0, 0.85, 0.0, 1.0) // jaune vif
-        } else {
-            Color::srgba(0.45, 0.45, 0.45, 1.0) // gris
-        };
-    }
-    if let Ok((mut node, mut bg)) = bar_q.single_mut() {
-        node.width = Val::Percent(fraction * 100.0);
-        bg.0 = if ready {
-            Color::srgba(1.0, 0.85, 0.0, 1.0) // jaune (plein)
-        } else {
-            Color::srgba(0.3, 0.7, 1.0, 1.0) // cyan (en charge)
-        };
-    }
-}
-
-fn cleanup_dash_ui(mut commands: Commands, query: Query<Entity, With<DashUI>>) {
-    for entity in query.iter() {
-        if let Ok(mut e) = commands.get_entity(entity) {
-            e.try_despawn();
-        }
-    }
-}
+// Cooldown ticking + UI sont gérés centralement par `PowerPlugin`
+// (cf. `src/player/power.rs`). Le dash n'a plus besoin de ses propres
+// systèmes pour ça.

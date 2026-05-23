@@ -54,7 +54,9 @@ fn setup_weapon_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     // Sprite initial = arme par défaut du joueur ; `update_weapon_ui`
     // remplacera si le joueur démarre avec autre chose.
-    let initial_image = asset_server.load(RED_PROJECTILE.texture_path);
+    // Image initiale = arme par défaut (cf. `Weapon::default`).
+    let default_kind = Weapon::default().0;
+    let initial_image = asset_server.load(default_kind.texture_path());
 
     commands
         .spawn((
@@ -96,7 +98,7 @@ fn setup_weapon_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 });
             // Nom de l'arme à droite de la case
             parent.spawn((
-                Text::new(RED_PROJECTILE.name),
+                Text::new(default_kind.name()),
                 TextFont {
                     font,
                     font_size: 14.0,
@@ -120,10 +122,10 @@ fn update_weapon_ui(
 
     if let Ok(mut icon) = icon_q.single_mut() {
         // `asset_server.load` est idempotent : même path → même handle (cache).
-        icon.image = asset_server.load(weapon.def.texture_path);
+        icon.image = asset_server.load(weapon.0.texture_path());
     }
     if let Ok(mut text) = text_q.single_mut() {
-        let new_name = weapon.def.name;
+        let new_name = weapon.0.name();
         if **text != new_name {
             **text = new_name.to_string();
         }
@@ -211,19 +213,56 @@ pub const BLUE_PROJECTILE: WeaponDef = WeaponDef {
     death_folder: None,
 };
 
+// ─── WeaponKind enum (palette swappable) ──────────────────────────
+
+/// Enum centralisant toutes les armes disponibles. Le composant `Weapon`
+/// porte une variante de cet enum sur le joueur ; le swap se fait par
+/// `weapon.0 = WeaponKind::X;` (atomique).
+///
+/// Ajouter une arme : nouvelle variante + nouveau bras dans `def()` (le
+/// compilateur force l'exhaustivité — pas de chemin oublié).
+#[derive(Component, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum WeaponKind {
+    StandardMissile,
+    RedProjectile,
+    BlueProjectile,
+}
+
+impl WeaponKind {
+    /// Liste exhaustive (pour énumération côté deckbuilding/menu).
+    pub const ALL: &'static [WeaponKind] = &[
+        Self::StandardMissile,
+        Self::RedProjectile,
+        Self::BlueProjectile,
+    ];
+
+    /// Renvoie la `WeaponDef` (stats complètes) de cette arme.
+    pub fn def(&self) -> WeaponDef {
+        match self {
+            Self::StandardMissile => STANDARD_MISSILE,
+            Self::RedProjectile => RED_PROJECTILE,
+            Self::BlueProjectile => BLUE_PROJECTILE,
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        self.def().name
+    }
+
+    pub fn texture_path(&self) -> &'static str {
+        self.def().texture_path
+    }
+}
+
 // ─── Composant ───────────────────────────────────────────────────────
 
-/// Composant attaché au joueur qui indique son arme actuelle. `def` peut
-/// être swappé à la volée (ex: via le deckbuilding).
-#[derive(Component, Clone)]
-pub struct Weapon {
-    pub def: WeaponDef,
-}
+/// Composant attaché au joueur qui indique son arme actuelle.
+/// Pour swap depuis le deckbuilding : `weapon.0 = WeaponKind::X;`.
+#[derive(Component, Clone, Copy)]
+pub struct Weapon(pub WeaponKind);
 
 impl Default for Weapon {
     fn default() -> Self {
-        Self {
-            def: RED_PROJECTILE,
-        }
+        Self(WeaponKind::RedProjectile)
     }
 }
