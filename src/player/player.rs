@@ -324,12 +324,13 @@ fn update_invincibility(
 
 // ─── UI des vies ──────────────────────────────────────────────────
 
-fn setup_lives_ui(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    config: Res<LevelConfig>,
-) {
-    let texture = asset_server.load(config.player_ship);
+/// Couleur appliquée aux icônes "vides" (vie perdue, armure non acquise,
+/// 0 bombe) — gris foncé semi-transparent qui contraste bien avec le
+/// blanc plein des icônes actives. Partagée avec l'UI bombes (`item.rs`).
+pub const HUD_INACTIVE_COLOR: Color = Color::srgba(0.25, 0.25, 0.25, 0.45);
+
+fn setup_lives_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let texture = asset_server.load("images/health.png");
 
     commands
         .spawn((
@@ -357,17 +358,21 @@ fn setup_lives_ui(
         });
 }
 
+/// Au lieu de cacher les icônes perdues (`Visibility::Hidden`), on garde la
+/// rangée de `PLAYER_MAX_LIVES` icônes toujours visible et on grise celles
+/// au-delà du `Health.current`. Donne un feedback visuel "j'ai perdu une vie"
+/// au lieu d'un "il manque un slot".
 fn update_lives_ui(
     player_q: Query<&Health, With<Player>>,
-    mut icons: Query<(&LifeIcon, &mut Visibility)>,
+    mut icons: Query<(&LifeIcon, &mut ImageNode)>,
 ) {
     let current_lives = player_q.single().map(|h| h.current).unwrap_or(0);
-    for (icon, mut vis) in icons.iter_mut() {
-        if icon.0 < current_lives {
-            *vis = Visibility::Visible;
+    for (icon, mut img) in icons.iter_mut() {
+        img.color = if icon.0 < current_lives {
+            Color::WHITE
         } else {
-            *vis = Visibility::Hidden;
-        }
+            HUD_INACTIVE_COLOR
+        };
     }
 }
 
@@ -376,9 +381,10 @@ fn update_lives_ui(
 
 // ─── UI de l'armure ────────────────────────────────────────────────
 
-/// Spawn la rangée d'icônes d'armure à droite des vies. Toutes les icônes
-/// sont créées cachées ; `update_armor_ui` les rend visibles selon le
-/// nombre actuel d'armure.
+/// Spawn la rangée d'icônes d'armure SOUS les vies. Contrairement aux vies
+/// (où le slot perdu est grisé pour montrer "j'avais 3, j'ai perdu 1"),
+/// l'armure n'affiche QUE les icônes possédées : 0 armure = rien, 3 armures
+/// = 3 icônes. Les slots sont créés cachés et révélés par `update_armor_ui`.
 fn setup_armor_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     let texture = asset_server.load("images/armor.png");
 
@@ -386,10 +392,10 @@ fn setup_armor_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
-                top: Val::Px(20.0),
-                // Après les 3 vies (3 × 64 + 2 × 12 gap = 216) + 24 de marge.
-                left: Val::Px(260.0),
-                column_gap: Val::Px(8.0),
+                // 20 (top vies) + 64 (icône) + 12 (gap vertical) = 96
+                top: Val::Px(96.0),
+                left: Val::Px(20.0),
+                column_gap: Val::Px(12.0),
                 ..default()
             },
             ArmorUI,
@@ -399,8 +405,8 @@ fn setup_armor_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 parent.spawn((
                     ImageNode::new(texture.clone()),
                     Node {
-                        width: Val::Px(48.0),
-                        height: Val::Px(48.0),
+                        width: Val::Px(40.0),
+                        height: Val::Px(40.0),
                         ..default()
                     },
                     Visibility::Hidden,
@@ -416,7 +422,11 @@ fn update_armor_ui(
 ) {
     let current = armor.current;
     for (icon, mut vis) in icons.iter_mut() {
-        *vis = if icon.0 < current { Visibility::Visible } else { Visibility::Hidden };
+        *vis = if icon.0 < current {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
     }
 }
 

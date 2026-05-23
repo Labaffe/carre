@@ -64,8 +64,9 @@ fn setup_weapon_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
-                // Sous le bloc bombes (top:92 + ~85px de bombes/hint).
-                top: Val::Px(190.0),
+                // Sous le bloc bombes (vies 20, armure 96, bombes 148 → 212
+                // + ~12 de gap = ligne d'arme à 224).
+                top: Val::Px(224.0),
                 left: Val::Px(20.0),
                 flex_direction: FlexDirection::Row,
                 align_items: AlignItems::Center,
