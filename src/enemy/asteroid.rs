@@ -172,26 +172,25 @@ impl EnemyBuilder for AsteroidBuilder {
     }
 }
 
-/// Sur réception d'un `EnemyDeathEvent`, si l'entité morte est un astéroïde
-/// (a `AsteroidDeathFx`), spawn une explosion à sa position. Utilise
-/// `spawn_explosion` qui cherche `images/asteroids/death_x{NNN}/`, fallback
-/// sur l'explosion générique si le dossier custom n'existe pas.
+/// Observer : à chaque `EnemyDeathEvent` trigger, si l'entité morte est un
+/// astéroïde (a `AsteroidDeathFx`), spawn une explosion à sa position.
+/// Utilise `spawn_explosion` qui cherche `images/asteroids/death_x{NNN}/`,
+/// fallback sur l'explosion générique si le dossier custom n'existe pas.
 pub fn asteroid_death_fx_system(
+    trigger: On<crate::enemy::enemy::EnemyDeathEvent>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut events: bevy::ecs::message::MessageReader<crate::enemy::enemy::EnemyDeathEvent>,
     asteroid_q: Query<(&Transform, &AsteroidDeathFx)>,
 ) {
-    for event in events.read() {
-        let Ok((tf, fx)) = asteroid_q.get(event.entity) else { continue };
-        crate::fx::explosion::spawn_explosion(
-            &mut commands,
-            &asset_server,
-            tf.translation,
-            fx.size,
-            fx.texture_index,
-            fx.velocity,
-            tf.rotation,
-        );
-    }
+    let ev = trigger.event();
+    let Ok((tf, fx)) = asteroid_q.get(ev.entity) else { return };
+    crate::fx::explosion::spawn_explosion(
+        &mut commands,
+        &asset_server,
+        tf.translation,
+        fx.size,
+        fx.texture_index,
+        fx.velocity,
+        tf.rotation,
+    );
 }

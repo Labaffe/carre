@@ -71,9 +71,10 @@ impl Enemy {
 pub struct EnemyDeathAnchor(pub Vec3);
 
 /// Événement émis quand un ennemi atteint PV=0 pour la première fois.
-/// Permet aux systèmes spécifiques (drop d'items, etc.) de réagir sans
-/// être couplés au moteur de phases.
-#[derive(Message)]
+/// Trigger via `commands.trigger(EnemyDeathEvent { ... })` dans
+/// `detect_death`. Consommé par des **observers globaux** (cf.
+/// `add_observer` dans `EnemyPlugin`) — mêmes conventions que `HitEvent`.
+#[derive(Event)]
 pub struct EnemyDeathEvent {
     pub entity: Entity,
     pub position: Vec3,

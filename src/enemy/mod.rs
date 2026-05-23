@@ -21,7 +21,6 @@ use crate::enemy::asteroid::{asteroid_death_fx_system, AsteroidBuilder};
 use crate::enemy::boss::{boss_hp_threshold_check, BossBuilder};
 use crate::enemy::death::despawn;
 use crate::enemy::death::detect_death;
-use crate::enemy::enemy::EnemyDeathEvent;
 use crate::enemy::enemy::{
     enemy_hit_sound_on_hit, hit_flash_on_hit, projectile_damage_on_overlap, score_on_enemy_hit,
 };
@@ -50,8 +49,9 @@ pub struct EnemyPlugin;
 
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
-        app.add_message::<EnemyDeathEvent>()
-            .insert_resource(
+        // `EnemyDeathEvent` est un `Event` (trigger-based, pas un Message) →
+        // pas de `add_message`. Consommé par `add_observer` plus bas.
+        app.insert_resource(
                 EnemyRegister::new()
                 .with(GreenUFOBuilder::new())
                 .with(BossBuilder::new())
@@ -96,7 +96,8 @@ impl Plugin for EnemyPlugin {
                     // kamikaze au spawn (cascade despawn auto).
                     kamikaze_laugh_start_system,
                     kamikaze_speed_ramp_system,
-                    asteroid_death_fx_system,
+                    // `asteroid_death_fx_system` est maintenant un observer
+                    // (cf. `add_observer` plus bas) sur `EnemyDeathEvent`.
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing))
@@ -106,6 +107,8 @@ impl Plugin for EnemyPlugin {
             .add_observer(hit_flash_on_hit)
             .add_observer(enemy_hit_sound_on_hit)
             .add_observer(score_on_enemy_hit)
+            // Observer global sur `EnemyDeathEvent` (trigger par `detect_death`).
+            .add_observer(asteroid_death_fx_system)
             // Systèmes Octopus dans leur propre tuple : la limite de `.chain()`
             // (15 systèmes) est atteinte sur le bloc enemy générique au-dessus.
             // Ces systèmes sont tous des réactifs sur `Added<…>` indépendants

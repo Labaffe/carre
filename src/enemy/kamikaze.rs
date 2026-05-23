@@ -36,7 +36,7 @@ use crate::enemy::enemy::Enemy;
 use crate::enemy::enemy_builder::EnemyBuilder;
 use crate::game_manager::difficulty::{Difficulty, SpawnPosition};
 use crate::geometry::shape::Shape;
-use crate::item::item::{DropEvent, DropTable, ItemType};
+use crate::item::item::{DropTable, ItemType};
 use crate::movement::chase::Chase;
 use crate::movement::despawn_off_screen::DespawnOffScreen;
 use crate::movement::movements::Movements;
@@ -243,22 +243,20 @@ pub fn kamikaze_force_boom_system(
     }
 }
 
-/// Détecte `Added<KamikazeBoom>` : spawn l'AOE animée, écrit le `DropEvent`
-/// pour faire tomber d'éventuels items (`KAMIKAZE_DROP_TABLE`), puis insère
-/// `DespawnSelf` pour despawn proprement en PostUpdate. Le son `Explosion`
-/// est joué par le hook `on_insert` sur `KamikazeBoom`.
+/// Détecte `Added<KamikazeBoom>` : spawn l'AOE animée + insère `DespawnSelf`
+/// pour despawn proprement en PostUpdate. Le son `Explosion` est joué par
+/// le hook `on_insert` sur `KamikazeBoom`.
 ///
-/// **Pourquoi écrire `DropEvent` ici** : sans `BehaviorComponent` ni
-/// `TransitionMessages`, `detect_death` (qui exige ces composants dans son
-/// query) ne se déclenche jamais pour le kamikaze. On émet donc le drop
-/// nous-mêmes au moment du boom.
+/// **Drops** : gérés par `detect_death` (cf. `enemy/death.rs`) via la
+/// `DropTable` du kamikaze. Depuis l'ajout de `#[require(TransitionMessages)]`
+/// sur `Enemy`, `detect_death` fire correctement pour le kamikaze sur HP=0
+/// — pas besoin de dupliquer ici.
 pub fn kamikaze_boom_system(
     mut commands: Commands,
     anim_bank: Res<crate::enemy::anim_bank::AnimBank>,
-    mut drop_events: MessageWriter<DropEvent>,
-    query: Query<(Entity, &Transform, Option<&DropTable>), Added<KamikazeBoom>>,
+    query: Query<(Entity, &Transform), Added<KamikazeBoom>>,
 ) {
-    for (entity, transform, drop_table) in &query {
+    for (entity, transform) in &query {
         spawn_aoe_animated(
             &mut commands,
             &anim_bank,
@@ -268,12 +266,6 @@ pub fn kamikaze_boom_system(
             "kamikaze_explosion",
             KAMIKAZE_AOE_SPRITE_SIZE,
         );
-        if let Some(table) = drop_table {
-            drop_events.write(DropEvent {
-                position: transform.translation,
-                table: table.drops,
-            });
-        }
         // DespawnSelf au lieu de try_despawn direct : évite la race avec les
         // commandes du behavior tree (cf. collision.rs pour les détails).
         if let Ok(mut e) = commands.get_entity(entity) {
