@@ -33,6 +33,8 @@ use crate::physic::invulnerable::Invulnerable;
 use crate::player::power::{EquippedPower, PowerCooldowns, PowerKind};
 use crate::ui::crosshair::Crosshair;
 use crate::weapon::weapon::Weapon;
+use bevy::ecs::lifecycle::HookContext;
+use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
 
 // ─── Constantes ────────────────────────────────────────────────────
@@ -90,11 +92,27 @@ struct BoomFlash(Timer);
 /// `start` et `target` sur `DASH_DURATION`. Tant que ce composant est là :
 /// déplacement, tir et rotation sont bloqués (via `Without<Dashing>` dans
 /// les queries des systèmes correspondants).
+///
+/// Le hook `on_remove` retire `Invulnerable` automatiquement quel que soit
+/// le moment du retrait (timer expiré, despawn cascade, etc.) — pas de
+/// risque d'oubli cleanup.
 #[derive(Component)]
+#[component(on_remove = dashing_on_remove)]
 pub struct Dashing {
     pub start: Vec2,
     pub target: Vec2,
     pub elapsed: f32,
+}
+
+/// Hook : retire `Invulnerable` quand `Dashing` est retiré. Comme un seul
+/// pouvoir est équipé à la fois (cf. `EquippedPower`), `Invulnerable` ne
+/// peut venir que du dash sur le joueur — safe à retirer ici.
+/// `DebugInvulnerable` (F1) est un composant séparé, non affecté.
+fn dashing_on_remove(mut world: DeferredWorld, ctx: HookContext) {
+    world
+        .commands()
+        .entity(ctx.entity)
+        .try_remove::<Invulnerable>();
 }
 
 // ─── Plugin ────────────────────────────────────────────────────────
@@ -393,9 +411,8 @@ fn dash_input(
 }
 
 /// Anime le dash en cours : lerp start → target sur `DASH_DURATION`. À la
-/// fin, retire `Dashing` + `Invulnerable` pour rendre le contrôle au joueur.
-/// Note : si F1 (debug mode) est actif, `debug_player_invulnerability` ré-
-/// insérera `Invulnerable` la frame suivante.
+/// fin, retire `Dashing` — le hook `dashing_on_remove` se charge de retirer
+/// `Invulnerable` au passage.
 fn update_dash(
     mut commands: Commands,
     time: Res<Time>,
@@ -411,7 +428,6 @@ fn update_dash(
         if t >= 1.0 {
             if let Ok(mut e) = commands.get_entity(entity) {
                 e.remove::<Dashing>();
-                e.remove::<Invulnerable>();
             }
         }
     }

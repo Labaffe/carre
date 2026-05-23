@@ -16,6 +16,8 @@
 //! (cf. `power.rs`). Le `ShieldPlugin` ne s'occupe que de l'activation et
 //! des effets visuels propres au shield.
 
+use bevy::ecs::lifecycle::HookContext;
+use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy::sprite_render::{ColorMaterial, MeshMaterial2d};
@@ -49,10 +51,43 @@ const SHIELD_BAR_OFFSET_Y: f32 = 76.0;
 // ─── Composants ────────────────────────────────────────────────────
 
 /// Composant actif pendant un bouclier. Tick par `shield_tick` qui met à
-/// jour la barre + despawn tout à expiration.
+/// jour la barre + retire le composant à expiration. **Tout le cleanup**
+/// (Invulnerable, restauration hitbox, despawn des visuels) est délégué
+/// au hook `on_remove` — peu importe la raison du retrait (timer fini,
+/// despawn joueur, swap manuel), le state revient propre.
 #[derive(Component)]
+#[component(on_remove = shielding_on_remove)]
 pub struct Shielding {
     pub timer: Timer,
+}
+
+/// Hook déclenché quand `Shielding` est retiré de l'entité (timer expiré,
+/// despawn cascade, swap, etc.). Restaure la hitbox normale, retire
+/// `Invulnerable`, et despawn les enfants marqués `ShieldVisual` du joueur.
+fn shielding_on_remove(mut world: DeferredWorld, ctx: HookContext) {
+    let entity = ctx.entity;
+
+    // Restauration directe via mutation (DeferredWorld permet get_mut).
+    if let Some(mut hitbox) = world.get_mut::<Hitbox>(entity) {
+        *hitbox = Hitbox(Shape::Circle(PLAYER_HITBOX_RADIUS));
+    }
+
+    // Snapshot des enfants avant d'invoquer commands (release la borrow).
+    let children: Vec<Entity> = world
+        .get::<Children>(entity)
+        .map(|c| c.iter().collect())
+        .unwrap_or_default();
+    let visual_children: Vec<Entity> = children
+        .into_iter()
+        .filter(|&child| world.get::<ShieldVisual>(child).is_some())
+        .collect();
+
+    // Queue les mutations différées (commands appliquées au prochain sync).
+    let mut commands = world.commands();
+    commands.entity(entity).try_remove::<Invulnerable>();
+    for child in visual_children {
+        commands.entity(child).try_despawn();
+    }
 }
 
 /// Marker sur les entités visuelles du bouclier (cercle + 2 sprites de la
@@ -171,15 +206,14 @@ fn shield_input(
     sfx.play(Sfx::PlayerDash);
 }
 
-/// Tick le `Shielding`, met à jour la largeur du fill de la barre, et à
-/// expiration : retire `Shielding` + `Invulnerable` + restaure la hitbox
-/// normale + despawn tous les visuels (`ShieldVisual`).
+/// Tick le `Shielding`, met à jour la largeur du fill de la barre. À
+/// expiration : `remove::<Shielding>` — le hook `shielding_on_remove`
+/// se charge de tout le cleanup (hitbox, Invulnerable, visuels).
 fn shield_tick(
     mut commands: Commands,
     time: Res<Time>,
     mut player_q: Query<(Entity, &mut Shielding), With<Player>>,
     mut fill_q: Query<&mut Sprite, With<ShieldDurationFill>>,
-    visuals_q: Query<Entity, With<ShieldVisual>>,
 ) {
     let Ok((player_e, mut shielding)) = player_q.single_mut() else { return };
     shielding.timer.tick(time.delta());
@@ -195,13 +229,6 @@ fn shield_tick(
     if shielding.timer.is_finished() {
         if let Ok(mut e) = commands.get_entity(player_e) {
             e.remove::<Shielding>();
-            e.remove::<Invulnerable>();
-            e.insert(Hitbox(Shape::Circle(PLAYER_HITBOX_RADIUS)));
-        }
-        for entity in visuals_q.iter() {
-            if let Ok(mut e) = commands.get_entity(entity) {
-                e.try_despawn();
-            }
         }
     }
 }
