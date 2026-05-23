@@ -26,6 +26,7 @@ use bevy::prelude::*;
 
 
 use crate::audio::{Sfx, SfxPlayer};
+use crate::behavior::choice_list::TransitionMessages;
 use crate::enemy::enemies::EnemyData;
 use crate::enemy::hit_flash::HitFlash;
 use crate::fx::explosion::spawn_projectile_death;
@@ -41,8 +42,14 @@ use crate::weapon::projectile::Projectile;
 /// Composant marker pour tout ennemi. Le nom sert au debug uniquement —
 /// la hitbox passe maintenant par le composant `Hitbox` (collider unifié)
 /// et la taille du sprite par `Sprite.custom_size`.
+///
+/// **`#[require(TransitionMessages)]`** : indispensable pour que
+/// `detect_death` (cf. [`crate::enemy::death`]) fire — son query exige
+/// ce composant. Tous les ennemis (même ceux sans BehaviorComponent
+/// type kamikaze) le portent donc automatiquement ; les ennemis sans BT
+/// l'ignorent simplement (composant inerte).
 #[derive(Component)]
-#[require(crate::GameplayEntity)]
+#[require(crate::GameplayEntity, TransitionMessages = TransitionMessages::new())]
 pub struct Enemy {
     pub name: &'static str,
 }
