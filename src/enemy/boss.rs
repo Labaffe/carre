@@ -136,7 +136,7 @@ const TRANSITION_SHAKE: f32 = 12.0;
 
 // ─── Mort ───────────────────────────────────────────────────────────────
 /// Durée du shake de mort avant DespawnSelf (secondes).
-const DYING_DURATION: f32 = 4.0;
+const DYING_DURATION: f32 = 2.0;
 /// Amplitude max du shake de mort (px, atteinte en fin de phase).
 const DYING_SHAKE_MAX: f32 = 20.0;
 
@@ -379,6 +379,20 @@ impl EnemyBuilder for BossBuilder {
 /// que la phase précédente n'est pas finie, donc même si le boss saute deux
 /// paliers en un seul gros hit, les deux transitionings se déclencheront en
 /// séquence.
+/// Observer : à chaque `EnemyDeathEvent` trigger, si l'entité morte porte
+/// `BossMarker`, déclenche un screen shake épique (synchrone avec la phase
+/// dying du behavior tree qui shake le sprite pendant `DYING_DURATION`).
+pub fn boss_death_screen_shake(
+    trigger: On<crate::enemy::enemy::EnemyDeathEvent>,
+    mut commands: Commands,
+    boss_q: Query<(), With<BossMarker>>,
+) {
+    let ev = trigger.event();
+    if boss_q.get(ev.entity).is_err() { return; }
+    commands.trigger(crate::fx::screen_shake::ScreenShakeEvent::BOSS_DEATH);
+    commands.trigger(crate::fx::time_fx::TimeFxEvent::SLOWMO_BOSS_KILL);
+}
+
 pub fn boss_hp_threshold_check(
     invul_q: Query<(), With<Invulnerable>>,
     mut q: Query<

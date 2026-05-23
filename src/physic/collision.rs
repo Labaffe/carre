@@ -17,6 +17,9 @@ use crate::physic::collider::{layers, OverlapEvent};
 use crate::physic::harmless::Harmless;
 use crate::physic::health::{DamageEvent, Health, HitEvent};
 use crate::player::player::{INVINCIBLE_DURATION, Invincible, Player};
+use crate::fx::screen_shake::ScreenShakeEvent;
+use crate::fx::time_fx::TimeFxEvent;
+use crate::ui::score::{Combo, Score};
 
 pub struct CollisionPlugin;
 
@@ -101,22 +104,31 @@ fn player_damage_on_overlap(
 
 /// Observer : réagit aux `HitEvent` ciblant le joueur. Insère `Invincible`
 /// ou transitionne vers GameOver selon que le joueur survit ou pas.
+/// Reset aussi le combo (un hit absorbé par l'armor reset également, car
+/// `apply_damage` trigger `HitEvent` dès qu'au moins 1 point est encaissé).
 fn player_post_hit(
     trigger: On<HitEvent>,
     mut commands: Commands,
     health_q: Query<&Health, With<Player>>,
     mut next_state: ResMut<NextState<GameState>>,
+    mut score: ResMut<Score>,
+    mut combo: ResMut<Combo>,
 ) {
     let ev = trigger.event();
     if ev.target_layer & layers::PLAYER == 0 { return; }
     let Ok(health) = health_q.get(ev.target) else { return };
 
+    combo.reset(&mut score);
+    commands.trigger(ScreenShakeEvent::PLAYER_HIT);
+
     if health.is_dead() {
+        commands.trigger(TimeFxEvent::SLOWMO_PLAYER_DEATH);
         if let Ok(mut e) = commands.get_entity(ev.target) {
             e.try_despawn();
         }
         next_state.set(GameState::GameOver);
     } else {
+        commands.trigger(TimeFxEvent::HIT_STOP_PLAYER);
         if let Ok(mut e) = commands.get_entity(ev.target) {
             e.try_insert(Invincible(Timer::new(
                 Duration::from_secs_f32(INVINCIBLE_DURATION),

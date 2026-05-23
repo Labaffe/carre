@@ -32,7 +32,7 @@ use crate::enemy::hit_flash::HitFlash;
 use crate::fx::explosion::spawn_projectile_death;
 use crate::physic::collider::{layers, OverlapEvent};
 use crate::physic::health::{DamageEvent, HitEvent};
-use crate::ui::score::Score;
+use crate::ui::score::{Combo, Score};
 use crate::weapon::projectile::Projectile;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -163,9 +163,15 @@ pub fn enemy_hit_sound_on_hit(trigger: On<HitEvent>, mut sfx: SfxPlayer) {
     }
 }
 
-/// +1 au score à chaque hit sur ENEMY ou ASTEROID.
-pub fn score_on_enemy_hit(trigger: On<HitEvent>, mut score: ResMut<Score>) {
+/// +1 au score à chaque hit sur ENEMY ou ASTEROID, et incrémente le combo
+/// (qui met à jour le multiplicateur de score avant le `add`).
+pub fn score_on_enemy_hit(
+    trigger: On<HitEvent>,
+    mut score: ResMut<Score>,
+    mut combo: ResMut<Combo>,
+) {
     if trigger.event().target_layer & (layers::ENEMY | layers::ASTEROID) != 0 {
+        combo.on_kill(&mut score);
         score.add(1);
     }
 }

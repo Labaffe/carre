@@ -7,7 +7,7 @@
 
 use crate::audio::{Sfx, SfxPlayer};
 use crate::game_manager::state::GameState;
-use crate::player::player::Player;
+use crate::player::player::{Player, PlayerStats};
 use crate::ui::crosshair::Crosshair;
 use crate::weapon::projectile::{spawn_projectile, ProjectileSpawn, ProjectileSprite, Team};
 use crate::weapon::weapon::Weapon;
@@ -49,7 +49,7 @@ fn shoot(
     mouse: Res<ButtonInput<MouseButton>>,
     mut fire_timer: ResMut<FireRateTimer>,
     time: Res<Time>,
-    player_q: Single<(&Transform, &Weapon), (With<Player>, Without<crate::player::player::Dashing>)>,
+    player_q: Single<(&Transform, &Weapon, &PlayerStats), (With<Player>, Without<crate::player::player::Dashing>)>,
     crosshair_transform: Single<&Transform, With<Crosshair>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -59,13 +59,14 @@ fn shoot(
         return;
     }
 
-    let (player_transform, weapon) = *player_q;
+    let (player_transform, weapon, stats) = *player_q;
 
     let def = weapon.0.def();
-    // Adapter la cadence de tir à l'arme actuelle
+    // Adapter la cadence de tir à l'arme actuelle, modulée par les stats
+    // (Rapid Fire = fire_rate_mult < 1.0 = tir plus rapide).
     fire_timer
         .0
-        .set_duration(std::time::Duration::from_secs_f32(def.fire_rate));
+        .set_duration(std::time::Duration::from_secs_f32(def.fire_rate * stats.fire_rate_mult));
     fire_timer.0.tick(time.delta());
     if !fire_timer.0.just_finished() {
         return;

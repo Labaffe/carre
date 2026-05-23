@@ -75,6 +75,23 @@ const DASH_DURATION: f32 = 0.14;
 #[require(crate::GameplayEntity)]
 pub struct Player;
 
+/// Modificateurs persistants appliqués via les cartes du deckbuilding.
+/// Multipliers à 1.0 = stats de base. Reset au respawn (à chaque OnEnter
+/// `GameState::Playing`).
+#[derive(Component, Debug, Clone, Copy)]
+pub struct PlayerStats {
+    /// Multiplie `PLAYER_SPEED` dans `movement`.
+    pub speed_mult: f32,
+    /// Multiplie la durée d'inter-tir (`def.fire_rate`) dans `shoot`. < 1 = plus rapide.
+    pub fire_rate_mult: f32,
+}
+
+impl Default for PlayerStats {
+    fn default() -> Self {
+        Self { speed_mult: 1.0, fire_rate_mult: 1.0 }
+    }
+}
+
 /// Invincibilité temporaire après un hit.
 #[derive(Component)]
 pub struct Invincible(pub Timer);
@@ -206,6 +223,7 @@ pub fn spawn_player(
         Player,
         Health::new(PLAYER_MAX_LIVES),
         Armor::new(PLAYER_MAX_ARMOR),
+        PlayerStats::default(),
         Weapon::default(),
         // Pouvoir Espace équipé. Single source of truth via enum. Swap
         // depuis le deckbuilding = mutation directe de `equipped.0`.
@@ -227,7 +245,7 @@ pub fn spawn_player(
 fn movement(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut transform: Single<&mut Transform, (With<Player>, Without<Dashing>)>,
+    mut player_q: Single<(&mut Transform, &PlayerStats), (With<Player>, Without<Dashing>)>,
     window: Single<&Window>,
 ) {
     let half_w = window.width() / 2.0 - PLAYER_MARGIN;
@@ -240,7 +258,9 @@ fn movement(
     if keyboard.pressed(KeyCode::KeyA) { direction.x -= 1.0; }
     if keyboard.pressed(KeyCode::KeyD) { direction.x += 1.0; }
 
-    transform.translation += direction.normalize_or_zero() * PLAYER_SPEED * time.delta_secs();
+    let (transform, stats) = &mut *player_q;
+    let speed = PLAYER_SPEED * stats.speed_mult;
+    transform.translation += direction.normalize_or_zero() * speed * time.delta_secs();
     transform.translation.x = transform.translation.x.clamp(-half_w, half_w);
     transform.translation.y = transform.translation.y.clamp(-half_h, half_h);
 }

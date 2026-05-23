@@ -109,6 +109,7 @@ impl Plugin for EnemyPlugin {
             .add_observer(score_on_enemy_hit)
             // Observer global sur `EnemyDeathEvent` (trigger par `detect_death`).
             .add_observer(asteroid_death_fx_system)
+            .add_observer(crate::enemy::boss::boss_death_screen_shake)
             // Systèmes Octopus dans leur propre tuple : la limite de `.chain()`
             // (15 systèmes) est atteinte sur le bloc enemy générique au-dessus.
             // Ces systèmes sont tous des réactifs sur `Added<…>` indépendants

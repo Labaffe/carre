@@ -7,16 +7,18 @@ pub struct ScorePlugin;
 impl Plugin for ScorePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Score>()
-            .init_resource::<Level>()
+            .init_resource::<Combo>()
             .add_systems(OnEnter(GameState::Playing), setup_score_ui)
             // Cleanup UI : géré centralement par `cleanup_playing` (main.rs)
             // via `#[require(GameplayEntity)]` sur `ScoreUI`.
             .add_systems(
                 Update,
                 (
+                    combo_tick.run_if(in_state(GameState::Playing)),
                     score_update.run_if(in_state(GameState::Playing)),
-                    level_update.run_if(in_state(GameState::Playing)),
-                ),
+                    combo_update_ui.run_if(in_state(GameState::Playing)),
+                )
+                    .chain(),
             );
     }
 }
@@ -28,10 +30,11 @@ struct ScoreUI;
 #[derive(Component)]
 struct ScoreText;
 #[derive(Component)]
-struct LevelText;
+struct ComboText;
 /// Taille de police de référence pour le zoom dynamique.
 #[derive(Component)]
 struct BaseFontSize(f32);
+
 #[derive(Resource)]
 pub struct Score {
     value: i32,
@@ -66,26 +69,79 @@ impl Default for Score {
         }
     }
 }
-#[derive(Resource)]
-pub struct Level {
-    value: usize,
+
+/// Combo de kills consécutifs. Un kill incrémente `count` et reset le timer.
+/// Si aucun kill pendant `COMBO_RESET_SECS`, le combo retombe à 0. Un hit
+/// reçu par le joueur (même absorbé par l'armor) reset immédiatement.
+#[derive(Resource, Default)]
+pub struct Combo {
+    count: i32,
+    time_since_last_kill: f32,
+    max_this_run: i32,
+    /// Vrai pendant 1 frame quand le multiplicateur vient de passer un palier.
+    /// Sert au juice UI (scale + sfx).
+    just_leveled_up: bool,
 }
 
-const LEVELS: [i32; 4] = [50, 100, 150, 200];
+const COMBO_RESET_SECS: f32 = 3.0;
+/// Paliers : nombre de kills consécutifs requis pour atteindre le multiplicateur.
+/// Index = palier (0 → x1, 1 → x2, ...). Doit être strictement croissant.
+const COMBO_TIERS: [i32; 5] = [0, 10, 25, 50, 100];
 
-impl Default for Level {
-    fn default() -> Self {
-        Self { value: 0 }
+impl Combo {
+    /// Appelée à chaque kill d'ennemi/asteroid. Met à jour `Score.multiplier`
+    /// pour que les calls suivants à `score.add(...)` bénéficient du combo.
+    pub fn on_kill(&mut self, score: &mut Score) {
+        let old_mult = self.multiplier();
+        self.count += 1;
+        self.time_since_last_kill = 0.0;
+        if self.count > self.max_this_run {
+            self.max_this_run = self.count;
+        }
+        let new_mult = self.multiplier();
+        score.multiplier = new_mult;
+        if new_mult > old_mult {
+            self.just_leveled_up = true;
+        }
+    }
+
+    /// Reset à 0 (hit joueur, ou timeout).
+    pub fn reset(&mut self, score: &mut Score) {
+        self.count = 0;
+        self.time_since_last_kill = 0.0;
+        score.multiplier = 1;
+    }
+
+    pub fn multiplier(&self) -> i32 {
+        let mut tier = 1;
+        for (i, threshold) in COMBO_TIERS.iter().enumerate() {
+            if self.count >= *threshold {
+                tier = (i as i32) + 1;
+            }
+        }
+        tier
     }
 }
+
+/// Couleur du score selon le multiplicateur actuel.
+fn color_for_multiplier(mult: i32) -> Color {
+    match mult {
+        1 => Color::srgba(1.0, 0.0, 0.0, 1.0),   // rouge (défaut)
+        2 => Color::srgba(1.0, 0.55, 0.0, 1.0),  // orange
+        3 => Color::srgba(1.0, 0.9, 0.0, 1.0),   // jaune
+        4 => Color::srgba(0.3, 1.0, 0.4, 1.0),   // vert vif
+        _ => Color::srgba(1.0, 0.84, 0.0, 1.0),  // or
+    }
+}
+
 fn setup_score_ui(
     mut commands: Commands,
     mut score: ResMut<Score>,
-    mut level: ResMut<Level>,
+    mut combo: ResMut<Combo>,
     asset_server: Res<AssetServer>,
 ) {
     *score = Score::default();
-    *level = Level::default();
+    *combo = Combo::default();
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     commands
         .spawn((
@@ -104,31 +160,45 @@ fn setup_score_ui(
         ))
         .with_children(|parent| {
             parent.spawn((
-                Text::new("OVER 9000"),
-                TextFont { font: font.clone(), font_size: 90.0, ..default() },
-                TextColor(Color::srgba(1.0, 0.0, 0.0, 1.0)),
-                BaseFontSize(90.0),
-                ScoreText,
-            ));
-            parent.spawn((
-                Text::new("level"),
+                Text::new(""),
                 TextFont { font: font.clone(), font_size: 90.0, ..default() },
                 TextColor(Color::srgba(1.0, 1.0, 1.0, 1.0)),
                 BaseFontSize(90.0),
-                LevelText,
+                ComboText,
+            ));
+            parent.spawn((
+                Text::new("0"),
+                TextFont { font: font.clone(), font_size: 90.0, ..default() },
+                TextColor(color_for_multiplier(1)),
+                BaseFontSize(90.0),
+                ScoreText,
             ));
         });
 }
 
+fn combo_tick(time: Res<Time>, mut combo: ResMut<Combo>, mut score: ResMut<Score>) {
+    // Reset du flag de palier (consommé par l'UI à la frame précédente).
+    combo.just_leveled_up = false;
+    if combo.count == 0 {
+        return;
+    }
+    combo.time_since_last_kill += time.delta_secs();
+    if combo.time_since_last_kill >= COMBO_RESET_SECS {
+        combo.reset(&mut score);
+    }
+}
+
 fn score_update(
     time: Res<Time>,
-    mut text_q: Query<&mut Text, With<ScoreText>>,
+    mut text_q: Query<(&mut Text, &mut TextColor), With<ScoreText>>,
     mut font_q: Query<(&mut TextFont, &BaseFontSize), With<ScoreText>>,
     mut score: ResMut<Score>,
 ) {
     score.current_time += time.delta_secs();
-    for mut text in text_q.iter_mut() {
+    let target_color = color_for_multiplier(score.multiplier);
+    for (mut text, mut color) in text_q.iter_mut() {
         **text = score.text();
+        color.0 = target_color;
     }
     let coef = score.get_size_coeff();
     let scale = 0.3 * coef + 1.0 * (1.0 - coef);
@@ -136,24 +206,29 @@ fn score_update(
         font.font_size = base.0 * scale;
     }
 }
-fn level_update(
-    time: Res<Time>,
-    mut text_q: Query<&mut Text, With<LevelText>>,
-    mut font_q: Query<(&mut TextFont, &BaseFontSize), With<LevelText>>,
-    mut level: ResMut<Level>,
-    score: Res<Score>,
+
+fn combo_update_ui(
+    mut text_q: Query<(&mut Text, &mut TextColor), With<ComboText>>,
+    mut font_q: Query<(&mut TextFont, &BaseFontSize), With<ComboText>>,
+    combo: Res<Combo>,
     mut sfx: SfxPlayer,
 ) {
-    let levelup = score.value > LEVELS[level.value] && LEVELS.len() > level.value + 1;
-    if levelup {
-        level.value += 1;
-        sfx.play(Sfx::ScoreMilestone);
+    let mult = combo.multiplier();
+    let display = if combo.count == 0 {
+        String::new()
+    } else {
+        format!("x{}", mult)
+    };
+    let color = color_for_multiplier(mult);
+    for (mut text, mut text_color) in text_q.iter_mut() {
+        **text = display.clone();
+        text_color.0 = color;
     }
-    for mut text in text_q.iter_mut() {
-        **text = level.value.to_string();
-    }
-    let scale = if levelup { 1.0 } else { 0.3 };
+    let scale = if combo.just_leveled_up { 1.3 } else { 1.0 };
     for (mut font, base) in font_q.iter_mut() {
-        font.font_size = base.0 * scale;
+        font.font_size = base.0 * 0.6 * scale;
+    }
+    if combo.just_leveled_up {
+        sfx.play(Sfx::ScoreMilestone);
     }
 }
