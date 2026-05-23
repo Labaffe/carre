@@ -9,7 +9,8 @@ impl Plugin for ScorePlugin {
         app.init_resource::<Score>()
             .init_resource::<Level>()
             .add_systems(OnEnter(GameState::Playing), setup_score_ui)
-            .add_systems(OnExit(GameState::Playing), cleanup_score_ui)
+            // Cleanup UI : géré centralement par `cleanup_playing` (main.rs)
+            // via `#[require(GameplayEntity)]` sur `ScoreUI`.
             .add_systems(
                 Update,
                 (
@@ -21,6 +22,7 @@ impl Plugin for ScorePlugin {
 }
 
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 struct ScoreUI;
 
 #[derive(Component)]
@@ -116,14 +118,6 @@ fn setup_score_ui(
                 LevelText,
             ));
         });
-}
-
-fn cleanup_score_ui(mut commands: Commands, query: Query<Entity, With<ScoreUI>>) {
-    for entity in query.iter() {
-        if let Ok(mut e) = commands.get_entity(entity) {
-            e.try_despawn();
-        }
-    }
 }
 
 fn score_update(

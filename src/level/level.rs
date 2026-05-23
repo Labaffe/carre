@@ -106,7 +106,7 @@ impl Plugin for LevelPlugin {
             )
             .add_systems(
                 OnExit(GameState::Playing),
-                (cleanup_level, crate::level::chaos::cleanup_chaos_ui),
+                cleanup_level,
             );
     }
 }

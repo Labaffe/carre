@@ -37,7 +37,8 @@ impl Plugin for ItemPlugin {
             .init_resource::<PlayerBombs>()
             .add_systems(Startup, preload_item_frames)
             .add_systems(OnEnter(GameState::Playing), (setup_bomb_ui, reset_bombs))
-            .add_systems(OnExit(GameState::Playing), cleanup_bomb_ui)
+            // Cleanup UI : géré centralement par `cleanup_playing` (main.rs)
+            // via `#[require(GameplayEntity)]` sur `BombUI`.
             .add_systems(
                 Update,
                 (
@@ -158,6 +159,7 @@ pub struct BombEvent;
 
 /// Conteneur racine de l'UI des bombes.
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 struct BombUI;
 
 /// Conteneur des icônes de bombes.
@@ -255,13 +257,8 @@ fn setup_bomb_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         });
 }
 
-fn cleanup_bomb_ui(mut commands: Commands, query: Query<Entity, With<BombUI>>) {
-    for entity in query.iter() {
-        if let Ok(mut e) = commands.get_entity(entity) {
-            e.try_despawn();
-        }
-    }
-}
+// `cleanup_bomb_ui` retiré — cleanup auto via `cleanup_playing` (main.rs)
+// grâce à `#[require(GameplayEntity)]` sur `BombUI`.
 
 fn update_bomb_ui(
     bombs: Res<PlayerBombs>,

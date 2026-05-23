@@ -153,7 +153,8 @@ impl Plugin for PowerPlugin {
                 OnEnter(GameState::Playing),
                 (reset_cooldowns, setup_power_ui),
             )
-            .add_systems(OnExit(GameState::Playing), cleanup_power_ui)
+            // Cleanup UI : géré centralement par `cleanup_playing` (main.rs)
+            // via `#[require(GameplayEntity)]` sur `PowerUIRoot`.
             .add_systems(
                 Update,
                 (tick_cooldowns, update_power_ui)
@@ -177,6 +178,7 @@ const POWER_UI_BAR_WIDTH: f32 = 120.0;
 const POWER_UI_BAR_HEIGHT: f32 = 8.0;
 
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 struct PowerUIRoot;
 #[derive(Component)]
 struct PowerUILabel;
@@ -268,10 +270,5 @@ fn update_power_ui(
     }
 }
 
-fn cleanup_power_ui(mut commands: Commands, q: Query<Entity, With<PowerUIRoot>>) {
-    for entity in q.iter() {
-        if let Ok(mut e) = commands.get_entity(entity) {
-            e.try_despawn();
-        }
-    }
-}
+// cleanup_power_ui retiré — cleanup auto via `cleanup_playing` (main.rs) grâce
+// à `#[require(GameplayEntity)]` sur `PowerUIRoot`.

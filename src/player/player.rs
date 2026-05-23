@@ -78,6 +78,7 @@ pub struct Invincible(pub Timer);
 
 /// Marqueur pour le conteneur UI des vies.
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 pub struct LivesUI;
 
 /// Marqueur individuel pour chaque icône de vie.
@@ -125,7 +126,8 @@ impl Plugin for PlayerPlugin {
             OnEnter(GameState::Playing),
             (setup_player, setup_lives_ui).after(LevelSetupSet),
         )
-        .add_systems(OnExit(GameState::Playing), cleanup_lives_ui)
+        // Cleanup UI : géré centralement par `cleanup_playing` (main.rs)
+        // via `#[require(GameplayEntity)]` sur `LivesUI`.
         .add_systems(
             Update,
             (
@@ -344,13 +346,8 @@ fn update_lives_ui(
     }
 }
 
-fn cleanup_lives_ui(mut commands: Commands, query: Query<Entity, With<LivesUI>>) {
-    for entity in query.iter() {
-        if let Ok(mut e) = commands.get_entity(entity) {
-            e.try_despawn();
-        }
-    }
-}
+// `cleanup_lives_ui` retiré — cleanup auto via `cleanup_playing` (main.rs)
+// grâce à `#[require(GameplayEntity)]` sur `LivesUI`.
 
 // ─── Dash : input, motion ───────────────────────────────────────────
 

@@ -27,7 +27,8 @@ pub struct WeaponPlugin;
 impl Plugin for WeaponPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(GameState::Playing), setup_weapon_ui)
-            .add_systems(OnExit(GameState::Playing), cleanup_weapon_ui)
+            // Cleanup UI : géré centralement par `cleanup_playing` (main.rs)
+            // via `#[require(GameplayEntity)]` sur `WeaponUI`.
             .add_systems(
                 Update,
                 update_weapon_ui.run_if(in_state(GameState::Playing)),
@@ -44,6 +45,7 @@ const WEAPON_ICON_SIZE: f32 = 48.0;
 const WEAPON_ICON_PADDING: f32 = 8.0;
 
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 struct WeaponUI;
 #[derive(Component)]
 struct WeaponIcon;
@@ -128,14 +130,6 @@ fn update_weapon_ui(
         let new_name = weapon.0.name();
         if **text != new_name {
             **text = new_name.to_string();
-        }
-    }
-}
-
-fn cleanup_weapon_ui(mut commands: Commands, q: Query<Entity, With<WeaponUI>>) {
-    for entity in q.iter() {
-        if let Ok(mut e) = commands.get_entity(entity) {
-            e.try_despawn();
         }
     }
 }
