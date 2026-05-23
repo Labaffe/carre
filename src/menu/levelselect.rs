@@ -91,7 +91,7 @@ fn setup_level_select(
     play_mode: Option<Res<PlayMode>>,
     progress: Res<GameProgress>,
     campaign: Option<Res<CampaignProgress>>,
-    windows: Query<&Window>,
+    window: Single<&Window>,
     existing_music: Query<Entity, With<MainMenuMusic>>,
 ) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
@@ -115,7 +115,6 @@ fn setup_level_select(
         .unwrap_or(0);
 
     // ── Background (sprite world-space) ─────────────────────────
-    let window = windows.single().unwrap();
     let img_w = 1536.0_f32;
     let img_h = 672.0_f32;
     let scale = (window.width() / img_w).max(window.height() / img_h);
@@ -443,7 +442,9 @@ fn handle_level_select_input(
                 }
             }
             progress.current_level = level_num;
-            next_state.set(GameState::Playing);
+            // Routé via Loading pour montrer un écran "CHARGEMENT" et donner
+            // du temps à l'asset_server avant le setup Playing.
+            next_state.set(GameState::Loading);
         }
     }
 

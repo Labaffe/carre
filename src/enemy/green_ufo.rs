@@ -45,8 +45,11 @@ const GREEN_UFO_ANIM_FPS: f32 = 12.0;
 /// auto via `with_total_duration`.
 const GREEN_UFO_DEATH_DURATION: f32 = 0.45;
 
-static GREEN_UFO_DROP_TABLE: [(ItemType, f32); 2] =
-    [(ItemType::Bomb, 0.10), (ItemType::BonusScore, 0.15)];
+static GREEN_UFO_DROP_TABLE: [(ItemType, f32); 3] = [
+    (ItemType::Bomb, 0.10),
+    (ItemType::BonusScore, 0.15),
+    (ItemType::Armor, 0.08),
+];
 
 // ─── Composants ─────────────────────────────────────────────────────
 

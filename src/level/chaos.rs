@@ -288,6 +288,7 @@ pub fn chaos_music_system(
 
 /// Marker sur le `Text` qui affiche le tier courant du chaos.
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 pub struct ChaosLevelUI;
 
 /// Spawn le texte du compteur à `OnEnter(GameState::Playing)`. Ne tourne
@@ -345,14 +346,8 @@ pub fn update_chaos_ui(
     **text = status;
 }
 
-/// Despawn le compteur quand on quitte Playing.
-pub fn cleanup_chaos_ui(mut commands: Commands, q: Query<Entity, With<ChaosLevelUI>>) {
-    for entity in q.iter() {
-        if let Ok(mut e) = commands.get_entity(entity) {
-            e.try_despawn();
-        }
-    }
-}
+// `cleanup_chaos_ui` retiré — cleanup auto via `cleanup_playing` (main.rs)
+// grâce à `#[require(GameplayEntity)]` sur `ChaosLevelUI`.
 
 // ─── Logique de spawn ───────────────────────────────────────────────
 

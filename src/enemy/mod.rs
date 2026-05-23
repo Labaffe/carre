@@ -10,6 +10,10 @@ pub mod hit_flash;
 pub mod kamikaze;
 pub mod mine;
 pub mod octopus;
+pub mod turret;
+pub mod enemy_group;
+pub mod vaisseau;
+pub mod simple_ufo;
 pub mod death;
 use bevy::prelude::*;
 use crate::enemy::anim_bank::*;
@@ -17,7 +21,6 @@ use crate::enemy::asteroid::{asteroid_death_fx_system, AsteroidBuilder};
 use crate::enemy::boss::{boss_hp_threshold_check, BossBuilder};
 use crate::enemy::death::despawn;
 use crate::enemy::death::detect_death;
-use crate::enemy::enemy::EnemyDeathEvent;
 use crate::enemy::enemy::{
     enemy_hit_sound_on_hit, hit_flash_on_hit, projectile_damage_on_overlap, score_on_enemy_hit,
 };
@@ -27,24 +30,28 @@ use crate::enemy::hit_flash::*;
 use crate::enemy::green_ufo::*;
 use crate::enemy::kamikaze::{
     kamikaze_boom_system, kamikaze_force_boom_system, kamikaze_laugh_start_system,
-    kamikaze_laugh_stop_system, kamikaze_scream_system, kamikaze_speed_ramp_system,
-    KamikazeBuilder,
+    kamikaze_speed_ramp_system, KamikazeBuilder,
 };
 use crate::enemy::mine::{blink_red_system, mine_countdown_audio, mine_explode_system, MineBuilder};
 use crate::enemy::octopus::{
-    octopus_become_alive, octopus_die_sound, octopus_entering_idle_sound,
-    octopus_entering_rush_sound, octopus_fire_shots, octopus_pre_swoop_tick,
-    octopus_setup_curve, octopus_shoot_start_sound, octopus_telegraph_tick,
-    OctopusBuilder,
+    octopus_become_alive, octopus_die_sound, octopus_fire_shots, octopus_green_bomb_explode,
+    octopus_green_fire_shots, octopus_green_setup_curve, octopus_green_swoop_end,
+    octopus_green_swoop_tint, octopus_green_throw_bombs, octopus_pre_swoop_tick,
+    octopus_setup_curve, octopus_telegraph_tick, OctopusBuilder, OctopusGreenBuilder,
 };
+use crate::enemy::turret::{turret_aim_and_fire, TurretBuilder};
+use crate::enemy::enemy_group::despawn_empty_groups;
+use crate::enemy::vaisseau::VaisseauBuilder;
+use crate::enemy::simple_ufo::{simple_ufo_wave_spawn_system, SimpleUfoBuilder};
 use crate::GameState;
 use crate::menu::pause::not_paused;
 pub struct EnemyPlugin;
 
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
-        app.add_message::<EnemyDeathEvent>()
-            .insert_resource(
+        // `EnemyDeathEvent` est un `Event` (trigger-based, pas un Message) →
+        // pas de `add_message`. Consommé par `add_observer` plus bas.
+        app.insert_resource(
                 EnemyRegister::new()
                 .with(GreenUFOBuilder::new())
                 .with(BossBuilder::new())
@@ -52,6 +59,10 @@ impl Plugin for EnemyPlugin {
                 .with(MineBuilder::new())
                 .with(KamikazeBuilder::new())
                 .with(OctopusBuilder::new())
+                .with(OctopusGreenBuilder::new())
+                .with(TurretBuilder::new())
+                .with(VaisseauBuilder::new())
+                .with(SimpleUfoBuilder::new())
             )
             .insert_resource(AnimBank::new())
             .add_systems(Startup, preload_frames)
@@ -68,27 +79,36 @@ impl Plugin for EnemyPlugin {
                 Update,
                 (
                     // Framework phases+behaviors (exclusif, séquentiel)
-                    // Systèmes réactifs (ordre après la machine à état)
+                    // Systèmes réactifs (ordre après la machine à état).
+                    // `hit_flash_on_hit`, `enemy_hit_sound_on_hit`,
+                    // `score_on_enemy_hit` sont maintenant des **observers**
+                    // (cf. `add_observer` plus bas) déclenchés par
+                    // `commands.trigger(HitEvent)` dans `apply_damage`.
                     projectile_damage_on_overlap,
-                    hit_flash_on_hit,
-                    enemy_hit_sound_on_hit,
-                    score_on_enemy_hit,
                     boss_hp_threshold_check,
                     mine_explode_system,
                     mine_countdown_audio,
                     blink_red_system,
                     kamikaze_force_boom_system,
                     kamikaze_boom_system,
-                    kamikaze_scream_system,
+                    // Kamikaze : plus de scream/armed — chase + boom direct
+                    // sur contact ou HP=0. Le laugh est attaché en child du
+                    // kamikaze au spawn (cascade despawn auto).
                     kamikaze_laugh_start_system,
-                    kamikaze_laugh_stop_system,
                     kamikaze_speed_ramp_system,
-                    asteroid_death_fx_system,
+                    // `asteroid_death_fx_system` est maintenant un observer
+                    // (cf. `add_observer` plus bas) sur `EnemyDeathEvent`.
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),
             )
+            // Observers globaux sur `HitEvent` (trigger par `apply_damage`).
+            .add_observer(hit_flash_on_hit)
+            .add_observer(enemy_hit_sound_on_hit)
+            .add_observer(score_on_enemy_hit)
+            // Observer global sur `EnemyDeathEvent` (trigger par `detect_death`).
+            .add_observer(asteroid_death_fx_system)
             // Systèmes Octopus dans leur propre tuple : la limite de `.chain()`
             // (15 systèmes) est atteinte sur le bloc enemy générique au-dessus.
             // Ces systèmes sont tous des réactifs sur `Added<…>` indépendants
@@ -96,16 +116,39 @@ impl Plugin for EnemyPlugin {
             .add_systems(
                 Update,
                 (
-                    octopus_entering_rush_sound,
-                    octopus_entering_idle_sound,
+                    // Les sons d'apparition (entering_rush, entering_idle),
+                    // d'amorçage (shooting) et de tir (fire_shots) sont gérés
+                    // par des hooks `on_insert` sur les markers correspondants
+                    // dans `octopus.rs` — pas besoin de système dédié.
                     octopus_become_alive,
                     octopus_setup_curve,
-                    octopus_shoot_start_sound,
                     octopus_fire_shots,
                     octopus_die_sound,
                     octopus_telegraph_tick,
                     octopus_pre_swoop_tick,
+                    // Systèmes spécifiques à la variante verte. Ils filtrent
+                    // sur `With<OctopusGreen>` ; pour les standards, les
+                    // systèmes ci-dessus filtrent `Without<OctopusGreen>`.
+                    octopus_green_setup_curve,
+                    octopus_green_swoop_end,
+                    octopus_green_fire_shots,
+                    octopus_green_throw_bombs,
+                    octopus_green_bomb_explode,
+                    turret_aim_and_fire,
+                    despawn_empty_groups,
+                    simple_ufo_wave_spawn_system,
                 )
+                    .run_if(in_state(GameState::Playing))
+                    .run_if(not_paused),
+            )
+            // `octopus_green_swoop_tint` doit tourner APRÈS `animate_hit_flash`
+            // pour ré-écrire `sprite.color` chaque frame : sinon un HitFlash
+            // qui expire pendant le swoop remet le sprite à blanc et casse le
+            // signal visuel d'intangibilité.
+            .add_systems(
+                Update,
+                octopus_green_swoop_tint
+                    .after(animate_hit_flash)
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),
             )

@@ -78,7 +78,7 @@ impl Plugin for LevelPlugin {
             .add_systems(
                 Update,
                 (run_level, process_level_action_events)
-                    .run_if(in_state(GameState::Playing))
+                    .run_if(in_state(crate::game_manager::game::LevelPhase::Running))
                     .run_if(not_paused),
             )
             .add_systems(
@@ -106,7 +106,7 @@ impl Plugin for LevelPlugin {
             )
             .add_systems(
                 OnExit(GameState::Playing),
-                (cleanup_level, crate::level::chaos::cleanup_chaos_ui),
+                cleanup_level,
             );
     }
 }
@@ -159,6 +159,13 @@ pub enum Action {
     StartSpawning(&'static str, usize, f32, SpawnPosition),
     /// Désactive le spawn continu d'un type d'ennemi.
     StopSpawning(&'static str),
+    /// Spawn une **wave de Simple UFOs** en queue le long d'un chemin
+    /// aléatoire commun (calculé au déclenchement de l'action). Tous les
+    /// UFOs de la wave partagent strictement la même Bézier → effet "queue
+    /// leu leu" naturel. Chaîner plusieurs actions de ce type à différents
+    /// temps pour avoir plusieurs waves avec des trajectoires distinctes.
+    /// `(count, interval_secondes)`.
+    SpawnSimpleUfoWave { count: usize, interval: f32 },
 
     // ─── Environnement ──────────────────────────────────────────
     /// Démarre la décélération du fond (durée, vitesse finale).
@@ -396,6 +403,9 @@ impl Action {
                 format!("Start({}×{},{}s{})", count, name, interval, pos_str)
             }
             Action::StopSpawning(name) => format!("Stop({})", name),
+            Action::SpawnSimpleUfoWave { count, interval } => {
+                format!("UfoWave({}×,{}s)", count, interval)
+            }
             Action::StartBgDeceleration {
                 duration,
                 final_speed,
@@ -427,6 +437,16 @@ impl Trigger {
 /// Retourne le nom d'un niveau (1-indexed).
 pub fn level_name(level: usize) -> &'static str {
     crate::level::levels::level_name(level)
+}
+
+/// `true` si le niveau utilise `Action::StartCountdown` dans sa timeline.
+/// Sert à gater les pré-warmups coûteux liés au countdown (rastérisation
+/// des glyphes du "READY 3 2 1 GO!"). Utilisé par `warmup_countdown_fonts`.
+pub fn level_has_countdown(level: usize) -> bool {
+    // Niveau 1 seul a un countdown actuellement. Chaos (3) et Niveau 2
+    // (désactivé/stub) n'en ont pas. À mettre à jour si un niveau futur
+    // ajoute un `Action::StartCountdown`.
+    matches!(level, 1)
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -538,6 +558,21 @@ pub struct EditorTestEnemy(pub &'static str);
 /// Spawn à `UpperMid` (centré X, moitié haute) — résolution-indépendant et
 /// laisse de la place au joueur en bas pour réagir.
 pub fn build_level_test_enemy(enemy_name: &'static str) -> Vec<LevelStep> {
+    // `simple_ufo` : on démontre le système de waves random — 4 vagues
+    // espacées de 4s, chacune envoie 6 UFOs à 0.4s d'intervalle le long
+    // d'un chemin random (différent à chaque wave).
+    if enemy_name == "simple_ufo" {
+        return vec![
+            LevelStep::at(0.0, "wave1")
+                .with(Action::SpawnSimpleUfoWave { count: 6, interval: 0.18 }),
+            LevelStep::at(4.0, "wave2")
+                .with(Action::SpawnSimpleUfoWave { count: 6, interval: 0.18 }),
+            LevelStep::at(8.0, "wave3")
+                .with(Action::SpawnSimpleUfoWave { count: 6, interval: 0.18 }),
+            LevelStep::at(12.0, "wave4")
+                .with(Action::SpawnSimpleUfoWave { count: 6, interval: 0.18 }),
+        ];
+    }
     vec![LevelStep::at(0.0, "test_spawn").with(Action::SpawnEnemy(
         enemy_name,
         1,
@@ -582,26 +617,9 @@ fn setup_level(
         }
     };
     commands.insert_resource(LevelRunner::new(steps));
-
-    // En éditeur on saute l'intro (animation vaisseau + son) — l'ennemi spawn à
-    // t=0 et le joueur doit pouvoir bouger immédiatement pour tester.
-    let phase = if editor_test.is_some() {
-        crate::game_manager::game::LevelPhaseKind::Running
-    } else {
-        let intro = crate::game_manager::game::level_intro(progress.current_level);
-        crate::game_manager::game::LevelPhaseKind::Intro {
-            elapsed: 0.0,
-            duration: intro.duration,
-            sound: intro.sound,
-            sound_played: false,
-            sound_finished: false,
-            start_pos: Vec2::ZERO,
-            target_pos: Vec2::ZERO,
-            spawn_ratio: intro.spawn_ratio,
-            initialized: false,
-        }
-    };
-    commands.insert_resource(crate::game_manager::game::LevelPhase { phase });
+    // `LevelPhase` (SubState) est auto-créé à l'entrée de `Playing` avec
+    // sa variante Default (`Intro`). `enter_intro` détecte `EditorTestEnemy`
+    // et court-circuite vers `Running` — pas besoin de gérer le cas ici.
 }
 
 fn run_level(
@@ -613,17 +631,10 @@ fn run_level(
     mut boom_events: MessageWriter<BoomEvent>,
     mut countdown_events: MessageWriter<crate::ui::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
-    level_phase: Option<Res<crate::game_manager::game::LevelPhase>>,
     sfx_library: Res<crate::audio::SfxLibrary>,
 ) {
-    // Ne faire tourner les LevelSteps que pendant la phase Running
-    let Some(ref phase) = level_phase else { return };
-    if !matches!(
-        phase.phase,
-        crate::game_manager::game::LevelPhaseKind::Running
-    ) {
-        return;
-    }
+    // Gating sur la phase Running géré par `run_if(in_state(LevelPhase::Running))`
+    // au niveau du plugin (cf. `LevelPlugin::build`).
     let Some(mut runner) = runner else { return };
     runner.elapsed += time.delta_secs();
 
@@ -727,6 +738,13 @@ pub(crate) fn execute_action(
         }
         Action::StopSpawning(name) => {
             difficulty.active_spawners.remove(name);
+        }
+        Action::SpawnSimpleUfoWave { count, interval } => {
+            // Le chemin random est calculé au 1er tick du spawner (lazy
+            // init — accès `Window` requis et indisponible ici).
+            commands.spawn(crate::enemy::simple_ufo::SimpleUfoWaveSpawner::new(
+                *count, *interval,
+            ));
         }
         Action::StartBgDeceleration {
             duration,

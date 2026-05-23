@@ -15,7 +15,7 @@ use crate::enemy::asteroid::Asteroid;
 use crate::enemy::boss::BossMarker;
 use crate::enemy::enemy::Enemy;
 use crate::game_manager::difficulty::Difficulty;
-use crate::game_manager::game::{IntroSound, LevelPhase, LevelPhaseKind};
+use crate::game_manager::game::{IntroData, IntroSound, LevelPhase, OutroCountdownData, OutroData};
 use crate::level::level::{LevelRunner, Trigger};
 use crate::menu::pause::PauseState;
 use crate::movement::bounding_radius::BoundingRadius;
@@ -23,7 +23,7 @@ use crate::movement::movement_zone::MovementZone;
 use crate::physic::area_of_effect::AreaOfEffect;
 use crate::physic::collider::{layers, CollisionLayer, Hitbox};
 use crate::physic::health::Health;
-use crate::physic::invulnerable::Invulnerable;
+use crate::physic::invulnerable::DebugInvulnerable;
 use crate::physic::player_detection::PlayerDetection;
 use crate::player::player::Player;
 use crate::ui::score::Score;
@@ -198,21 +198,22 @@ fn toggle_debug(
     }
 }
 
-/// Insère/retire `Invulnerable` sur le joueur selon l'état de `DebugMode`.
-/// Le filtre passe via le pipeline `apply_damage` standard — pas de check
-/// dédié dans les systèmes de collision.
+/// Insère/retire `DebugInvulnerable` sur le joueur selon l'état de
+/// `DebugMode`. Marker distinct de `Invulnerable` pour ne PAS écraser un
+/// `Invulnerable` posé par d'autres systèmes (shield, dash, etc.).
+/// `apply_damage` filtre sur les deux markers.
 pub fn debug_player_invulnerability(
     mut commands: Commands,
     debug: Res<DebugMode>,
-    player_q: Query<(Entity, Option<&Invulnerable>), With<Player>>,
+    player_q: Query<(Entity, Option<&DebugInvulnerable>), With<Player>>,
 ) {
-    let Ok((player_e, has_invuln)) = player_q.single() else { return };
-    match (debug.0, has_invuln) {
+    let Ok((player_e, has_marker)) = player_q.single() else { return };
+    match (debug.0, has_marker) {
         (true, None) => {
-            commands.entity(player_e).insert(Invulnerable);
+            commands.entity(player_e).insert(DebugInvulnerable);
         }
         (false, Some(_)) => {
-            commands.entity(player_e).remove::<Invulnerable>();
+            commands.entity(player_e).remove::<DebugInvulnerable>();
         }
         _ => {}
     }
@@ -308,7 +309,10 @@ fn update_debug_level_ui(
     runner: Option<Res<LevelRunner>>,
     progress: Res<crate::game_manager::game::GameProgress>,
     mut ui_q: Query<&mut Text, With<DebugLevelUI>>,
-    level_phase: Option<Res<crate::game_manager::game::LevelPhase>>,
+    level_phase: Option<Res<State<LevelPhase>>>,
+    intro_data: Option<Res<IntroData>>,
+    countdown_data: Option<Res<OutroCountdownData>>,
+    outro_data: Option<Res<OutroData>>,
 ) {
     if !debug.0 {
         return;
@@ -325,20 +329,31 @@ fn update_debug_level_ui(
     let name = crate::level::level::level_name(progress.current_level);
     let mut lines = format!("--- {} (Niveau {}) ---\n", name, progress.current_level);
 
-    // Afficher la phase courante du niveau
-    if let Some(ref phase) = level_phase {
-        let phase_str = match &phase.phase {
-            crate::game_manager::game::LevelPhaseKind::Intro { elapsed, duration, sound_finished, .. } => {
-                format!("INTRO  {:.1}s / {:.1}s  son:{}", elapsed, duration, if *sound_finished { "fini" } else { "en cours" })
-            }
-            crate::game_manager::game::LevelPhaseKind::Running => "RUNNING".to_string(),
-            crate::game_manager::game::LevelPhaseKind::OutroCountdown { timer } => {
-                let remaining = timer.duration().as_secs_f32() - timer.elapsed_secs();
-                format!("OUTRO COUNTDOWN  {:.1}s", remaining)
-            }
-            crate::game_manager::game::LevelPhaseKind::Outro { elapsed, .. } => {
-                format!("OUTRO  {:.1}s", elapsed)
-            }
+    // Phase courante : on lit l'enum discriminant via `State<LevelPhase>` et
+    // les détails (timers, elapsed) via la Resource éphémère de chaque phase.
+    if let Some(phase) = level_phase {
+        let phase_str = match phase.get() {
+            LevelPhase::Intro => match intro_data.as_deref() {
+                Some(d) => format!(
+                    "INTRO  {:.1}s / {:.1}s  son:{}",
+                    d.elapsed,
+                    d.duration,
+                    if d.sound_finished { "fini" } else { "en cours" },
+                ),
+                None => "INTRO (skip editor)".to_string(),
+            },
+            LevelPhase::Running => "RUNNING".to_string(),
+            LevelPhase::OutroCountdown => match countdown_data.as_deref() {
+                Some(d) => {
+                    let remaining = d.timer.duration().as_secs_f32() - d.timer.elapsed_secs();
+                    format!("OUTRO COUNTDOWN  {:.1}s", remaining)
+                }
+                None => "OUTRO COUNTDOWN".to_string(),
+            },
+            LevelPhase::Outro => match outro_data.as_deref() {
+                Some(d) => format!("OUTRO  {:.1}s", d.elapsed),
+                None => "OUTRO".to_string(),
+            },
         };
         lines.push_str(&format!("Phase : {}\n", phase_str));
     }
@@ -599,7 +614,7 @@ fn draw_colliders(
 
 fn debug_mouse_coords(
     debug: Res<DebugMode>,
-    windows: Query<&Window>,
+    window: Single<&Window>,
     camera_q: Query<(&Camera, &GlobalTransform)>,
     mouse: Res<ButtonInput<MouseButton>>,
     mut mouse_pos: ResMut<DebugMousePos>,
@@ -608,8 +623,6 @@ fn debug_mouse_coords(
     if !debug.0 {
         return;
     }
-
-    let window = windows.single().unwrap();
     let Some(cursor_pos) = window.cursor_position() else {
         return;
     };
@@ -642,34 +655,28 @@ fn debug_mouse_coords(
     }
 }
 
-/// F2/F3/F4 pendant l'intro : skip l'intro et passe en Running.
+/// F2/F3 pendant l'intro : skip l'intro et passe en Running.
+/// (F4 a son propre handler dans `game.rs` qui saute directement à l'outro.)
 /// Doit tourner avant toggle_debug et debug_skip_to_boss pour que
 /// l'intro soit déjà terminée quand ces systèmes s'exécutent.
 fn debug_skip_intro(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut level_phase: Option<ResMut<LevelPhase>>,
-    mut pause: ResMut<PauseState>,
+    intro_data: Option<Res<IntroData>>,
     mut player_q: Query<&mut Transform, With<Player>>,
     intro_sound_q: Query<Entity, With<IntroSound>>,
     windows: Query<&Window>,
     config: Res<crate::level::level::LevelConfig>,
+    mut next: ResMut<NextState<LevelPhase>>,
 ) {
-    if !keyboard.just_pressed(KeyCode::F2)
-        && !keyboard.just_pressed(KeyCode::F3)
-        && !keyboard.just_pressed(KeyCode::F4)
-    {
+    if !keyboard.just_pressed(KeyCode::F2) && !keyboard.just_pressed(KeyCode::F3) {
         return;
     }
-    let Some(ref mut level_phase) = level_phase else { return };
-    if !matches!(level_phase.phase, LevelPhaseKind::Intro { .. }) {
-        return;
-    }
-
+    let Some(data) = intro_data else { return };
     crate::game_manager::game::do_skip_intro(
         &mut commands,
-        level_phase,
-        &mut pause,
+        &data,
+        &mut next,
         &mut player_q,
         &intro_sound_q,
         &windows,
@@ -703,7 +710,7 @@ fn draw_hitboxes(
         Option<&crate::movement::bounding_radius::BoundingRadius>,
     )>,
     sprite_q: Query<(&Transform, &Sprite), Without<AreaOfEffect>>,
-    windows: Query<&Window>,
+    window: Single<&Window>,
     camera_q: Query<&Projection>,
 ) {
     if !debug.0 {
@@ -730,7 +737,6 @@ fn draw_hitboxes(
 
     // MovementZones : magenta = zone brute (centre clampé), rose = zone effective
     // (rétrécie par BoundingRadius, là où le bord du sprite vient s'arrêter).
-    let Ok(window) = windows.single() else { return; };
     let w = window.physical_width() as f32;
     let h = window.physical_height() as f32;
 

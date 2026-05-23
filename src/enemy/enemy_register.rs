@@ -18,14 +18,14 @@ pub fn spawn(
     mut commands: Commands,
     mut difficulty: ResMut<Difficulty>,
     time: Res<Time>,
-    windows: Query<&Window>,
+    window: Single<&Window>,
     mut enemy_register: ResMut<EnemyRegister>,
     asset_server: Res<AssetServer>
 ) {
     for enemy_builder in enemy_register.0.iter_mut() {
         enemy_builder.spawns(
-            commands.reborrow(), 
-            windows.single().unwrap(),
+            commands.reborrow(),
+            *window,
             &time,
             &mut difficulty, 
             &asset_server

@@ -4,7 +4,8 @@
 //! les probabilités configurées. L'item descend lentement et disparaît
 //! hors écran. Si le joueur le touche, l'effet se déclenche.
 //!
-//! Le joueur peut accumuler des bombes et les déclencher avec Espace.
+//! Le joueur peut accumuler des bombes et les déclencher avec LShift
+//! (Espace est désormais le dash).
 //! La bombe = solution de dernier recours qui nettoie tout :
 //! - inflige des dégâts à tous les astéroïdes et ennemis à l'écran
 //! - despawn tous les projectiles ennemis
@@ -36,7 +37,8 @@ impl Plugin for ItemPlugin {
             .init_resource::<PlayerBombs>()
             .add_systems(Startup, preload_item_frames)
             .add_systems(OnEnter(GameState::Playing), (setup_bomb_ui, reset_bombs))
-            .add_systems(OnExit(GameState::Playing), cleanup_bomb_ui)
+            // Cleanup UI : géré centralement par `cleanup_playing` (main.rs)
+            // via `#[require(GameplayEntity)]` sur `BombUI`.
             .add_systems(
                 Update,
                 (
@@ -69,10 +71,8 @@ const BOMB_DAMAGE_ASTEROID: i32 = 999;
 const BOMB_DAMAGE_ENEMY: i32 = 50;
 /// Durée du flash blanc à l'écran (secondes).
 const BOMB_FLASH_DURATION: f32 = 0.4;
-/// Taille des icônes de bombe dans l'UI.
-const BOMB_ICON_SIZE: f32 = 56.0;
-/// Nombre max de bombes affichées dans l'UI.
-const BOMB_MAX_DISPLAY: i32 = 10;
+/// Taille de l'icône de bombe dans l'UI.
+const BOMB_ICON_SIZE: f32 = 64.0;
 /// Durée visible du texte clignotant (secondes).
 const BOMB_HINT_VISIBLE: f32 = 0.7;
 /// Durée invisible du texte clignotant (secondes).
@@ -86,6 +86,9 @@ const BONUS_SCORE_VALUE: i32 = 50;
 pub enum ItemType {
     Bomb,
     BonusScore,
+    /// +1 d'armure jusqu'au cap `PLAYER_MAX_ARMOR`. Au-delà, ramassage
+    /// no-op (item consommé pour rien).
+    Armor,
 }
 
 impl ItemType {
@@ -93,6 +96,18 @@ impl ItemType {
         match self {
             ItemType::Bomb => Sfx::ItemPickup,
             ItemType::BonusScore => Sfx::ItemPickup,
+            ItemType::Armor => Sfx::ItemPickup,
+        }
+    }
+
+    /// Taille du sprite affichée en jeu (px). Override par variante : par
+    /// défaut on tape `ITEM_SPRITE_SIZE` ; l'armure est plus petite pour ne
+    /// pas dominer l'écran (sprite source = simple icône, pas une planche).
+    fn sprite_size(&self) -> f32 {
+        match self {
+            ItemType::Bomb => ITEM_SPRITE_SIZE,
+            ItemType::BonusScore => ITEM_SPRITE_SIZE,
+            ItemType::Armor => 44.0,
         }
     }
 }
@@ -114,11 +129,14 @@ struct ItemAnim {
     timer: Timer,
 }
 
-/// Frames préchargées pour chaque type d'item.
+/// Frames préchargées pour chaque type d'item. L'armure est un sprite
+/// statique (1 seul fichier `images/armor.png`), stockée comme `Vec` à
+/// 1 élément pour réutiliser le pipeline d'animation existant.
 #[derive(Resource)]
 struct ItemFrames {
     bomb: Vec<Handle<Image>>,
     bonus_score: Vec<Handle<Image>>,
+    armor: Vec<Handle<Image>>,
 }
 
 /// Table de drop attachée à une entité.
@@ -157,15 +175,16 @@ pub struct BombEvent;
 
 /// Conteneur racine de l'UI des bombes.
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 struct BombUI;
 
-/// Conteneur des icônes de bombes.
+/// Marqueur sur l'icône unique de bombe (grisée quand `count == 0`).
 #[derive(Component)]
-struct BombIconsContainer;
+struct BombIcon;
 
-/// Icône individuelle de bombe dans l'UI.
+/// Marqueur sur le texte "x N" qui affiche le nombre de bombes.
 #[derive(Component)]
-struct BombIcon(i32);
+struct BombCountText;
 
 /// Texte "ESPACE" qui clignote.
 #[derive(Component)]
@@ -186,7 +205,14 @@ fn preload_item_frames(mut commands: Commands, asset_server: Res<AssetServer>) {
     let bomb = load_frames_from_folder(&asset_server, "images/bomb").unwrap_or_default();
     let bonus_score =
         load_frames_from_folder(&asset_server, "images/bonus_score").unwrap_or_default();
-    commands.insert_resource(ItemFrames { bomb, bonus_score });
+    // Sprite unique (pas d'animation) — `Vec` à 1 élément pour rester
+    // compatible avec `ItemAnim` (qui tolère un cycle de 1 frame).
+    let armor = vec![asset_server.load("images/armor.png")];
+    commands.insert_resource(ItemFrames {
+        bomb,
+        bonus_score,
+        armor,
+    });
 }
 
 fn reset_bombs(mut bombs: ResMut<PlayerBombs>) {
@@ -195,57 +221,58 @@ fn reset_bombs(mut bombs: ResMut<PlayerBombs>) {
 
 // ─── UI des bombes ──────────────────────────────────────────────────
 
+/// HUD bombes : icône unique + compteur "x N" + hint [LSHIFT] clignotant.
+/// Positionné SOUS l'armure (qui est elle-même sous les vies).
+///
+/// Layout vertical (top, left:20) :
+/// - 20  → Vies (3 × 64px + gap)         → bord bas ≈ 84
+/// - 96  → Armure (3 × 40px + gap)       → bord bas ≈ 136
+/// - 148 → Bombes (1 × 64px + texte)
 fn setup_bomb_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
+    let bomb_texture = asset_server.load("images/bomb/frame000.png");
+    // Couleur "inactive" du HUD (même que vies/armure). Lue depuis player.rs.
+    let inactive = crate::player::player::HUD_INACTIVE_COLOR;
 
     commands
         .spawn((
-            (
             Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(92.0),
-                    left: Val::Px(32.0),
-                    flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(8.0),
-                    ..default()
-                },
-        ),
+                position_type: PositionType::Absolute,
+                // 96 (top armure) + 40 (icône armure) + 12 (gap) = 148
+                top: Val::Px(148.0),
+                left: Val::Px(20.0),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(12.0),
+                ..default()
+            },
             BombUI,
         ))
         .with_children(|parent| {
-            // Conteneur des icônes de bombes
-            parent
-                .spawn((
-                    (
-            Node {
-                            column_gap: Val::Px(6.0),
-                            ..default()
-                        },
-        ),
-                    BombIconsContainer,
-                ))
-                .with_children(|icons_parent| {
-                    let bomb_texture = asset_server.load("images/bomb/frame000.png");
-                    for i in 0..BOMB_MAX_DISPLAY {
-                        icons_parent.spawn((
-                            ImageNode::new(bomb_texture.clone()),
-                            Node {
-                                width: Val::Px(BOMB_ICON_SIZE),
-                                height: Val::Px(BOMB_ICON_SIZE),
-                                ..default()
-                            },
-                            Visibility::Hidden,
-                            BombIcon(i),
-                        ));
-                    }
-                });
-
-            // Texte clignotant "ESPACE"
+            // Icône bombe unique. Grisée quand `count == 0`, blanche sinon.
             parent.spawn((
-                Text::new("[ESPACE]"),
+                ImageNode::new(bomb_texture).with_color(inactive),
+                Node {
+                    width: Val::Px(BOMB_ICON_SIZE),
+                    height: Val::Px(BOMB_ICON_SIZE),
+                    ..default()
+                },
+                BombIcon,
+            ));
+            // Compteur "x N" — couleur jaune vif (cohérent avec autres
+            // accents UI du jeu), grisé quand count == 0.
+            parent.spawn((
+                Text::new("x 0"),
+                TextFont { font: font.clone(), font_size: 28.0, ..default() },
+                TextColor(inactive),
+                BombCountText,
+            ));
+            // Hint clignotant "[LSHIFT]" — n'apparaît qu'à partir de 1 bombe.
+            parent.spawn((
+                Text::new("[LSHIFT]"),
                 TextFont { font, font_size: 14.0, ..default() },
                 TextColor(Color::WHITE),
-                Node::default(),
+                Visibility::Hidden,
                 BombHintText {
                     timer: Timer::from_seconds(BOMB_HINT_VISIBLE, TimerMode::Once),
                     visible: true,
@@ -254,33 +281,36 @@ fn setup_bomb_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         });
 }
 
-fn cleanup_bomb_ui(mut commands: Commands, query: Query<Entity, With<BombUI>>) {
-    for entity in query.iter() {
-        if let Ok(mut e) = commands.get_entity(entity) {
-            e.try_despawn();
-        }
-    }
-}
+// `cleanup_bomb_ui` retiré — cleanup auto via `cleanup_playing` (main.rs)
+// grâce à `#[require(GameplayEntity)]` sur `BombUI`.
 
 fn update_bomb_ui(
     bombs: Res<PlayerBombs>,
-    mut icons: Query<(&BombIcon, &mut Visibility), Without<BombHintText>>,
-    mut hint: Query<&mut Visibility, With<BombHintText>>,
+    mut icon_q: Query<&mut ImageNode, With<BombIcon>>,
+    mut text_q: Query<(&mut Text, &mut TextColor), With<BombCountText>>,
+    mut hint_q: Query<&mut Visibility, With<BombHintText>>,
 ) {
-    // Mettre à jour la visibilité des icônes
-    for (icon, mut vis) in icons.iter_mut() {
-        if icon.0 < bombs.count {
-            *vis = Visibility::Visible;
-        } else {
-            *vis = Visibility::Hidden;
-        }
-    }
+    let has_bombs = bombs.count > 0;
+    let active_color = Color::WHITE;
+    let inactive_color = crate::player::player::HUD_INACTIVE_COLOR;
 
-    // Cacher le texte si aucune bombe
-    if bombs.count == 0 {
-        for mut vis in hint.iter_mut() {
+    if let Ok(mut img) = icon_q.single_mut() {
+        img.color = if has_bombs { active_color } else { inactive_color };
+    }
+    if let Ok((mut text, mut color)) = text_q.single_mut() {
+        let new_text = format!("x {}", bombs.count);
+        if **text != new_text {
+            **text = new_text;
+        }
+        color.0 = if has_bombs { active_color } else { inactive_color };
+    }
+    // Hint visible UNIQUEMENT quand le joueur a des bombes à utiliser ;
+    // sa pulsation est gérée par `blink_bomb_hint`.
+    for mut vis in hint_q.iter_mut() {
+        if !has_bombs {
             *vis = Visibility::Hidden;
         }
+        // Sinon : `blink_bomb_hint` prend le relais (Inherited/Hidden).
     }
 }
 
@@ -440,6 +470,7 @@ fn process_drop_events(
             let frames = match item_type {
                 ItemType::Bomb => item_frames.bomb.clone(),
                 ItemType::BonusScore => item_frames.bonus_score.clone(),
+                ItemType::Armor => item_frames.armor.clone(),
             };
 
             let first_frame = frames.first().cloned().unwrap_or_default();
@@ -447,7 +478,7 @@ fn process_drop_events(
             commands.spawn((
                 Sprite {
                     image: first_frame,
-                    custom_size: Some(Vec2::splat(ITEM_SPRITE_SIZE)),
+                    custom_size: Some(Vec2::splat(item_type.sprite_size())),
                     ..default()
                 },
                 Transform::from_translation(event.position),
@@ -491,10 +522,9 @@ fn move_droppables(time: Res<Time>, mut query: Query<&mut Transform, With<Droppa
 
 fn cleanup_offscreen_droppables(
     mut commands: Commands,
-    windows: Query<&Window>,
+    window: Single<&Window>,
     query: Query<(Entity, &Transform), With<Droppable>>,
 ) {
-    let window = windows.single().unwrap();
     let limit = -window.height() / 2.0 - 50.0;
     for (entity, transform) in query.iter() {
         if transform.translation.y < limit {
@@ -514,6 +544,7 @@ fn item_pickup_on_overlap(
     droppable_q: Query<&Droppable>,
     mut bombs: ResMut<PlayerBombs>,
     mut score: ResMut<Score>,
+    mut armor_q: Query<&mut crate::player::player::Armor, With<crate::player::player::Player>>,
     mut sfx: SfxPlayer,
 ) {
     use crate::physic::collider::layers;
@@ -528,6 +559,13 @@ fn item_pickup_on_overlap(
             }
             ItemType::BonusScore => {
                 score.add(BONUS_SCORE_VALUE);
+            }
+            ItemType::Armor => {
+                if let Ok(mut armor) = armor_q.single_mut() {
+                    // Cap dur : pas d'effet si déjà au max, mais l'item
+                    // est quand même consommé (cohérent avec les bombes).
+                    armor.current = (armor.current + 1).min(armor.max);
+                }
             }
         }
         sfx.play_at(droppable.item_type.pickup_sound(), 3.0);

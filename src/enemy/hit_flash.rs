@@ -46,7 +46,11 @@ pub fn animate_hit_flash(
 
         if flash.timer.is_finished() {
             sprite.color = Color::WHITE;
-            commands.entity(entity).remove::<HitFlash>();
+            // `try_remove` (et pas `remove`) : l'entité peut être despawn entre
+            // l'itération de la query et le flush des commands (ex: ennemi tué
+            // par la bombe le même frame que la fin de son HitFlash). `remove`
+            // panique sur entité despawn, `try_remove` no-op silencieusement.
+            commands.entity(entity).try_remove::<HitFlash>();
         } else {
             sprite.color = flash.color;
         }

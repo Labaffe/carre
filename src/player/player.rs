@@ -4,6 +4,22 @@
 //! pilotée par le deckbuilding (cartes qui modifient vitesse, arme, etc.).
 //! L'ancien système de phases temporelles (Phase1/2/3 via timer + boss music)
 //! a été retiré.
+//!
+//! ## Abstraction pour le deckbuilding
+//!
+//! **Arme (clic gauche)** : le système `shoot` lit `weapon.def` sur l'entité
+//! joueur. Pour swap d'arme : muter `weapon.def` (ou réinsérer un nouveau
+//! `Weapon`). Pas d'abstraction supplémentaire nécessaire — l'arme courante
+//! est déjà data-driven via `WeaponDef`.
+//!
+//! **Pouvoir (barre Espace)** : pattern **marker-par-pouvoir**. L'entité
+//! joueur porte un marker de pouvoir (ex: `DashPower`). Chaque système
+//! d'input de pouvoir filtre par son marker dédié. Pour swap de pouvoir :
+//! retirer le marker actuel, insérer le nouveau (côté deckbuilding).
+//! Seul le pouvoir équipé répond à l'input Espace.
+//!
+//! Ajouter un nouveau pouvoir = définir son marker + son système d'input
+//! filtré + son UI éventuelle, sans toucher aux pouvoirs existants.
 
 use crate::audio::{Sfx, SfxPlayer};
 use crate::game_manager::difficulty::BoomEvent;
@@ -14,14 +30,20 @@ use crate::menu::pause::not_paused;
 use crate::physic::collider::{collider, layers};
 use crate::physic::health::Health;
 use crate::physic::invulnerable::Invulnerable;
+use crate::player::power::{EquippedPower, PowerCooldowns, PowerKind};
 use crate::ui::crosshair::Crosshair;
 use crate::weapon::weapon::Weapon;
+use bevy::ecs::lifecycle::HookContext;
+use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
 
 // ─── Constantes ────────────────────────────────────────────────────
 
 /// Nombre de vies au départ. `Health` avec ce nombre de PV maximum (un hit = 1 PV).
 pub const PLAYER_MAX_LIVES: i32 = 3;
+/// Cap d'armure. L'armure absorbe un hit à la place de la vie. Au-delà, les
+/// items d'armure ramassés sont consommés pour rien.
+pub const PLAYER_MAX_ARMOR: u32 = 3;
 /// Durée d'invincibilité après un hit (secondes).
 pub const INVINCIBLE_DURATION: f32 = 2.0;
 /// Fréquence de clignotement pendant l'invincibilité (Hz).
@@ -35,7 +57,8 @@ const PLAYER_MARGIN: f32 = 64.0;
 /// Taille du sprite du joueur (carré, px).
 const PLAYER_SPRITE_SIZE: f32 = 128.0;
 /// Rayon de la hitbox du joueur (px). ~70% de la demi-taille du sprite.
-const PLAYER_HITBOX_RADIUS: f32 = 45.0;
+/// `pub` car le shield s'en sert pour restaurer la hitbox normale après usage.
+pub const PLAYER_HITBOX_RADIUS: f32 = 45.0;
 /// Durée du flash blanc autour du joueur lors d'un boom.
 const BOOM_FLASH_DURATION: f32 = 0.25;
 /// Distance maximale d'un dash (px). Si le réticule est plus loin, le dash
@@ -43,13 +66,8 @@ const BOOM_FLASH_DURATION: f32 = 0.25;
 const DASH_MAX_DISTANCE: f32 = 350.0;
 /// Durée d'un dash (s). Très court — l'effet "blink" qui rend invulnérable
 /// (via insert/remove de `Invulnerable` sur la même fenêtre).
+/// Cooldown : `PowerKind::Dash.cooldown_seconds()` dans `power.rs`.
 const DASH_DURATION: f32 = 0.14;
-/// Cooldown du dash (s). Long pour forcer le joueur à choisir son moment.
-const DASH_COOLDOWN: f32 = 5.0;
-/// Largeur de la barre de cooldown en UI (px).
-const DASH_UI_BAR_WIDTH: f32 = 120.0;
-/// Hauteur de la barre de cooldown en UI (px).
-const DASH_UI_BAR_HEIGHT: f32 = 8.0;
 
 // ─── Composants ────────────────────────────────────────────────────
 
@@ -63,11 +81,35 @@ pub struct Invincible(pub Timer);
 
 /// Marqueur pour le conteneur UI des vies.
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 pub struct LivesUI;
 
 /// Marqueur individuel pour chaque icône de vie.
 #[derive(Component)]
 struct LifeIcon(i32);
+
+/// Armure du joueur. Absorbe un hit à la place de la vie tant que `current > 0`.
+/// Cf. `apply_damage` dans `physic/health.rs`.
+#[derive(Component, Debug)]
+pub struct Armor {
+    pub current: u32,
+    pub max: u32,
+}
+
+impl Armor {
+    pub fn new(max: u32) -> Self {
+        Self { current: 0, max }
+    }
+}
+
+/// Marqueur pour le conteneur UI de l'armure.
+#[derive(Component)]
+#[require(crate::GameplayEntity)]
+pub struct ArmorUI;
+
+/// Marqueur individuel pour chaque icône d'armure (indexée 0..max).
+#[derive(Component)]
+struct ArmorIcon(u32);
 
 /// Flash blanc autour du vaisseau lors d'un boom.
 #[derive(Component)]
@@ -77,38 +119,28 @@ struct BoomFlash(Timer);
 /// `start` et `target` sur `DASH_DURATION`. Tant que ce composant est là :
 /// déplacement, tir et rotation sont bloqués (via `Without<Dashing>` dans
 /// les queries des systèmes correspondants).
+///
+/// Le hook `on_remove` retire `Invulnerable` automatiquement quel que soit
+/// le moment du retrait (timer expiré, despawn cascade, etc.) — pas de
+/// risque d'oubli cleanup.
 #[derive(Component)]
+#[component(on_remove = dashing_on_remove)]
 pub struct Dashing {
     pub start: Vec2,
     pub target: Vec2,
     pub elapsed: f32,
 }
 
-/// Ressource globale qui suit le cooldown du dash. Timer Once. Quand
-/// `is_finished()` → dash dispo. `reset()` au déclenchement → timer ré-tick
-/// pendant `DASH_COOLDOWN` secondes avant que le dash soit re-dispo.
-#[derive(Resource)]
-pub struct DashCooldown {
-    pub timer: Timer,
+/// Hook : retire `Invulnerable` quand `Dashing` est retiré. Comme un seul
+/// pouvoir est équipé à la fois (cf. `EquippedPower`), `Invulnerable` ne
+/// peut venir que du dash sur le joueur — safe à retirer ici.
+/// `DebugInvulnerable` (F1) est un composant séparé, non affecté.
+fn dashing_on_remove(mut world: DeferredWorld, ctx: HookContext) {
+    world
+        .commands()
+        .entity(ctx.entity)
+        .try_remove::<Invulnerable>();
 }
-
-impl Default for DashCooldown {
-    fn default() -> Self {
-        // État initial = prêt : on tick immédiatement le timer à sa durée
-        // complète pour que `is_finished()` soit true au spawn.
-        let mut timer = Timer::from_seconds(DASH_COOLDOWN, TimerMode::Once);
-        timer.tick(std::time::Duration::from_secs_f32(DASH_COOLDOWN));
-        Self { timer }
-    }
-}
-
-/// Marqueurs UI pour la jauge de dash.
-#[derive(Component)]
-struct DashUI;
-#[derive(Component)]
-struct DashUIText;
-#[derive(Component)]
-struct DashUIBar;
 
 // ─── Plugin ────────────────────────────────────────────────────────
 
@@ -116,33 +148,28 @@ pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<DashCooldown>()
-            .add_systems(
-                OnEnter(GameState::Playing),
-                (setup_player, setup_lives_ui, setup_dash_ui, reset_dash_cooldown)
-                    .after(LevelSetupSet),
+        app.add_systems(
+            OnEnter(GameState::Playing),
+            (setup_player, setup_lives_ui, setup_armor_ui).after(LevelSetupSet),
+        )
+        // Cleanup UI : géré centralement par `cleanup_playing` (main.rs)
+        // via `#[require(GameplayEntity)]` sur `LivesUI` / `ArmorUI`.
+        .add_systems(
+            Update,
+            (
+                movement,
+                rotate_towards_crosshair,
+                boom_flash_trigger,
+                boom_flash_update,
+                update_invincibility,
+                update_lives_ui,
+                update_armor_ui,
+                dash_input,
+                update_dash,
             )
-            .add_systems(
-                OnExit(GameState::Playing),
-                (cleanup_lives_ui, cleanup_dash_ui),
-            )
-            .add_systems(
-                Update,
-                (
-                    movement,
-                    rotate_towards_crosshair,
-                    boom_flash_trigger,
-                    boom_flash_update,
-                    update_invincibility,
-                    update_lives_ui,
-                    dash_input,
-                    update_dash,
-                    dash_cooldown_tick,
-                    update_dash_ui,
-                )
-                    .run_if(in_state(GameState::Playing))
-                    .run_if(not_paused),
-            );
+                .run_if(in_state(GameState::Playing))
+                .run_if(not_paused),
+        );
     }
 }
 
@@ -151,10 +178,9 @@ impl Plugin for PlayerPlugin {
 fn setup_player(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    windows: Query<&Window>,
+    window: Single<&Window>,
     config: Res<LevelConfig>,
 ) {
-    let window = windows.single().unwrap();
     let half_h = window.height() / 2.0;
     spawn_player(
         &mut commands,
@@ -179,7 +205,11 @@ pub fn spawn_player(
         Transform::from_xyz(0.0, start_y, 0.5),
         Player,
         Health::new(PLAYER_MAX_LIVES),
+        Armor::new(PLAYER_MAX_ARMOR),
         Weapon::default(),
+        // Pouvoir Espace équipé. Single source of truth via enum. Swap
+        // depuis le deckbuilding = mutation directe de `equipped.0`.
+        EquippedPower(PowerKind::Shield),
         collider(
             Shape::Circle(PLAYER_HITBOX_RADIUS),
             layers::PLAYER,
@@ -197,14 +227,12 @@ pub fn spawn_player(
 fn movement(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut query: Query<&mut Transform, (With<Player>, Without<Dashing>)>,
-    windows: Query<&Window>,
+    mut transform: Single<&mut Transform, (With<Player>, Without<Dashing>)>,
+    window: Single<&Window>,
 ) {
-    let window = windows.single().unwrap();
     let half_w = window.width() / 2.0 - PLAYER_MARGIN;
     let half_h = window.height() / 2.0 - PLAYER_MARGIN;
 
-    let Ok(mut transform) = query.single_mut() else { return; };
     let mut direction = Vec3::ZERO;
 
     if keyboard.pressed(KeyCode::KeyW) { direction.y += 1.0; }
@@ -220,12 +248,9 @@ fn movement(
 // ─── Rotation vers le réticule ─────────────────────────────────────
 
 fn rotate_towards_crosshair(
-    crosshair_q: Query<&Transform, (With<Crosshair>, Without<Player>)>,
-    mut player_q: Query<&mut Transform, (With<Player>, Without<Crosshair>, Without<Dashing>)>,
+    crosshair_tf: Single<&Transform, (With<Crosshair>, Without<Player>)>,
+    mut player_transform: Single<&mut Transform, (With<Player>, Without<Crosshair>, Without<Dashing>)>,
 ) {
-    let Ok(crosshair_tf) = crosshair_q.single() else { return };
-    let Ok(mut player_transform) = player_q.single_mut() else { return };
-
     let direction = crosshair_tf.translation - player_transform.translation;
     let angle = direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2;
     player_transform.rotation = Quat::from_rotation_z(angle);
@@ -264,7 +289,8 @@ fn boom_flash_update(
 
         if flash.0.is_finished() {
             sprite.color = Color::WHITE;
-            commands.entity(entity).remove::<BoomFlash>();
+            // `try_remove` : safe si l'entité est despawn entre query et flush.
+            commands.entity(entity).try_remove::<BoomFlash>();
         } else {
             let intensity = 1.0 + (1.0 - t) * 8.0;
             sprite.color = Color::srgba(intensity, intensity, intensity, 1.0);
@@ -284,7 +310,9 @@ fn update_invincibility(
 
         if inv.0.is_finished() {
             sprite.color = Color::WHITE;
-            commands.entity(entity).remove::<Invincible>();
+            // `try_remove` : safe si le joueur est despawn entre query et flush
+            // (ex: HP=0 le même frame que la fin de l'invincibilité).
+            commands.entity(entity).try_remove::<Invincible>();
         } else {
             let blink =
                 (inv.0.elapsed_secs() * INVINCIBLE_BLINK_RATE * std::f32::consts::TAU).sin();
@@ -296,12 +324,13 @@ fn update_invincibility(
 
 // ─── UI des vies ──────────────────────────────────────────────────
 
-fn setup_lives_ui(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    config: Res<LevelConfig>,
-) {
-    let texture = asset_server.load(config.player_ship);
+/// Couleur appliquée aux icônes "vides" (vie perdue, armure non acquise,
+/// 0 bombe) — gris foncé semi-transparent qui contraste bien avec le
+/// blanc plein des icônes actives. Partagée avec l'UI bombes (`item.rs`).
+pub const HUD_INACTIVE_COLOR: Color = Color::srgba(0.25, 0.25, 0.25, 0.45);
+
+fn setup_lives_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let texture = asset_server.load("images/health.png");
 
     commands
         .spawn((
@@ -329,39 +358,84 @@ fn setup_lives_ui(
         });
 }
 
+/// Au lieu de cacher les icônes perdues (`Visibility::Hidden`), on garde la
+/// rangée de `PLAYER_MAX_LIVES` icônes toujours visible et on grise celles
+/// au-delà du `Health.current`. Donne un feedback visuel "j'ai perdu une vie"
+/// au lieu d'un "il manque un slot".
 fn update_lives_ui(
     player_q: Query<&Health, With<Player>>,
-    mut icons: Query<(&LifeIcon, &mut Visibility)>,
+    mut icons: Query<(&LifeIcon, &mut ImageNode)>,
 ) {
     let current_lives = player_q.single().map(|h| h.current).unwrap_or(0);
-    for (icon, mut vis) in icons.iter_mut() {
-        if icon.0 < current_lives {
-            *vis = Visibility::Visible;
+    for (icon, mut img) in icons.iter_mut() {
+        img.color = if icon.0 < current_lives {
+            Color::WHITE
         } else {
-            *vis = Visibility::Hidden;
-        }
+            HUD_INACTIVE_COLOR
+        };
     }
 }
 
-fn cleanup_lives_ui(mut commands: Commands, query: Query<Entity, With<LivesUI>>) {
-    for entity in query.iter() {
-        if let Ok(mut e) = commands.get_entity(entity) {
-            e.try_despawn();
-        }
+// `cleanup_lives_ui` retiré — cleanup auto via `cleanup_playing` (main.rs)
+// grâce à `#[require(GameplayEntity)]` sur `LivesUI`.
+
+// ─── UI de l'armure ────────────────────────────────────────────────
+
+/// Spawn la rangée d'icônes d'armure SOUS les vies. Contrairement aux vies
+/// (où le slot perdu est grisé pour montrer "j'avais 3, j'ai perdu 1"),
+/// l'armure n'affiche QUE les icônes possédées : 0 armure = rien, 3 armures
+/// = 3 icônes. Les slots sont créés cachés et révélés par `update_armor_ui`.
+fn setup_armor_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let texture = asset_server.load("images/armor.png");
+
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                // 20 (top vies) + 64 (icône) + 12 (gap vertical) = 96
+                top: Val::Px(96.0),
+                left: Val::Px(20.0),
+                column_gap: Val::Px(12.0),
+                ..default()
+            },
+            ArmorUI,
+        ))
+        .with_children(|parent| {
+            for i in 0..PLAYER_MAX_ARMOR {
+                parent.spawn((
+                    ImageNode::new(texture.clone()),
+                    Node {
+                        width: Val::Px(40.0),
+                        height: Val::Px(40.0),
+                        ..default()
+                    },
+                    Visibility::Hidden,
+                    ArmorIcon(i),
+                ));
+            }
+        });
+}
+
+fn update_armor_ui(
+    armor: Single<&Armor, With<Player>>,
+    mut icons: Query<(&ArmorIcon, &mut Visibility)>,
+) {
+    let current = armor.current;
+    for (icon, mut vis) in icons.iter_mut() {
+        *vis = if icon.0 < current {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
     }
 }
 
-// ─── Dash : input, motion, cooldown ─────────────────────────────────
-
-/// Reset du cooldown à chaque entrée en Playing (sinon le timer hérité d'une
-/// partie précédente reste en cours).
-fn reset_dash_cooldown(mut cooldown: ResMut<DashCooldown>) {
-    *cooldown = DashCooldown::default();
-}
+// ─── Dash : input, motion ───────────────────────────────────────────
 
 /// Déclenche un dash si :
 /// - Espace pressé
-/// - cooldown prêt
+/// - `EquippedPower` du joueur == `PowerKind::Dash`
+/// - cooldown prêt via `PowerCooldowns`
 /// - aucun dash déjà en cours (Without<Dashing> dans la query)
 ///
 /// La cible = position du réticule au moment du clic, plafonnée à
@@ -369,19 +443,24 @@ fn reset_dash_cooldown(mut cooldown: ResMut<DashCooldown>) {
 fn dash_input(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut cooldown: ResMut<DashCooldown>,
+    mut cooldowns: ResMut<PowerCooldowns>,
     mut sfx: SfxPlayer,
-    crosshair_q: Query<&Transform, (With<Crosshair>, Without<Player>)>,
-    player_q: Query<(Entity, &Transform), (With<Player>, Without<Dashing>, Without<Crosshair>)>,
+    crosshair_tf: Single<&Transform, (With<Crosshair>, Without<Player>)>,
+    player_q: Single<
+        (Entity, &Transform, &EquippedPower),
+        (With<Player>, Without<Dashing>, Without<Crosshair>),
+    >,
 ) {
     if !keyboard.just_pressed(KeyCode::Space) {
         return;
     }
-    if !cooldown.timer.is_finished() {
+    let (player_e, player_tf, equipped) = *player_q;
+    if equipped.0 != PowerKind::Dash {
         return;
     }
-    let Ok((player_e, player_tf)) = player_q.single() else { return };
-    let Ok(crosshair_tf) = crosshair_q.single() else { return };
+    if !cooldowns.is_ready(PowerKind::Dash) {
+        return;
+    }
 
     let start = player_tf.translation.truncate();
     let crosshair_pos = crosshair_tf.translation.truncate();
@@ -404,14 +483,13 @@ fn dash_input(
         },
         Invulnerable,
     ));
-    cooldown.timer.reset();
+    cooldowns.trigger(PowerKind::Dash);
     sfx.play(Sfx::PlayerDash);
 }
 
 /// Anime le dash en cours : lerp start → target sur `DASH_DURATION`. À la
-/// fin, retire `Dashing` + `Invulnerable` pour rendre le contrôle au joueur.
-/// Note : si F1 (debug mode) est actif, `debug_player_invulnerability` ré-
-/// insérera `Invulnerable` la frame suivante.
+/// fin, retire `Dashing` — le hook `dashing_on_remove` se charge de retirer
+/// `Invulnerable` au passage.
 fn update_dash(
     mut commands: Commands,
     time: Res<Time>,
@@ -427,106 +505,11 @@ fn update_dash(
         if t >= 1.0 {
             if let Ok(mut e) = commands.get_entity(entity) {
                 e.remove::<Dashing>();
-                e.remove::<Invulnerable>();
             }
         }
     }
 }
 
-/// Tick le timer de cooldown chaque frame. Une fois finished, le dash est
-/// dispo (`dash_input` autorise un nouveau déclenchement).
-fn dash_cooldown_tick(time: Res<Time>, mut cooldown: ResMut<DashCooldown>) {
-    cooldown.timer.tick(time.delta());
-}
-
-// ─── Dash UI : label "ESPACE" + jauge ───────────────────────────────
-
-fn setup_dash_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
-    commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                bottom: Val::Px(20.0),
-                left: Val::Percent(50.0),
-                // margin négatif pour centrer (~ demi-largeur du bloc).
-                margin: UiRect::left(Val::Px(-DASH_UI_BAR_WIDTH / 2.0)),
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                row_gap: Val::Px(4.0),
-                ..default()
-            },
-            DashUI,
-        ))
-        .with_children(|parent| {
-            // Label "ESPACE"
-            parent.spawn((
-                Text::new("ESPACE"),
-                TextFont {
-                    font,
-                    font_size: 16.0,
-                    ..default()
-                },
-                TextColor(Color::WHITE),
-                DashUIText,
-            ));
-            // Track de la barre (fond sombre)
-            parent
-                .spawn((
-                    Node {
-                        width: Val::Px(DASH_UI_BAR_WIDTH),
-                        height: Val::Px(DASH_UI_BAR_HEIGHT),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(0.15, 0.15, 0.15, 0.8)),
-                ))
-                .with_children(|track| {
-                    // Fill (largeur animée par update_dash_ui)
-                    track.spawn((
-                        Node {
-                            width: Val::Percent(100.0),
-                            height: Val::Percent(100.0),
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgba(1.0, 0.85, 0.0, 1.0)),
-                        DashUIBar,
-                    ));
-                });
-        });
-}
-
-/// Met à jour le label (couleur) et la barre (largeur + couleur) selon
-/// l'état du cooldown. Dispo = jaune vif, en cooldown = gris + barre cyan
-/// qui se remplit.
-fn update_dash_ui(
-    cooldown: Res<DashCooldown>,
-    mut text_q: Query<&mut TextColor, With<DashUIText>>,
-    mut bar_q: Query<(&mut Node, &mut BackgroundColor), With<DashUIBar>>,
-) {
-    let ready = cooldown.timer.is_finished();
-    let fraction = cooldown.timer.fraction(); // 0 (vient de claquer) → 1 (dispo)
-
-    if let Ok(mut color) = text_q.single_mut() {
-        color.0 = if ready {
-            Color::srgba(1.0, 0.85, 0.0, 1.0) // jaune vif
-        } else {
-            Color::srgba(0.45, 0.45, 0.45, 1.0) // gris
-        };
-    }
-    if let Ok((mut node, mut bg)) = bar_q.single_mut() {
-        node.width = Val::Percent(fraction * 100.0);
-        bg.0 = if ready {
-            Color::srgba(1.0, 0.85, 0.0, 1.0) // jaune (plein)
-        } else {
-            Color::srgba(0.3, 0.7, 1.0, 1.0) // cyan (en charge)
-        };
-    }
-}
-
-fn cleanup_dash_ui(mut commands: Commands, query: Query<Entity, With<DashUI>>) {
-    for entity in query.iter() {
-        if let Ok(mut e) = commands.get_entity(entity) {
-            e.try_despawn();
-        }
-    }
-}
+// Cooldown ticking + UI sont gérés centralement par `PowerPlugin`
+// (cf. `src/player/power.rs`). Le dash n'a plus besoin de ses propres
+// systèmes pour ça.

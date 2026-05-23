@@ -81,6 +81,7 @@ fn main() {
             DifficultyPlugin,
             LevelPlugin,
             GamePlugin,
+            game_manager::loading::LoadingPlugin,
             audio::AudioPlugin,
             sprite_orient::SpriteOrientPlugin,
         ))
@@ -97,6 +98,8 @@ fn main() {
         // Joueur & armes
         .add_plugins((
             PlayerPlugin,
+            player::power::PowerPlugin,
+            player::shield::ShieldPlugin,
             PlayerFirePlugin,
             WeaponPlugin,
             ProjectilePlugin,
@@ -149,16 +152,18 @@ impl Default for GameSettings {
     }
 }
 
-/// Marker apposé sur **toutes les entités de gameplay** qui doivent
-/// disparaître quand on quitte l'état `Playing` (retour menu, game over, etc.).
+/// Marker apposé sur **toutes les entités à durée de vie = état `Playing`** :
+/// entités gameplay (Player, Enemy, Projectile, AOE, Background, Planet,
+/// Explosion, Droppable, Music...) ET UI gameplay (ScoreUI, LivesUI, BombUI,
+/// ChaosLevelUI, PowerUIRoot, WeaponUI...). Tout est despawn ensemble par
+/// `cleanup_playing` quand on quitte `Playing`.
 ///
 /// Ajouté automatiquement via `#[require(GameplayEntity)]` sur les composants
-/// racines de chaque type d'entité (Player, Enemy, Projectile, AreaOfEffect,
-/// Background, Planet, Explosion, Droppable, MusicMain/Boss/Outro…). Plus
-/// besoin de lister 11 query types dans le cleanup — un seul suffit.
+/// racines. Un seul query dans le cleanup, zéro système de cleanup par
+/// module à maintenir.
 ///
-/// Si un nouveau type d'entité de jeu apparaît, il suffit d'ajouter le
-/// `#[require(GameplayEntity)]` sur son marker pour qu'il soit cleané auto.
+/// Pour qu'un nouvel ennemi / UI / entity profite du cleanup auto : juste
+/// `#[require(crate::GameplayEntity)]` sur son marker racine.
 #[derive(Component, Default, Clone)]
 pub struct GameplayEntity;
 

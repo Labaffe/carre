@@ -3,13 +3,17 @@
 
 use crate::synth::{Sfx, Wave};
 
+/// "Pew" doux pour le tir joueur. Triangle (moins d'harmoniques que Square),
+/// freq basse, lowpass agressif → pas de fatigue auditive même à cadence
+/// rapide (RED_PROJECTILE = 6-7 shots/s).
 pub fn shoot() -> Sfx {
     Sfx::new("shoot")
-        .wave(Wave::Square)
-        .freq_sweep(1200.0, 600.0)
+        .wave(Wave::Triangle)
+        .freq_sweep(520.0, 220.0)
         .duration(0.08)
-        .envelope(0.0, 0.005, 1.0, 0.07)
-        .volume(0.35)
+        .envelope(0.0, 0.005, 0.8, 0.07)
+        .lowpass(1600.0)
+        .volume(0.22)
 }
 
 pub fn hit() -> Sfx {

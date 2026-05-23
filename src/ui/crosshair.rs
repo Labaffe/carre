@@ -46,14 +46,12 @@ const DOT_SIZE: f32 = 3.0;
 
 fn spawn_crosshair(
     mut commands: Commands,
-    windows: Query<&Window>,
+    window: Single<&Window>,
     mut cursor_q: Query<&mut bevy::window::CursorOptions>,
 ) {
     if let Ok(mut cursor) = cursor_q.single_mut() {
         cursor.visible = false;
     }
-    let window = windows.single().unwrap();
-
     let half_h = window.height() / 2.0;
     let start_y = -half_h * 0.5 + 150.0;
 
@@ -140,11 +138,11 @@ const CROSSHAIR_LOCK_DURATION: f32 = 0.4;
 
 fn crosshair_follow_mouse(
     mut windows: Query<&mut Window>,
-    camera_q: Query<(&Camera, &GlobalTransform)>,
+    camera_q: Single<(&Camera, &GlobalTransform)>,
     mut crosshair_q: Query<(&mut Transform, &GlobalTransform), With<Crosshair>>,
     difficulty: Res<Difficulty>,
 ) {
-    let Ok((camera, camera_gt)) = camera_q.single() else { return; };
+    let (camera, camera_gt) = *camera_q;
 
     // Pendant le blocage : téléporter le curseur système sur le crosshair
     if difficulty.elapsed < CROSSHAIR_LOCK_DURATION {

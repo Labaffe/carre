@@ -52,6 +52,8 @@ LevelStep::after_step("boss_spawn", 10.0, "boss1_ufos")
 | `SpawnEnemy(&str, usize, SpawnPosition)` | Spawn N ennemis d'un type (one-shot) |
 | `StartSpawning(&str, usize, f32, SpawnPosition)` | Spawner continu (count/intervalle/position). Pour `"asteroid"`, count/interval ignorés (système propre basé sur `difficulty.factor`). |
 | `StopSpawning(&str)` | Désactive un spawner continu |
+| `SpawnSimpleUfoWave { count, interval }` | Spawn une wave de Simple UFOs en queue le long d'un chemin Bézier **random** (calculé une fois au déclenchement). Chaîner plusieurs actions de ce type à des temps différents pour avoir N waves indépendantes. Cf. [simple_ufo.rs](src/enemy/simple_ufo.rs). |
+| `MarkLevelComplete` | Marque le niveau comme terminé (déclenche le countdown → outro). Émis aussi par `detect_boss_death` quand le dernier boss meurt. |
 | `StartBgDeceleration { duration, final_speed }` | Décélération background |
 | `ShowPlanet` | Animation d'apparition de la planète |
 | `Log(&str)` | `info!()` console (debug) |
@@ -61,6 +63,7 @@ LevelStep::after_step("boss_spawn", 10.0, "boss1_ufos")
 | Variant | Description |
 |---------|-------------|
 | `Top` / `Bottom` / `Left` / `Right` | Hors écran sur ce bord, position aléatoire sur l'autre axe |
+| `UpperMid` | Centré X, moitié haute (par défaut en éditeur) |
 | `At(f32, f32)` | Position exacte (x, y) |
 
 ## LevelRunner & Difficulty
@@ -79,7 +82,15 @@ pub spawn_requests: Vec<(&str, usize, SpawnPosition)>,
 pub active_spawners: HashMap<&str, (usize, f32, SpawnPosition)>,
 ```
 
-**LevelActionEvent** : n'importe quel système peut injecter des actions en envoyant `LevelActionEvent(Vec<Action>)`. Utilisé par le boss pour spawner des GreenUFOs en transition.
+**LevelActionEvent** : n'importe quel système peut injecter des actions en envoyant `LevelActionEvent(Vec<Action>)`. Utilisé par le boss pour spawner des GreenUFOs en transition, et par `detect_boss_death` pour émettre `MarkLevelComplete`.
+
+## Gating par LevelPhase
+
+Le `LevelRunner` et `process_level_action_events` tournent **uniquement
+pendant `LevelPhase::Running`** (cf. [docs/game.md](game.md)). Pendant
+l'intro et l'outro, la timeline est en pause. Aucun action ne fire et
+`runner.elapsed` n'avance pas. Le gating est appliqué via
+`.run_if(in_state(LevelPhase::Running))` dans [`LevelPlugin`](src/level/level.rs).
 
 ## Niveau 1 — Timeline
 

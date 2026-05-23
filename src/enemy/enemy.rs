@@ -26,6 +26,7 @@ use bevy::prelude::*;
 
 
 use crate::audio::{Sfx, SfxPlayer};
+use crate::behavior::choice_list::TransitionMessages;
 use crate::enemy::enemies::EnemyData;
 use crate::enemy::hit_flash::HitFlash;
 use crate::fx::explosion::spawn_projectile_death;
@@ -41,8 +42,14 @@ use crate::weapon::projectile::Projectile;
 /// Composant marker pour tout ennemi. Le nom sert au debug uniquement —
 /// la hitbox passe maintenant par le composant `Hitbox` (collider unifié)
 /// et la taille du sprite par `Sprite.custom_size`.
+///
+/// **`#[require(TransitionMessages)]`** : indispensable pour que
+/// `detect_death` (cf. [`crate::enemy::death`]) fire — son query exige
+/// ce composant. Tous les ennemis (même ceux sans BehaviorComponent
+/// type kamikaze) le portent donc automatiquement ; les ennemis sans BT
+/// l'ignorent simplement (composant inerte).
 #[derive(Component)]
-#[require(crate::GameplayEntity)]
+#[require(crate::GameplayEntity, TransitionMessages = TransitionMessages::new())]
 pub struct Enemy {
     pub name: &'static str,
 }
@@ -64,9 +71,10 @@ impl Enemy {
 pub struct EnemyDeathAnchor(pub Vec3);
 
 /// Événement émis quand un ennemi atteint PV=0 pour la première fois.
-/// Permet aux systèmes spécifiques (drop d'items, etc.) de réagir sans
-/// être couplés au moteur de phases.
-#[derive(Message)]
+/// Trigger via `commands.trigger(EnemyDeathEvent { ... })` dans
+/// `detect_death`. Consommé par des **observers globaux** (cf.
+/// `add_observer` dans `EnemyPlugin`) — mêmes conventions que `HitEvent`.
+#[derive(Event)]
 pub struct EnemyDeathEvent {
     pub entity: Entity,
     pub position: Vec3,
@@ -132,46 +140,32 @@ pub fn projectile_damage_on_overlap(
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  Reactive systems sur HitEvent — feedback "ennemi touché"
+//  Observers sur HitEvent — feedback "ennemi touché"
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Insère un `HitFlash` sur tout target ENEMY ou ASTEROID qui a pris des
 /// dégâts. PLAYER est exclu (le flash blanc cohabiterait mal avec le blink
 /// d'`Invincible`).
-pub fn hit_flash_on_hit(
-    mut commands: Commands,
-    mut events: MessageReader<HitEvent>,
-) {
-    for ev in events.read() {
-        if ev.target_layer & (layers::ENEMY | layers::ASTEROID) == 0 {
-            continue;
-        }
-        if let Ok(mut e) = commands.get_entity(ev.target) {
-            e.try_insert(HitFlash::white(HIT_FLASH_DURATION));
-        }
+pub fn hit_flash_on_hit(trigger: On<HitEvent>, mut commands: Commands) {
+    let ev = trigger.event();
+    if ev.target_layer & (layers::ENEMY | layers::ASTEROID) == 0 {
+        return;
+    }
+    if let Ok(mut e) = commands.get_entity(ev.target) {
+        e.try_insert(HitFlash::white(HIT_FLASH_DURATION));
     }
 }
 
 /// Joue `Sfx::EnemyHit` quand un ENEMY ou ASTEROID prend des dégâts.
-pub fn enemy_hit_sound_on_hit(
-    mut events: MessageReader<HitEvent>,
-    mut sfx: SfxPlayer,
-) {
-    for ev in events.read() {
-        if ev.target_layer & (layers::ENEMY | layers::ASTEROID) != 0 {
-            sfx.play(Sfx::EnemyHit);
-        }
+pub fn enemy_hit_sound_on_hit(trigger: On<HitEvent>, mut sfx: SfxPlayer) {
+    if trigger.event().target_layer & (layers::ENEMY | layers::ASTEROID) != 0 {
+        sfx.play(Sfx::EnemyHit);
     }
 }
 
 /// +1 au score à chaque hit sur ENEMY ou ASTEROID.
-pub fn score_on_enemy_hit(
-    mut events: MessageReader<HitEvent>,
-    mut score: ResMut<Score>,
-) {
-    for ev in events.read() {
-        if ev.target_layer & (layers::ENEMY | layers::ASTEROID) != 0 {
-            score.add(1);
-        }
+pub fn score_on_enemy_hit(trigger: On<HitEvent>, mut score: ResMut<Score>) {
+    if trigger.event().target_layer & (layers::ENEMY | layers::ASTEROID) != 0 {
+        score.add(1);
     }
 }

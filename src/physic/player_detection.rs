@@ -45,14 +45,13 @@ pub struct PlayerDetection {
 
 fn detect_player(
     time: Res<Time>,
-    player_q: Query<&Transform, With<Player>>,
+    player_transform: Single<&Transform, With<Player>>,
     mut query: Query<(
         &Transform,
         &mut PlayerDetection,
         Option<&mut TransitionMessages>,
     )>,
 ) {
-    let Ok(player_transform) = player_q.single() else { return; };
     let player_pos = player_transform.translation.truncate();
     let dt = time.delta_secs();
 

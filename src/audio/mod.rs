@@ -18,6 +18,7 @@
 
 use bevy::audio::Volume;
 use bevy::ecs::system::SystemParam;
+use bevy::ecs::world::DeferredWorld;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
@@ -174,6 +175,37 @@ impl<'w, 's> SfxPlayer<'w, 's> {
             PlaybackSettings::ONCE,
         ))
     }
+}
+
+/// Joue un SFX depuis un `DeferredWorld` (typiquement un component hook
+/// `#[component(on_insert = ...)]`). Équivalent de `SfxPlayer::play` mais
+/// utilisable hors d'un système classique.
+///
+/// Usage :
+/// ```ignore
+/// #[derive(Component)]
+/// #[component(on_insert = play_my_sound)]
+/// struct MyMarker;
+///
+/// fn play_my_sound(mut world: DeferredWorld, _: HookContext) {
+///     spawn_sfx(&mut world, Sfx::MySfx);
+/// }
+/// ```
+pub fn spawn_sfx(world: &mut DeferredWorld, sfx: Sfx) {
+    let handle = world.resource::<SfxLibrary>().get(sfx);
+    world.commands().spawn((
+        AudioPlayer::new(handle),
+        PlaybackSettings::DESPAWN,
+    ));
+}
+
+/// Variante de [`spawn_sfx`] depuis n'importe quel `&mut World` (ex: observers).
+pub fn spawn_sfx_world(world: &mut World, sfx: Sfx) {
+    let handle = world.resource::<SfxLibrary>().get(sfx);
+    world.spawn((
+        AudioPlayer::new(handle),
+        PlaybackSettings::DESPAWN,
+    ));
 }
 
 pub struct AudioPlugin;
