@@ -1,17 +1,21 @@
-//! Progression du jeu — machine à état du niveau.
+//! Progression du jeu — machine à état du niveau via Bevy `SubState`.
 //!
-//! Chaque niveau suit le flow :
+//! ## Flow
+//!
 //! ```text
-//! Intro (optionnelle) → Running (LevelSteps) → OutroCountdown → Outro
+//! [Default: Intro (optionnelle)] → Running → OutroCountdown → Outro
 //! ```
 //!
-//! - **Intro** : le vaisseau monte depuis le bas de l'écran + son.
-//!   Le gameplay est gelé via `PauseState.intro_active`.
-//! - **Running** : les LevelSteps s'exécutent. Le niveau ne se termine
-//!   PAS quand toutes les étapes sont jouées — il faut un événement
-//!   explicite (`MarkLevelComplete` ou mort du dernier boss).
-//! - **OutroCountdown** : 3s d'attente.
-//! - **Outro** : freeze le jeu, musique `stage_clear.ogg`, écran de victoire.
+//! - `LevelPhase` est un `SubState` de `GameState::Playing` : il est
+//!   automatiquement créé à l'entrée de Playing (variant Default = Intro)
+//!   et retiré à la sortie. Plus besoin de `commands.remove_resource`.
+//! - Chaque variante a sa Resource éphémère pour les données vivantes :
+//!   `IntroData`, `OutroCountdownData`, `OutroData`. Insérée en `OnEnter`,
+//!   retirée en `OnExit`. Les systèmes d'une phase peuvent donc supposer
+//!   que leur data Resource existe (pas d'`Option<Res<…>>` partout).
+//! - Les systèmes de chaque phase sont gated par `run_if(in_state(...))`.
+//! - **Mode éditeur** : `enter_intro` détecte `EditorTestEnemy` et court-
+//!   circuite directement vers Running (pas de données, pas de pause).
 
 use std::collections::HashSet;
 
@@ -21,7 +25,7 @@ use crate::enemy::boss::{BossMarker, MusicBoss};
 use crate::enemy::enemy::Enemy;
 use crate::game_manager::difficulty::Difficulty;
 use crate::game_manager::state::GameState;
-use crate::level::level::{LevelConfig, level_name};
+use crate::level::level::{EditorTestEnemy, LevelConfig, level_name};
 use crate::level::levels::ScrollDirection;
 use crate::menu::pause::PauseState;
 use crate::player::player::Player;
@@ -32,18 +36,45 @@ pub struct GamePlugin;
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GameProgress>()
+            .add_sub_state::<LevelPhase>()
+            // ─── Intro ──────────────────────────────────────────────
+            .add_systems(OnEnter(LevelPhase::Intro), enter_intro)
+            .add_systems(OnExit(LevelPhase::Intro), exit_intro)
             .add_systems(
                 Update,
-                (
-                    level_phase_system,
-                    skip_intro_input,
-                    detect_boss_death,
-                    detect_level_complete,
-                    debug_skip_to_outro,
-                    level_outro_animate,
-                    level_outro_input,
-                )
-                    .run_if(in_state(GameState::Playing)),
+                (intro_tick, skip_intro_input).run_if(in_state(LevelPhase::Intro)),
+            )
+            // ─── Running → OutroCountdown ───────────────────────────
+            .add_systems(
+                Update,
+                (detect_boss_death, detect_level_complete)
+                    .run_if(in_state(LevelPhase::Running)),
+            )
+            // ─── OutroCountdown ─────────────────────────────────────
+            .add_systems(OnEnter(LevelPhase::OutroCountdown), enter_outro_countdown)
+            .add_systems(OnExit(LevelPhase::OutroCountdown), exit_outro_countdown)
+            .add_systems(
+                Update,
+                countdown_tick.run_if(in_state(LevelPhase::OutroCountdown)),
+            )
+            // ─── Outro ──────────────────────────────────────────────
+            .add_systems(OnEnter(LevelPhase::Outro), enter_outro)
+            .add_systems(OnExit(LevelPhase::Outro), exit_outro)
+            .add_systems(
+                Update,
+                (level_outro_animate, level_outro_input).run_if(in_state(LevelPhase::Outro)),
+            )
+            // ─── F4 : skip direct à l'outro ─────────────────────────
+            // Ordonné `after(detect_level_complete)` pour que son
+            // `NextState::set(Outro)` ne soit pas écrasé par un
+            // `NextState::set(OutroCountdown)` si `level_complete` était
+            // déjà true au moment du F4.
+            .add_systems(
+                Update,
+                debug_skip_to_outro
+                    .after(detect_level_complete)
+                    .run_if(in_state(GameState::Playing))
+                    .run_if(not_in_outro),
             )
             .add_systems(OnExit(GameState::Playing), cleanup_playing)
             .add_systems(OnEnter(GameState::LevelTransition), auto_start_next_level)
@@ -54,6 +85,12 @@ impl Plugin for GamePlugin {
                 handle_credits_input.run_if(in_state(GameState::Credits)),
             );
     }
+}
+
+/// `run_if` helper : true tant que la sous-phase n'est pas `Outro`.
+/// `Option<Res<State<…>>>` car `LevelPhase` n'existe pas hors de `Playing`.
+fn not_in_outro(phase: Option<Res<State<LevelPhase>>>) -> bool {
+    phase.map_or(false, |p| !matches!(*p.get(), LevelPhase::Outro))
 }
 
 // ─── Ressources ─────────────────────────────────────────────────────
@@ -104,56 +141,73 @@ pub struct ConfirmPopupUI;
 pub struct ConfirmOptionMarker(pub usize);
 
 // ═══════════════════════════════════════════════════════════════════════
-//  Machine à état du niveau : LevelPhase
+//  Machine à état du niveau : SubState LevelPhase
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Machine à état du niveau en cours.
-///
-/// ```text
-/// Intro (optionnel) → Running → OutroCountdown → Outro
-/// ```
-#[derive(Resource)]
-pub struct LevelPhase {
-    pub phase: LevelPhaseKind,
+/// Sous-phase du niveau en cours. `SubState` lié à `GameState::Playing` :
+/// auto-créé à l'entrée, auto-supprimé à la sortie.
+#[derive(SubStates, Debug, Clone, PartialEq, Eq, Hash, Default)]
+#[source(GameState = GameState::Playing)]
+pub enum LevelPhase {
+    /// Animation d'entrée du vaisseau (optionnelle). En mode éditeur,
+    /// `enter_intro` court-circuite directement vers Running.
+    #[default]
+    Intro,
+    /// Niveau en cours : les `LevelStep` s'exécutent (cf. `run_level` dans level.rs).
+    Running,
+    /// Délai de 3s entre `level_complete` et l'outro.
+    OutroCountdown,
+    /// Séquence de victoire (musique + écran).
+    Outro,
 }
 
-#[derive(Debug, Clone)]
-pub enum LevelPhaseKind {
-    /// Animation d'entrée du vaisseau (optionnelle).
-    /// L'intro se termine quand le son ET l'animation sont finis.
-    Intro {
-        elapsed: f32,
-        /// Durée de l'animation du vaisseau (= durée du son).
-        duration: f32,
-        sound: crate::audio::Sfx,
-        sound_played: bool,
-        /// Le son d'intro a fini de jouer (entité IntroSound despawnée).
-        sound_finished: bool,
-        /// Position de départ (hors écran).
-        start_pos: Vec2,
-        /// Position cible (en jeu).
-        target_pos: Vec2,
-        /// Ratio pour calculer la position cible (ex: -0.5 → 50% du half-screen).
-        spawn_ratio: f32,
-        initialized: bool,
-    },
-    /// Niveau en cours : les LevelSteps s'exécutent.
-    Running,
-    /// Countdown avant l'outro (3s après level_complete).
-    OutroCountdown { timer: Timer },
-    /// Séquence d'outro (victoire).
-    Outro { elapsed: f32, music_spawned: bool },
+// ─── Données éphémères par phase ────────────────────────────────────
+
+/// Données de la phase Intro. Insérée en `OnEnter(Intro)`, retirée en
+/// `OnExit(Intro)`. Absente en mode éditeur (l'intro est court-circuitée).
+#[derive(Resource)]
+pub struct IntroData {
+    pub elapsed: f32,
+    pub duration: f32,
+    pub sound: crate::audio::Sfx,
+    pub sound_played: bool,
+    /// Le son d'intro a fini de jouer (entité `IntroSound` despawnée).
+    pub sound_finished: bool,
+    /// Position de départ (hors écran).
+    pub start_pos: Vec2,
+    /// Position cible (en jeu).
+    pub target_pos: Vec2,
+    /// Ratio pour calculer la position cible (ex: -0.5 → 50% du half-screen).
+    pub spawn_ratio: f32,
+    pub initialized: bool,
+}
+
+/// Données du countdown avant l'outro.
+#[derive(Resource)]
+pub struct OutroCountdownData {
+    pub timer: Timer,
+}
+
+/// Données de la phase Outro.
+#[derive(Resource)]
+pub struct OutroData {
+    pub elapsed: f32,
+    pub music_spawned: bool,
 }
 
 // ─── Composants ─────────────────────────────────────────────────────
 
-/// Marqueur pour tous les éléments UI de l'outro (cleanup).
+/// Marqueur pour tous les éléments UI de l'outro. Auto-cleanup via le
+/// marker `GameplayEntity` à la sortie de `GameState::Playing`.
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 struct OutroUI;
 
 /// Marqueur pour le son d'intro (landing.ogg). Despawné automatiquement
-/// par Bevy quand la lecture est terminée (PlaybackSettings::DESPAWN).
+/// par Bevy quand la lecture est terminée (`PlaybackSettings::DESPAWN`),
+/// ou par `do_skip_intro` si l'utilisateur skip.
 #[derive(Component)]
+#[require(crate::GameplayEntity)]
 pub struct IntroSound;
 
 /// Marqueur pour la musique de l'outro.
@@ -163,7 +217,7 @@ pub struct MusicOutro;
 
 // ─── Constantes ─────────────────────────────────────────────────────
 
-/// Délai entre level_complete et le début de l'outro (secondes).
+/// Délai entre `level_complete` et le début de l'outro (secondes).
 const OUTRO_COUNTDOWN: f32 = 3.0;
 /// Délai minimum avant d'accepter l'input pour continuer (secondes).
 const OUTRO_INPUT_DELAY: f32 = 3.0;
@@ -194,151 +248,150 @@ pub fn level_intro(level: usize) -> IntroConfig {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  Systèmes
+//  Phase: Intro
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Système principal de la machine à état du niveau.
-/// Gère Intro (animation vaisseau) et OutroCountdown (tick timer).
-fn level_phase_system(
+/// `OnEnter(LevelPhase::Intro)` : prépare la data + freeze le gameplay.
+/// En mode éditeur, court-circuite vers Running sans rien insérer (la
+/// transition au prochain frame n'aura donc aucun side-effect à nettoyer).
+fn enter_intro(
     mut commands: Commands,
-    time: Res<Time>,
+    progress: Res<GameProgress>,
     mut pause: ResMut<PauseState>,
-    asset_server: Res<AssetServer>,
+    editor_test: Option<Res<EditorTestEnemy>>,
+    mut next: ResMut<NextState<LevelPhase>>,
+) {
+    if editor_test.is_some() {
+        next.set(LevelPhase::Running);
+        return;
+    }
+    let intro = level_intro(progress.current_level);
+    commands.insert_resource(IntroData {
+        elapsed: 0.0,
+        duration: intro.duration,
+        sound: intro.sound,
+        sound_played: false,
+        sound_finished: false,
+        start_pos: Vec2::ZERO,
+        target_pos: Vec2::ZERO,
+        spawn_ratio: intro.spawn_ratio,
+        initialized: false,
+    });
+    pause.intro_active = true;
+}
+
+/// `OnExit(LevelPhase::Intro)` : libère la data + dégèle le gameplay.
+/// `IntroData` peut être absente (mode éditeur où on a court-circuité).
+fn exit_intro(mut commands: Commands, mut pause: ResMut<PauseState>) {
+    commands.remove_resource::<IntroData>();
+    pause.intro_active = false;
+}
+
+/// Anime le vaisseau pendant l'intro et transitionne vers Running quand
+/// l'animation ET le son sont terminés.
+fn intro_tick(
+    time: Res<Time>,
+    pause: Res<PauseState>,
+    intro_data: Option<ResMut<IntroData>>,
     mut player_q: Query<&mut Transform, With<Player>>,
     windows: Query<&Window>,
-    level_phase: Option<ResMut<LevelPhase>>,
     intro_sound_q: Query<Entity, With<IntroSound>>,
     config: Res<LevelConfig>,
     mut sfx: crate::audio::SfxPlayer,
+    mut next: ResMut<NextState<LevelPhase>>,
 ) {
-    let Some(mut level_phase) = level_phase else {
+    // Peut être absente en mode éditeur (enter_intro a court-circuité avant
+    // qu'OnExit n'ait nettoyé). On no-op proprement.
+    let Some(mut data) = intro_data else { return };
+    let window = windows.single().unwrap();
+    let half_w = window.width() / 2.0;
+    let half_h = window.height() / 2.0;
+
+    // Premier frame : initialiser positions + rotation selon le scroll
+    if !data.initialized {
+        let (start, target) = match config.scroll_direction {
+            ScrollDirection::Down => (
+                Vec2::new(0.0, -half_h - 150.0),
+                Vec2::new(0.0, half_h * data.spawn_ratio),
+            ),
+            ScrollDirection::Up => (
+                Vec2::new(0.0, half_h + 150.0),
+                Vec2::new(0.0, -(half_h * data.spawn_ratio)),
+            ),
+            ScrollDirection::Left => (
+                Vec2::new(-half_w - 150.0, 0.0),
+                Vec2::new(half_w * data.spawn_ratio, 0.0),
+            ),
+            ScrollDirection::Right => (
+                Vec2::new(half_w + 150.0, 0.0),
+                Vec2::new(-(half_w * data.spawn_ratio), 0.0),
+            ),
+        };
+        data.start_pos = start;
+        data.target_pos = target;
+        data.initialized = true;
+
+        let ship_angle = match config.scroll_direction {
+            ScrollDirection::Down => 0.0,
+            ScrollDirection::Up => std::f32::consts::PI,
+            ScrollDirection::Left => -std::f32::consts::FRAC_PI_2,
+            ScrollDirection::Right => std::f32::consts::FRAC_PI_2,
+        };
+        if let Ok(mut transform) = player_q.single_mut() {
+            transform.translation.x = data.start_pos.x;
+            transform.translation.y = data.start_pos.y;
+            transform.rotation = Quat::from_rotation_z(ship_angle);
+        }
+        // Early return : son + anim démarrent au prochain frame. Laisse une
+        // frame au `LoadingUI` pour se despawn + render avant l'audio
+        // d'atterissage, sinon chevauchement "écran de chargement visible
+        // + son qui démarre".
         return;
-    };
+    }
 
-    match &mut level_phase.phase {
-        LevelPhaseKind::Intro {
-            elapsed,
-            duration,
-            sound,
-            sound_played,
-            sound_finished,
-            start_pos,
-            target_pos,
-            spawn_ratio,
-            initialized,
-        } => {
-            let window = windows.single().unwrap();
-            let half_w = window.width() / 2.0;
-            let half_h = window.height() / 2.0;
+    if pause.paused {
+        return;
+    }
 
-            // Premier frame : initialiser les positions selon la direction du scroll
-            if !*initialized {
-                let (start, target) = match config.scroll_direction {
-                    ScrollDirection::Down => (
-                        Vec2::new(0.0, -half_h - 150.0),
-                        Vec2::new(0.0, half_h * *spawn_ratio),
-                    ),
-                    ScrollDirection::Up => (
-                        Vec2::new(0.0, half_h + 150.0),
-                        Vec2::new(0.0, -(half_h * *spawn_ratio)),
-                    ),
-                    ScrollDirection::Left => (
-                        Vec2::new(-half_w - 150.0, 0.0),
-                        Vec2::new(half_w * *spawn_ratio, 0.0),
-                    ),
-                    ScrollDirection::Right => (
-                        Vec2::new(half_w + 150.0, 0.0),
-                        Vec2::new(-(half_w * *spawn_ratio), 0.0),
-                    ),
-                };
-                *start_pos = start;
-                *target_pos = target;
-                *initialized = true;
-                pause.intro_active = true;
+    if !data.sound_played {
+        data.sound_played = true;
+        sfx.play(data.sound).insert(IntroSound);
+    }
+    if data.sound_played && !data.sound_finished && intro_sound_q.is_empty() {
+        data.sound_finished = true;
+    }
 
-                // Rotation du vaisseau selon la direction d'entrée
-                let ship_angle = match config.scroll_direction {
-                    ScrollDirection::Down => 0.0,                // pointe vers le haut
-                    ScrollDirection::Up => std::f32::consts::PI, // pointe vers le bas
-                    ScrollDirection::Left => -std::f32::consts::FRAC_PI_2, // pointe vers la droite
-                    ScrollDirection::Right => std::f32::consts::FRAC_PI_2, // pointe vers la gauche
-                };
+    data.elapsed += time.delta_secs();
+    let anim_t = (data.elapsed / data.duration).clamp(0.0, 1.0);
+    let eased = 1.0 - (1.0 - anim_t).powi(2);
 
-                if let Ok(mut transform) = player_q.single_mut() {
-                    transform.translation.x = start_pos.x;
-                    transform.translation.y = start_pos.y;
-                    transform.rotation = Quat::from_rotation_z(ship_angle);
-                }
-                // Early return : le son + l'animation démarrent au prochain
-                // frame. Donne le temps à un éventuel `LoadingUI` (transition
-                // depuis le Loading state) de finir sa despawn + render avant
-                // que l'audio de l'intro se lance — évite le chevauchement
-                // "écran de chargement visible + son d'atterissage qui démarre".
-                return;
-            }
+    if let Ok(mut transform) = player_q.single_mut() {
+        let pos = data.start_pos + (data.target_pos - data.start_pos) * eased;
+        transform.translation.x = pos.x;
+        transform.translation.y = pos.y;
+    }
 
-            // Ne pas avancer l'intro pendant la pause
-            if pause.paused {
-                return;
-            }
-
-            // Jouer le son une seule fois (avec marqueur IntroSound)
-            if !*sound_played {
-                *sound_played = true;
-                sfx.play(*sound).insert(IntroSound);
-            }
-
-            // Détecter la fin du son (entité IntroSound despawnée par Bevy)
-            if *sound_played && !*sound_finished && intro_sound_q.is_empty() {
-                *sound_finished = true;
-            }
-
-            *elapsed += time.delta_secs();
-            let anim_t = (*elapsed / *duration).clamp(0.0, 1.0);
-
-            // Ease-out quadratique
-            let eased = 1.0 - (1.0 - anim_t).powi(2);
-
-            if let Ok(mut transform) = player_q.single_mut() {
-                let pos = *start_pos + (*target_pos - *start_pos) * eased;
-                transform.translation.x = pos.x;
-                transform.translation.y = pos.y;
-            }
-
-            // Intro terminée quand l'animation ET le son sont finis
-            if anim_t >= 1.0 && *sound_finished {
-                if let Ok(mut transform) = player_q.single_mut() {
-                    transform.translation.x = target_pos.x;
-                    transform.translation.y = target_pos.y;
-                }
-                pause.intro_active = false;
-                level_phase.phase = LevelPhaseKind::Running;
-            }
+    if anim_t >= 1.0 && data.sound_finished {
+        if let Ok(mut transform) = player_q.single_mut() {
+            transform.translation.x = data.target_pos.x;
+            transform.translation.y = data.target_pos.y;
         }
-        LevelPhaseKind::Running => {
-            // Le LevelRunner tourne dans level.rs
-        }
-        LevelPhaseKind::OutroCountdown { timer } => {
-            timer.tick(time.delta());
-            // La transition vers Outro est gérée par detect_level_complete
-        }
-        LevelPhaseKind::Outro { .. } => {
-            // Géré par level_outro_animate et level_outro_input
-        }
+        next.set(LevelPhase::Running);
     }
 }
 
-/// Skip l'intro avec Entrée ou clic gauche.
+/// Skip l'intro avec Entrée, Espace ou clic gauche.
 fn skip_intro_input(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
-    mut level_phase: Option<ResMut<LevelPhase>>,
-    mut pause: ResMut<PauseState>,
+    intro_data: Option<Res<IntroData>>,
+    pause: Res<PauseState>,
     mut player_q: Query<&mut Transform, With<Player>>,
     intro_sound_q: Query<Entity, With<IntroSound>>,
     windows: Query<&Window>,
     config: Res<LevelConfig>,
+    mut next: ResMut<NextState<LevelPhase>>,
 ) {
     if !keyboard.just_pressed(KeyCode::Enter)
         && !keyboard.just_pressed(KeyCode::Space)
@@ -346,21 +399,14 @@ fn skip_intro_input(
     {
         return;
     }
-
-    let Some(ref mut level_phase) = level_phase else {
-        return;
-    };
-    if !matches!(level_phase.phase, LevelPhaseKind::Intro { .. }) {
-        return;
-    }
+    let Some(data) = intro_data else { return };
     if pause.paused {
         return;
     }
-
     do_skip_intro(
         &mut commands,
-        level_phase,
-        &mut pause,
+        &data,
+        &mut next,
         &mut player_q,
         &intro_sound_q,
         &windows,
@@ -368,58 +414,45 @@ fn skip_intro_input(
     );
 }
 
-/// Skip l'intro : place le joueur à sa position cible, despawn le son, passe en Running.
+/// Place le joueur à sa position cible, despawn le son, transitionne vers Running.
+/// Helper appelé depuis `skip_intro_input` et `debug_skip_intro` (debug.rs).
 pub(crate) fn do_skip_intro(
     commands: &mut Commands,
-    level_phase: &mut ResMut<LevelPhase>,
-    pause: &mut ResMut<PauseState>,
+    intro_data: &IntroData,
+    next: &mut NextState<LevelPhase>,
     player_q: &mut Query<&mut Transform, With<Player>>,
     intro_sound_q: &Query<Entity, With<IntroSound>>,
     windows: &Query<&Window>,
     config: &Res<LevelConfig>,
 ) {
-    // Calculer la position cible à partir du ratio si l'intro n'a pas été initialisée
-    let final_pos = if let LevelPhaseKind::Intro {
-        target_pos,
-        spawn_ratio,
-        initialized,
-        ..
-    } = &level_phase.phase
-    {
-        if *initialized {
-            *target_pos
-        } else {
-            let window = windows.single().unwrap();
-            let half_w = window.width() / 2.0;
-            let half_h = window.height() / 2.0;
-            match config.scroll_direction {
-                ScrollDirection::Down => Vec2::new(0.0, half_h * *spawn_ratio),
-                ScrollDirection::Up => Vec2::new(0.0, -(half_h * *spawn_ratio)),
-                ScrollDirection::Left => Vec2::new(half_w * *spawn_ratio, 0.0),
-                ScrollDirection::Right => Vec2::new(-(half_w * *spawn_ratio), 0.0),
-            }
-        }
+    let final_pos = if intro_data.initialized {
+        intro_data.target_pos
     } else {
-        return;
+        let window = windows.single().unwrap();
+        let half_w = window.width() / 2.0;
+        let half_h = window.height() / 2.0;
+        match config.scroll_direction {
+            ScrollDirection::Down => Vec2::new(0.0, half_h * intro_data.spawn_ratio),
+            ScrollDirection::Up => Vec2::new(0.0, -(half_h * intro_data.spawn_ratio)),
+            ScrollDirection::Left => Vec2::new(half_w * intro_data.spawn_ratio, 0.0),
+            ScrollDirection::Right => Vec2::new(-(half_w * intro_data.spawn_ratio), 0.0),
+        }
     };
-
-    // Placer le joueur à sa position cible
     if let Ok(mut transform) = player_q.single_mut() {
         transform.translation.x = final_pos.x;
         transform.translation.y = final_pos.y;
     }
-
-    // Despawn le son d'intro
     for entity in intro_sound_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
             e.try_despawn();
         }
     }
-
-    // Passer en Running
-    pause.intro_active = false;
-    level_phase.phase = LevelPhaseKind::Running;
+    next.set(LevelPhase::Running);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Phase: Running → OutroCountdown
+// ═══════════════════════════════════════════════════════════════════════
 
 /// Détecte la fin de l'animation de mort du dernier boss et envoie
 /// `MarkLevelComplete` via le pipeline du niveau.
@@ -429,13 +462,9 @@ fn detect_boss_death(
     boss_q: Query<&Enemy, With<BossMarker>>,
     mut level_events: MessageWriter<crate::level::level::LevelActionEvent>,
 ) {
-    // Marquer qu'on a vu un boss vivant (évite la race condition avec Commands différées).
     if !difficulty.boss_seen_alive && !boss_q.is_empty() {
         difficulty.boss_seen_alive = true;
     }
-
-    // Le boss a été vu vivant, toutes les entités boss ont disparu (fin d'anim de mort),
-    // et le niveau n'est pas encore marqué comme terminé.
     if difficulty.boss_seen_alive && boss_q.is_empty() && !difficulty.level_complete {
         level_events.write(crate::level::level::LevelActionEvent(vec![
             crate::level::level::Action::MarkLevelComplete,
@@ -443,66 +472,57 @@ fn detect_boss_death(
     }
 }
 
-/// Vérifie `level_complete` et fait avancer la machine à état :
-/// Running → OutroCountdown → Outro.
+/// Running → OutroCountdown dès que `difficulty.level_complete` est vrai.
 fn detect_level_complete(
+    difficulty: Res<Difficulty>,
+    mut next: ResMut<NextState<LevelPhase>>,
+) {
+    if difficulty.level_complete {
+        next.set(LevelPhase::OutroCountdown);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Phase: OutroCountdown
+// ═══════════════════════════════════════════════════════════════════════
+
+fn enter_outro_countdown(mut commands: Commands) {
+    commands.insert_resource(OutroCountdownData {
+        timer: Timer::from_seconds(OUTRO_COUNTDOWN, TimerMode::Once),
+    });
+}
+
+fn exit_outro_countdown(mut commands: Commands) {
+    commands.remove_resource::<OutroCountdownData>();
+}
+
+fn countdown_tick(
+    time: Res<Time>,
+    mut data: ResMut<OutroCountdownData>,
+    mut next: ResMut<NextState<LevelPhase>>,
+) {
+    data.timer.tick(time.delta());
+    if data.timer.is_finished() {
+        next.set(LevelPhase::Outro);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Phase: Outro
+// ═══════════════════════════════════════════════════════════════════════
+
+/// `OnEnter(LevelPhase::Outro)` : freeze le jeu, coupe les musiques de
+/// gameplay, stoppe le background, insère `OutroData`, spawn l'UI victoire.
+fn enter_outro(
     mut commands: Commands,
-    mut difficulty: ResMut<Difficulty>,
     mut pause: ResMut<PauseState>,
+    mut difficulty: ResMut<Difficulty>,
     asset_server: Res<AssetServer>,
     music_q: Query<Entity, With<MusicMain>>,
     boss_music_q: Query<Entity, With<MusicBoss>>,
     progress: Res<GameProgress>,
-    mut level_phase: Option<ResMut<LevelPhase>>,
-) {
-    let Some(ref mut level_phase) = level_phase else {
-        return;
-    };
-
-    match &level_phase.phase {
-        LevelPhaseKind::Running => {
-            if !difficulty.level_complete {
-                return;
-            }
-            // Running → OutroCountdown
-            level_phase.phase = LevelPhaseKind::OutroCountdown {
-                timer: Timer::from_seconds(OUTRO_COUNTDOWN, TimerMode::Once),
-            };
-        }
-        LevelPhaseKind::OutroCountdown { timer } => {
-            if timer.is_finished() {
-                // OutroCountdown → Outro
-                start_outro(
-                    &mut commands,
-                    &mut pause,
-                    &mut difficulty,
-                    &asset_server,
-                    &music_q,
-                    &boss_music_q,
-                    &progress,
-                    level_phase,
-                );
-            }
-        }
-        _ => {}
-    }
-}
-
-/// Lance la séquence d'outro : freeze le jeu, coupe les musiques,
-/// stoppe le background, affiche l'UI.
-fn start_outro(
-    commands: &mut Commands,
-    pause: &mut ResMut<PauseState>,
-    difficulty: &mut ResMut<Difficulty>,
-    asset_server: &Res<AssetServer>,
-    music_q: &Query<Entity, With<MusicMain>>,
-    boss_music_q: &Query<Entity, With<MusicBoss>>,
-    progress: &Res<GameProgress>,
-    level_phase: &mut ResMut<LevelPhase>,
 ) {
     pause.outro_active = true;
-
-    // Couper les musiques
     for entity in music_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
             e.try_despawn();
@@ -513,158 +533,104 @@ fn start_outro(
             e.try_despawn();
         }
     }
-
-    // Stopper le background
     difficulty.bg_speed_override = Some(0.0);
-
-    // Transition de phase → Outro
-    level_phase.phase = LevelPhaseKind::Outro {
+    commands.insert_resource(OutroData {
         elapsed: 0.0,
         music_spawned: false,
-    };
-
-    spawn_outro_ui(commands, asset_server, progress);
+    });
+    spawn_outro_ui(&mut commands, &asset_server, &progress);
 }
 
-/// Anime l'écran d'outro : musique.
+fn exit_outro(mut commands: Commands, mut pause: ResMut<PauseState>) {
+    commands.remove_resource::<OutroData>();
+    pause.outro_active = false;
+}
+
+/// Tick l'elapsed + spawn la musique d'outro au premier passage.
 fn level_outro_animate(
     mut commands: Commands,
     time: Res<Time>,
-    level_phase: Option<ResMut<LevelPhase>>,
+    mut data: ResMut<OutroData>,
     asset_server: Res<AssetServer>,
 ) {
-    let Some(mut level_phase) = level_phase else {
-        return;
-    };
-    let LevelPhaseKind::Outro {
-        elapsed,
-        music_spawned,
-    } = &mut level_phase.phase
-    else {
-        return;
-    };
-
-    *elapsed += time.delta_secs();
-
-    if !*music_spawned {
-        *music_spawned = true;
+    data.elapsed += time.delta_secs();
+    if !data.music_spawned {
+        data.music_spawned = true;
         commands.spawn((
-            (AudioPlayer::new(asset_server.load("audio/music/stage_clear.ogg")), PlaybackSettings::ONCE),
+            (
+                AudioPlayer::new(asset_server.load("audio/music/stage_clear.ogg")),
+                PlaybackSettings::ONCE,
+            ),
             MusicOutro,
         ));
     }
 }
 
-/// Gère l'input pendant l'outro (Entrée pour continuer).
+/// Input pendant l'outro : Entrée/Espace → transition vers l'état suivant
+/// selon le `PlayMode`. Le cleanup UI/musique se fait automatiquement via
+/// `cleanup_playing` + `exit_outro` quand on quitte `GameState::Playing`.
 fn level_outro_input(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
-    level_phase: Option<Res<LevelPhase>>,
+    data: Res<OutroData>,
     mut next_state: ResMut<NextState<GameState>>,
-    mut pause: ResMut<PauseState>,
     progress: Res<GameProgress>,
     play_mode: Option<Res<PlayMode>>,
     mut campaign: Option<ResMut<CampaignProgress>>,
-    music_q: Query<Entity, With<MusicOutro>>,
 ) {
-    let Some(ref level_phase) = level_phase else {
-        return;
-    };
-    let LevelPhaseKind::Outro { elapsed, .. } = &level_phase.phase else {
-        return;
-    };
-
-    if *elapsed < OUTRO_INPUT_DELAY {
+    if data.elapsed < OUTRO_INPUT_DELAY {
         return;
     }
-
-    if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
-        for entity in music_q.iter() {
-            if let Ok(mut e) = commands.get_entity(entity) {
-                e.try_despawn();
-            }
-        }
-        pause.outro_active = false;
-
-        let level = progress.current_level;
-        let mode = play_mode.map(|m| *m);
-
-        match mode {
-            Some(PlayMode::Campaign) => {
-                if let Some(ref mut camp) = campaign {
-                    camp.completed.insert(level);
-                    if camp.completed.len() >= progress.total_levels {
-                        commands.remove_resource::<CampaignProgress>();
-                        commands.remove_resource::<PlayMode>();
-                        next_state.set(GameState::Credits);
-                    } else {
-                        next_state.set(GameState::LevelSelect);
-                    }
+    if !(keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space)) {
+        return;
+    }
+    let level = progress.current_level;
+    let mode = play_mode.map(|m| *m);
+    match mode {
+        Some(PlayMode::Campaign) => {
+            if let Some(ref mut camp) = campaign {
+                camp.completed.insert(level);
+                if camp.completed.len() >= progress.total_levels {
+                    commands.remove_resource::<CampaignProgress>();
+                    commands.remove_resource::<PlayMode>();
+                    next_state.set(GameState::Credits);
+                } else {
+                    next_state.set(GameState::LevelSelect);
                 }
             }
-            Some(PlayMode::Primes) => {
-                next_state.set(GameState::LevelSelect);
-            }
-            None => {
-                next_state.set(GameState::MainMenu);
-            }
+        }
+        Some(PlayMode::Primes) => {
+            next_state.set(GameState::LevelSelect);
+        }
+        None => {
+            next_state.set(GameState::MainMenu);
         }
     }
 }
 
 // ─── F4 : skip direct à l'outro ─────────────────────────────────────
 
-/// F4 : tue tous les ennemis et déclenche l'outro immédiatement.
+/// F4 : tue tous les astéroïdes et transitionne directement vers l'outro.
+/// `exit_intro`/`exit_outro_countdown` s'occupent du cleanup des phases
+/// précédentes automatiquement.
 fn debug_skip_to_outro(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut pause: ResMut<PauseState>,
     mut difficulty: ResMut<Difficulty>,
-    asset_server: Res<AssetServer>,
-    enemy_q: Query<(Entity, &Enemy)>,
     asteroid_q: Query<Entity, With<Asteroid>>,
-    music_q: Query<Entity, With<MusicMain>>,
-    boss_music_q: Query<Entity, With<MusicBoss>>,
-    progress: Res<GameProgress>,
-    mut level_phase: Option<ResMut<LevelPhase>>,
+    mut next: ResMut<NextState<LevelPhase>>,
 ) {
     if !keyboard.just_pressed(KeyCode::F4) {
         return;
     }
-    let Some(ref mut level_phase) = level_phase else {
-        return;
-    };
-    if matches!(level_phase.phase, LevelPhaseKind::Outro { .. }) {
-        return;
-    }
-
-    
-
-    // Despawn tous les astéroïdes
     for entity in asteroid_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
             e.try_despawn();
         }
     }
-
-    // Marquer le niveau comme terminé
     difficulty.level_complete = true;
     difficulty.active_spawners.clear();
-
-    // Désactiver l'intro si elle était en cours
-    pause.intro_active = false;
-
-    // Lancer l'outro immédiatement (sans countdown)
-    start_outro(
-        &mut commands,
-        &mut pause,
-        &mut difficulty,
-        &asset_server,
-        &music_q,
-        &boss_music_q,
-        &progress,
-        level_phase,
-    );
+    next.set(LevelPhase::Outro);
 }
 
 // ─── UI de l'outro ──────────────────────────────────────────────────
@@ -680,7 +646,7 @@ fn spawn_outro_ui(
     commands
         .spawn((
             (
-            Node {
+                Node {
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     align_items: AlignItems::Center,
@@ -689,23 +655,28 @@ fn spawn_outro_ui(
                     row_gap: Val::Px(30.0),
                     ..default()
                 },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.6)),
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.6)),
                 GlobalZIndex(90),
-        ),
+            ),
             OutroUI,
         ))
         .with_children(|parent| {
-            // Nom du niveau
             parent.spawn((
-                (Text::new(name.to_uppercase()), TextFont { font: font.clone(), font_size: 36.0, ..default() }, TextColor(Color::srgba(1.0, 1.0, 1.0, 1.0))),
+                (
+                    Text::new(name.to_uppercase()),
+                    TextFont { font: font.clone(), font_size: 36.0, ..default() },
+                    TextColor(Color::srgba(1.0, 1.0, 1.0, 1.0)),
+                ),
                 OutroUI,
             ));
-            // Titre
             parent.spawn((
-                (Text::new("NIVEAU TERMINE"), TextFont { font: font.clone(), font_size: 64.0, ..default() }, TextColor(Color::srgba(1.0, 0.85, 0.0, 1.0))),
+                (
+                    Text::new("NIVEAU TERMINE"),
+                    TextFont { font: font.clone(), font_size: 64.0, ..default() },
+                    TextColor(Color::srgba(1.0, 0.85, 0.0, 1.0)),
+                ),
                 OutroUI,
             ));
-            // Instruction
             parent.spawn((
                 Text::new("Appuyez sur Entree pour continuer"),
                 TextFont { font, font_size: 24.0, ..default() },
@@ -720,34 +691,16 @@ fn auto_start_next_level(mut next_state: ResMut<NextState<GameState>>) {
     next_state.set(GameState::LevelSelect);
 }
 
-/// Nettoyage en sortant de Playing (intro, outro, popups).
+/// Nettoyage en sortant de Playing. `LevelPhase` et ses Resources de phase
+/// (`IntroData`, `OutroCountdownData`, `OutroData`) sont auto-cleanup
+/// par le SubState. Les UI/sons de gameplay le sont via le marker
+/// `GameplayEntity`. Reste seulement la popup de confirmation (qui peut
+/// survivre à d'autres états → pas un `GameplayEntity`).
 fn cleanup_playing(
     mut commands: Commands,
-    mut pause: ResMut<PauseState>,
-    outro_ui_q: Query<Entity, With<OutroUI>>,
-    music_q: Query<Entity, With<MusicOutro>>,
-    intro_sound_q: Query<Entity, With<IntroSound>>,
     confirm_ui_q: Query<Entity, With<ConfirmPopupUI>>,
 ) {
-    pause.intro_active = false;
-    pause.outro_active = false;
-    commands.remove_resource::<LevelPhase>();
     commands.remove_resource::<ConfirmPopup>();
-    for entity in intro_sound_q.iter() {
-        if let Ok(mut e) = commands.get_entity(entity) {
-            e.try_despawn();
-        }
-    }
-    for entity in outro_ui_q.iter() {
-        if let Ok(mut e) = commands.get_entity(entity) {
-            e.try_despawn();
-        }
-    }
-    for entity in music_q.iter() {
-        if let Ok(mut e) = commands.get_entity(entity) {
-            e.try_despawn();
-        }
-    }
     for entity in confirm_ui_q.iter() {
         if let Ok(mut e) = commands.get_entity(entity) {
             e.try_despawn();
@@ -762,11 +715,10 @@ pub(crate) fn spawn_confirm_popup(commands: &mut Commands, asset_server: &Res<As
     let font = asset_server.load("fonts/PressStart2P-Regular.ttf");
     let ui_yellow = Color::srgba(1.0, 0.85, 0.0, 1.0);
 
-    // Fond opaque plein écran
     commands
         .spawn((
             (
-            Node {
+                Node {
                     position_type: PositionType::Absolute,
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
@@ -774,28 +726,26 @@ pub(crate) fn spawn_confirm_popup(commands: &mut Commands, asset_server: &Res<As
                     justify_content: JustifyContent::Center,
                     ..default()
                 },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.0)),
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.0)),
                 GlobalZIndex(200),
-        ),
+            ),
             ConfirmPopupUI,
         ))
         .with_children(|overlay| {
-            // Bordure jaune (padding = épaisseur du bord)
             overlay
                 .spawn((
-            Node {
+                    Node {
                         padding: UiRect::all(Val::Px(4.0)),
                         justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
                         ..default()
                     },
-            BackgroundColor(ui_yellow),
-        ))
+                    BackgroundColor(ui_yellow),
+                ))
                 .with_children(|border| {
-                    // Panneau noir intérieur
                     border
                         .spawn((
-            Node {
+                            Node {
                                 flex_direction: FlexDirection::Column,
                                 align_items: AlignItems::Center,
                                 padding: UiRect::new(
@@ -807,36 +757,31 @@ pub(crate) fn spawn_confirm_popup(commands: &mut Commands, asset_server: &Res<As
                                 row_gap: Val::Px(25.0),
                                 ..default()
                             },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.0)),
-        ))
+                            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.0)),
+                        ))
                         .with_children(|panel| {
-                            // Question
                             panel.spawn((
                                 Text::new("Votre progression sera perdue."),
                                 TextFont { font: font.clone(), font_size: 22.0, ..default() },
                                 TextColor(Color::WHITE),
                                 ConfirmPopupUI,
                             ));
-
-                            // Avertissement
                             panel.spawn((
                                 Text::new("Etes-vous sur de vouloir quitter ?"),
                                 TextFont { font: font.clone(), font_size: 18.0, ..default() },
                                 TextColor(ui_yellow),
                                 ConfirmPopupUI,
                             ));
-
-                            // Options côte à côte
                             panel
                                 .spawn((
                                     (
-            Node {
+                                        Node {
                                             flex_direction: FlexDirection::Row,
                                             column_gap: Val::Px(80.0),
                                             margin: UiRect::top(Val::Px(10.0)),
                                             ..default()
                                         },
-        ),
+                                    ),
                                     ConfirmPopupUI,
                                 ))
                                 .with_children(|row| {
@@ -883,7 +828,7 @@ fn setup_credits(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn((
             (
-            Node {
+                Node {
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     align_items: AlignItems::Center,
@@ -892,8 +837,8 @@ fn setup_credits(mut commands: Commands, asset_server: Res<AssetServer>) {
                     row_gap: Val::Px(40.0),
                     ..default()
                 },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.0)),
-        ),
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.0)),
+            ),
             CreditsUI,
         ))
         .with_children(|parent| {

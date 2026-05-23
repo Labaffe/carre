@@ -78,7 +78,7 @@ impl Plugin for LevelPlugin {
             .add_systems(
                 Update,
                 (run_level, process_level_action_events)
-                    .run_if(in_state(GameState::Playing))
+                    .run_if(in_state(crate::game_manager::game::LevelPhase::Running))
                     .run_if(not_paused),
             )
             .add_systems(
@@ -592,26 +592,9 @@ fn setup_level(
         }
     };
     commands.insert_resource(LevelRunner::new(steps));
-
-    // En éditeur on saute l'intro (animation vaisseau + son) — l'ennemi spawn à
-    // t=0 et le joueur doit pouvoir bouger immédiatement pour tester.
-    let phase = if editor_test.is_some() {
-        crate::game_manager::game::LevelPhaseKind::Running
-    } else {
-        let intro = crate::game_manager::game::level_intro(progress.current_level);
-        crate::game_manager::game::LevelPhaseKind::Intro {
-            elapsed: 0.0,
-            duration: intro.duration,
-            sound: intro.sound,
-            sound_played: false,
-            sound_finished: false,
-            start_pos: Vec2::ZERO,
-            target_pos: Vec2::ZERO,
-            spawn_ratio: intro.spawn_ratio,
-            initialized: false,
-        }
-    };
-    commands.insert_resource(crate::game_manager::game::LevelPhase { phase });
+    // `LevelPhase` (SubState) est auto-créé à l'entrée de `Playing` avec
+    // sa variante Default (`Intro`). `enter_intro` détecte `EditorTestEnemy`
+    // et court-circuite vers `Running` — pas besoin de gérer le cas ici.
 }
 
 fn run_level(
@@ -623,17 +606,10 @@ fn run_level(
     mut boom_events: MessageWriter<BoomEvent>,
     mut countdown_events: MessageWriter<crate::ui::countdown::CountdownEvent>,
     music_q: Query<Entity, With<crate::MusicMain>>,
-    level_phase: Option<Res<crate::game_manager::game::LevelPhase>>,
     sfx_library: Res<crate::audio::SfxLibrary>,
 ) {
-    // Ne faire tourner les LevelSteps que pendant la phase Running
-    let Some(ref phase) = level_phase else { return };
-    if !matches!(
-        phase.phase,
-        crate::game_manager::game::LevelPhaseKind::Running
-    ) {
-        return;
-    }
+    // Gating sur la phase Running géré par `run_if(in_state(LevelPhase::Running))`
+    // au niveau du plugin (cf. `LevelPlugin::build`).
     let Some(mut runner) = runner else { return };
     runner.elapsed += time.delta_secs();
 
