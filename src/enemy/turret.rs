@@ -42,6 +42,9 @@ use crate::weapon::projectile::{ProjectileSpawn, ProjectileSprite, Team, spawn_p
 
 /// Durée par frame de l'animation des canons (en boucle).
 const TURRET_ANIM_FRAME_DURATION: f32 = 0.06;
+/// Taille (px) du sprite du module — plus petit que le sprite gatling
+/// pour que la base se voie en débordement autour des canons.
+const TURRET_MODULE_SIZE: f32 = 140.0;
 /// Intervalle entre deux tirs (secondes).
 const TURRET_FIRE_INTERVAL: f32 = 0.5;
 /// Vitesse des projectiles (px/s).
@@ -100,50 +103,84 @@ impl EnemyBuilder for TurretBuilder {
         asset_server: &Res<AssetServer>,
     ) {
         let pos = spawn_pos.resolve(window, TURRET.config.sprite_size / 2.0);
-
-        // BT minimal : juste un `dying` qui despawn. Présence d'un
-        // `BehaviorComponent` + `TransitionMessages` requise pour que
-        // `detect_death` fire (et donc émette le `DropEvent`).
-        let alive = BehaviorBuilder::multiple()
-            .with(BehaviorBuilder::from_component(Animation::new(
-                "turret_fire",
-                Duration::from_secs_f32(TURRET_ANIM_FRAME_DURATION),
-            )))
-            .with(BehaviorBuilder::from_component(TurretFireTimer(
-                Timer::from_seconds(TURRET_FIRE_INTERVAL, TimerMode::Repeating),
-            )));
-        let dying = BehaviorBuilder::from_component(DespawnSelf);
-        let behavior = BehaviorBuilder::choice()
-            .with(alive)
-            .with(dying)
-            .add_transition(0, 1, "die");
-
-        commands.spawn((
-            Sprite {
-                image: asset_server.load("images/gatling/frame000.png"),
-                custom_size: Some(Vec2::splat(TURRET.config.sprite_size)),
-                // Sprite source inversé verticalement : on flip pour que les
-                // canons pointent VERS LE HAUT (+Y), cohérent avec la logique
-                // de visée de `turret_aim_and_fire` (atan2 - π/2).
-                flip_y: true,
-                ..default()
-            },
-            Transform::from_xyz(pos.x, pos.y, 0.5),
-            TransitionMessages::new(),
-            Enemy::new(TURRET),
-            Health::new(TURRET.total_hp),
-            Turret,
-            collider(
-                Shape::Circle(TURRET.config.radius),
-                layers::ENEMY,
-                layers::PLAYER | layers::PLAYER_PROJECTILE,
-            ),
-            BehaviorComponent::new(behavior),
-            DropTable {
-                drops: &TURRET_DROP_TABLE,
-            },
-        ));
+        // Module derrière (z plus bas), tourelle devant. Deux entités
+        // séparées : la tourelle peut despawn sans emporter le module.
+        commands.spawn(turret_module_bundle(asset_server, pos.extend(0.45)));
+        commands.spawn(turret_bundle(asset_server, pos.extend(0.5)));
     }
+}
+
+/// Module (base) sur lequel la tourelle est posée. **Entité visuelle pure**
+/// (Sprite + Transform + `GameplayEntity` pour le cleanup) : pas de
+/// collider, pas de Health, pas d'Enemy. Reste à l'écran après la mort de
+/// la tourelle posée dessus pour donner l'impression que la base survit.
+///
+/// Toujours spawn EN MÊME TEMPS que la tourelle, en tant qu'**entité
+/// séparée** (sibling, pas child) — sinon la cascade de despawn de la
+/// tourelle emporterait aussi le module.
+pub fn turret_module_bundle(asset_server: &Res<AssetServer>, position: Vec3) -> impl Bundle {
+    (
+        Sprite {
+            image: asset_server.load("images/turret_module.png"),
+            custom_size: Some(Vec2::splat(TURRET_MODULE_SIZE)),
+            ..default()
+        },
+        Transform::from_translation(position),
+        // Pas d'Enemy → pas de require(GameplayEntity) implicite. On
+        // l'ajoute explicitement pour que `cleanup_playing` despawn le
+        // module à la sortie du level.
+        crate::GameplayEntity,
+    )
+}
+
+/// Bundle complet d'une tourelle, paramétré par sa position (relative au
+/// parent si la tourelle est spawnée comme enfant). Permet de réutiliser la
+/// même définition pour :
+/// - une tourelle standalone (`TurretBuilder::spawn`)
+/// - une tourelle enfant d'un `EnemyGroup` (cf. `vaisseau.rs`)
+pub fn turret_bundle(asset_server: &Res<AssetServer>, position: Vec3) -> impl Bundle {
+    // BT minimal : juste un `dying` qui despawn. Présence d'un
+    // `BehaviorComponent` + `TransitionMessages` requise pour que
+    // `detect_death` fire (et donc émette le `DropEvent`).
+    let alive = BehaviorBuilder::multiple()
+        .with(BehaviorBuilder::from_component(Animation::new(
+            "turret_fire",
+            Duration::from_secs_f32(TURRET_ANIM_FRAME_DURATION),
+        )))
+        .with(BehaviorBuilder::from_component(TurretFireTimer(
+            Timer::from_seconds(TURRET_FIRE_INTERVAL, TimerMode::Repeating),
+        )));
+    let dying = BehaviorBuilder::from_component(DespawnSelf);
+    let behavior = BehaviorBuilder::choice()
+        .with(alive)
+        .with(dying)
+        .add_transition(0, 1, "die");
+
+    (
+        Sprite {
+            image: asset_server.load("images/gatling/frame000.png"),
+            custom_size: Some(Vec2::splat(TURRET.config.sprite_size)),
+            // Sprite source inversé verticalement : on flip pour que les
+            // canons pointent VERS LE HAUT (+Y), cohérent avec la logique
+            // de visée de `turret_aim_and_fire` (atan2 - π/2).
+            flip_y: true,
+            ..default()
+        },
+        Transform::from_translation(position),
+        TransitionMessages::new(),
+        Enemy::new(TURRET),
+        Health::new(TURRET.total_hp),
+        Turret,
+        collider(
+            Shape::Circle(TURRET.config.radius),
+            layers::ENEMY,
+            layers::PLAYER | layers::PLAYER_PROJECTILE,
+        ),
+        BehaviorComponent::new(behavior),
+        DropTable {
+            drops: &TURRET_DROP_TABLE,
+        },
+    )
 }
 
 // ─── Système : visée + tir ──────────────────────────────────────────

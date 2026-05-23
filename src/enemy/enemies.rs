@@ -75,6 +75,6 @@ pub const OCTOPUS_GREEN: EnemyData = EnemyData {
 /// héritée du parent via la hiérarchie Bevy.
 pub const TURRET: EnemyData = EnemyData {
     name: "Turret",
-    config: EnemyConfigData::new(48.0, 140.0),
+    config: EnemyConfigData::new(70.0, 200.0),
     total_hp: 30,
 };

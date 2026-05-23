@@ -123,14 +123,21 @@ impl OverlapEvent {
 /// jusqu'à ~50 entités simultanées. Au-delà, ajouter un index spatial (grid
 /// uniforme ou quadtree) — l'API event reste la même.
 pub fn detect_overlaps(
-    q: Query<(Entity, &Transform, &Hitbox, &CollisionLayer, &CollidesWith)>,
+    // `GlobalTransform` (et pas `Transform`) : indispensable pour que les
+    // entités parentées (ex: tourelles enfants d'un `EnemyGroup` vaisseau)
+    // soient testées à leur position **monde**, pas à leur offset local.
+    // Sans ça, le sprite suit le parent mais la hitbox reste collée à
+    // l'origine locale → on tire à travers la tourelle.
+    q: Query<(Entity, &GlobalTransform, &Hitbox, &CollisionLayer, &CollidesWith)>,
     mut events: MessageWriter<OverlapEvent>,
 ) {
     let items: Vec<_> = q.iter().collect();
     for i in 0..items.len() {
-        let (e_a, tf_a, hb_a, lay_a, mask_a) = items[i];
+        let (e_a, gt_a, hb_a, lay_a, mask_a) = items[i];
+        let pos_a = gt_a.translation().xy();
+        let rot_a = gt_a.rotation();
         for j in (i + 1)..items.len() {
-            let (e_b, tf_b, hb_b, lay_b, mask_b) = items[j];
+            let (e_b, gt_b, hb_b, lay_b, mask_b) = items[j];
 
             // Intérêt mutuel : au moins l'un des deux veut détecter l'autre.
             let interested = (mask_a.0 & lay_b.0 != 0) || (mask_b.0 & lay_a.0 != 0);
@@ -138,20 +145,15 @@ pub fn detect_overlaps(
                 continue;
             }
 
-            if shapes_overlap(
-                tf_a.translation.xy(),
-                tf_a.rotation,
-                &hb_a.0,
-                tf_b.translation.xy(),
-                tf_b.rotation,
-                &hb_b.0,
-            ) {
+            let pos_b = gt_b.translation().xy();
+            let rot_b = gt_b.rotation();
+            if shapes_overlap(pos_a, rot_a, &hb_a.0, pos_b, rot_b, &hb_b.0) {
                 events.write(OverlapEvent {
                     a: e_a,
                     b: e_b,
                     a_layer: lay_a.0,
                     b_layer: lay_b.0,
-                    position: (tf_a.translation.xy() + tf_b.translation.xy()) * 0.5,
+                    position: (pos_a + pos_b) * 0.5,
                 });
             }
         }
