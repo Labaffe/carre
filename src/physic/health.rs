@@ -20,7 +20,7 @@ use bevy::prelude::*;
 
 use crate::physic::collider::CollisionLayer;
 use crate::physic::invulnerable::{DebugInvulnerable, Invulnerable};
-use crate::player::player::Invincible;
+use crate::player::player::{Armor, Invincible};
 
 /// Points de vie d'une entité. Fraîchement spawnée, `current == max`.
 #[derive(Component, Debug, Clone, Copy)]
@@ -86,19 +86,25 @@ pub struct HitEvent {
 
 /// Lit `DamageEvent`, filtre Invulnerable/Invincible, applique à `Health`,
 /// trigger `HitEvent` si le dégât a effectivement été infligé.
+///
+/// **Armure** : si la cible a une `Armor` avec `current > 0`, chaque point
+/// d'armure absorbe 1 point de dégât avant que `Health` ne soit touchée.
+/// Le `HitEvent` est trigger dès qu'au moins 1 point a été absorbé (armure
+/// OU vie), pour que les FX de hit (flash, son) jouent dans les deux cas.
 pub fn apply_damage(
     mut commands: Commands,
     mut damage_events: MessageReader<DamageEvent>,
     mut q: Query<(
         &mut Health,
         &CollisionLayer,
+        Option<&mut Armor>,
         Option<&Invulnerable>,
         Option<&DebugInvulnerable>,
         Option<&Invincible>,
     )>,
 ) {
     for ev in damage_events.read() {
-        let Ok((mut health, layer, invulnerable, debug_invulnerable, invincible)) =
+        let Ok((mut health, layer, armor, invulnerable, debug_invulnerable, invincible)) =
             q.get_mut(ev.target)
         else {
             continue;
@@ -106,14 +112,29 @@ pub fn apply_damage(
         if invulnerable.is_some() || debug_invulnerable.is_some() || invincible.is_some() {
             continue;
         }
+
+        // Armure d'abord : chaque point absorbe 1 point de dégât.
+        let mut remaining = ev.amount;
+        let mut armor_absorbed: i32 = 0;
+        if let Some(mut armor) = armor {
+            let absorbed = (armor.current as i32).min(remaining);
+            armor.current -= absorbed as u32;
+            remaining -= absorbed;
+            armor_absorbed = absorbed;
+        }
+
         let before = health.current;
-        health.take_damage(ev.amount);
-        let dealt = before - health.current;
-        if dealt > 0 {
+        if remaining > 0 {
+            health.take_damage(remaining);
+        }
+        let health_dealt = before - health.current;
+        let total_dealt = armor_absorbed + health_dealt;
+
+        if total_dealt > 0 {
             commands.trigger(HitEvent {
                 target: ev.target,
                 target_layer: layer.0,
-                amount_dealt: dealt,
+                amount_dealt: total_dealt,
                 source: ev.source,
             });
         }

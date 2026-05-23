@@ -88,6 +88,9 @@ const BONUS_SCORE_VALUE: i32 = 50;
 pub enum ItemType {
     Bomb,
     BonusScore,
+    /// +1 d'armure jusqu'au cap `PLAYER_MAX_ARMOR`. Au-delà, ramassage
+    /// no-op (item consommé pour rien).
+    Armor,
 }
 
 impl ItemType {
@@ -95,6 +98,7 @@ impl ItemType {
         match self {
             ItemType::Bomb => Sfx::ItemPickup,
             ItemType::BonusScore => Sfx::ItemPickup,
+            ItemType::Armor => Sfx::ItemPickup,
         }
     }
 }
@@ -116,11 +120,14 @@ struct ItemAnim {
     timer: Timer,
 }
 
-/// Frames préchargées pour chaque type d'item.
+/// Frames préchargées pour chaque type d'item. L'armure est un sprite
+/// statique (1 seul fichier `images/armor.png`), stockée comme `Vec` à
+/// 1 élément pour réutiliser le pipeline d'animation existant.
 #[derive(Resource)]
 struct ItemFrames {
     bomb: Vec<Handle<Image>>,
     bonus_score: Vec<Handle<Image>>,
+    armor: Vec<Handle<Image>>,
 }
 
 /// Table de drop attachée à une entité.
@@ -189,7 +196,14 @@ fn preload_item_frames(mut commands: Commands, asset_server: Res<AssetServer>) {
     let bomb = load_frames_from_folder(&asset_server, "images/bomb").unwrap_or_default();
     let bonus_score =
         load_frames_from_folder(&asset_server, "images/bonus_score").unwrap_or_default();
-    commands.insert_resource(ItemFrames { bomb, bonus_score });
+    // Sprite unique (pas d'animation) — `Vec` à 1 élément pour rester
+    // compatible avec `ItemAnim` (qui tolère un cycle de 1 frame).
+    let armor = vec![asset_server.load("images/armor.png")];
+    commands.insert_resource(ItemFrames {
+        bomb,
+        bonus_score,
+        armor,
+    });
 }
 
 fn reset_bombs(mut bombs: ResMut<PlayerBombs>) {
@@ -438,6 +452,7 @@ fn process_drop_events(
             let frames = match item_type {
                 ItemType::Bomb => item_frames.bomb.clone(),
                 ItemType::BonusScore => item_frames.bonus_score.clone(),
+                ItemType::Armor => item_frames.armor.clone(),
             };
 
             let first_frame = frames.first().cloned().unwrap_or_default();
@@ -511,6 +526,7 @@ fn item_pickup_on_overlap(
     droppable_q: Query<&Droppable>,
     mut bombs: ResMut<PlayerBombs>,
     mut score: ResMut<Score>,
+    mut armor_q: Query<&mut crate::player::player::Armor, With<crate::player::player::Player>>,
     mut sfx: SfxPlayer,
 ) {
     use crate::physic::collider::layers;
@@ -525,6 +541,13 @@ fn item_pickup_on_overlap(
             }
             ItemType::BonusScore => {
                 score.add(BONUS_SCORE_VALUE);
+            }
+            ItemType::Armor => {
+                if let Ok(mut armor) = armor_q.single_mut() {
+                    // Cap dur : pas d'effet si déjà au max, mais l'item
+                    // est quand même consommé (cohérent avec les bombes).
+                    armor.current = (armor.current + 1).min(armor.max);
+                }
             }
         }
         sfx.play_at(droppable.item_type.pickup_sound(), 3.0);

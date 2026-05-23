@@ -41,6 +41,9 @@ use bevy::prelude::*;
 
 /// Nombre de vies au départ. `Health` avec ce nombre de PV maximum (un hit = 1 PV).
 pub const PLAYER_MAX_LIVES: i32 = 3;
+/// Cap d'armure. L'armure absorbe un hit à la place de la vie. Au-delà, les
+/// items d'armure ramassés sont consommés pour rien.
+pub const PLAYER_MAX_ARMOR: u32 = 3;
 /// Durée d'invincibilité après un hit (secondes).
 pub const INVINCIBLE_DURATION: f32 = 2.0;
 /// Fréquence de clignotement pendant l'invincibilité (Hz).
@@ -85,6 +88,29 @@ pub struct LivesUI;
 #[derive(Component)]
 struct LifeIcon(i32);
 
+/// Armure du joueur. Absorbe un hit à la place de la vie tant que `current > 0`.
+/// Cf. `apply_damage` dans `physic/health.rs`.
+#[derive(Component, Debug)]
+pub struct Armor {
+    pub current: u32,
+    pub max: u32,
+}
+
+impl Armor {
+    pub fn new(max: u32) -> Self {
+        Self { current: 0, max }
+    }
+}
+
+/// Marqueur pour le conteneur UI de l'armure.
+#[derive(Component)]
+#[require(crate::GameplayEntity)]
+pub struct ArmorUI;
+
+/// Marqueur individuel pour chaque icône d'armure (indexée 0..max).
+#[derive(Component)]
+struct ArmorIcon(u32);
+
 /// Flash blanc autour du vaisseau lors d'un boom.
 #[derive(Component)]
 struct BoomFlash(Timer);
@@ -124,10 +150,10 @@ impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             OnEnter(GameState::Playing),
-            (setup_player, setup_lives_ui).after(LevelSetupSet),
+            (setup_player, setup_lives_ui, setup_armor_ui).after(LevelSetupSet),
         )
         // Cleanup UI : géré centralement par `cleanup_playing` (main.rs)
-        // via `#[require(GameplayEntity)]` sur `LivesUI`.
+        // via `#[require(GameplayEntity)]` sur `LivesUI` / `ArmorUI`.
         .add_systems(
             Update,
             (
@@ -137,6 +163,7 @@ impl Plugin for PlayerPlugin {
                 boom_flash_update,
                 update_invincibility,
                 update_lives_ui,
+                update_armor_ui,
                 dash_input,
                 update_dash,
             )
@@ -178,6 +205,7 @@ pub fn spawn_player(
         Transform::from_xyz(0.0, start_y, 0.5),
         Player,
         Health::new(PLAYER_MAX_LIVES),
+        Armor::new(PLAYER_MAX_ARMOR),
         Weapon::default(),
         // Pouvoir Espace équipé. Single source of truth via enum. Swap
         // depuis le deckbuilding = mutation directe de `equipped.0`.
@@ -261,7 +289,8 @@ fn boom_flash_update(
 
         if flash.0.is_finished() {
             sprite.color = Color::WHITE;
-            commands.entity(entity).remove::<BoomFlash>();
+            // `try_remove` : safe si l'entité est despawn entre query et flush.
+            commands.entity(entity).try_remove::<BoomFlash>();
         } else {
             let intensity = 1.0 + (1.0 - t) * 8.0;
             sprite.color = Color::srgba(intensity, intensity, intensity, 1.0);
@@ -281,7 +310,9 @@ fn update_invincibility(
 
         if inv.0.is_finished() {
             sprite.color = Color::WHITE;
-            commands.entity(entity).remove::<Invincible>();
+            // `try_remove` : safe si le joueur est despawn entre query et flush
+            // (ex: HP=0 le même frame que la fin de l'invincibilité).
+            commands.entity(entity).try_remove::<Invincible>();
         } else {
             let blink =
                 (inv.0.elapsed_secs() * INVINCIBLE_BLINK_RATE * std::f32::consts::TAU).sin();
@@ -342,6 +373,52 @@ fn update_lives_ui(
 
 // `cleanup_lives_ui` retiré — cleanup auto via `cleanup_playing` (main.rs)
 // grâce à `#[require(GameplayEntity)]` sur `LivesUI`.
+
+// ─── UI de l'armure ────────────────────────────────────────────────
+
+/// Spawn la rangée d'icônes d'armure à droite des vies. Toutes les icônes
+/// sont créées cachées ; `update_armor_ui` les rend visibles selon le
+/// nombre actuel d'armure.
+fn setup_armor_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let texture = asset_server.load("images/armor.png");
+
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(20.0),
+                // Après les 3 vies (3 × 64 + 2 × 12 gap = 216) + 24 de marge.
+                left: Val::Px(260.0),
+                column_gap: Val::Px(8.0),
+                ..default()
+            },
+            ArmorUI,
+        ))
+        .with_children(|parent| {
+            for i in 0..PLAYER_MAX_ARMOR {
+                parent.spawn((
+                    ImageNode::new(texture.clone()),
+                    Node {
+                        width: Val::Px(48.0),
+                        height: Val::Px(48.0),
+                        ..default()
+                    },
+                    Visibility::Hidden,
+                    ArmorIcon(i),
+                ));
+            }
+        });
+}
+
+fn update_armor_ui(
+    armor: Single<&Armor, With<Player>>,
+    mut icons: Query<(&ArmorIcon, &mut Visibility)>,
+) {
+    let current = armor.current;
+    for (icon, mut vis) in icons.iter_mut() {
+        *vis = if icon.0 < current { Visibility::Visible } else { Visibility::Hidden };
+    }
+}
 
 // ─── Dash : input, motion ───────────────────────────────────────────
 

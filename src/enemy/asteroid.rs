@@ -27,10 +27,11 @@ use crate::physic::health::Health;
 use bevy::prelude::*;
 use std::time::Duration;
 use crate::enemy::hit_flash;
-/// Table de drop des astéroïdes : 5% bombe, 10% bonus score.
-static ASTEROID_DROP_TABLE: [(ItemType, f32); 2] = [
+/// Table de drop des astéroïdes : 5% bombe, 10% bonus score, 3% armure.
+static ASTEROID_DROP_TABLE: [(ItemType, f32); 3] = [
     (ItemType::Bomb, 0.05),
     (ItemType::BonusScore, 0.10),
+    (ItemType::Armor, 0.03),
 ];
 
 

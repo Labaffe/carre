@@ -76,8 +76,11 @@ const KAMIKAZE_EXPLODE_FRAME_COUNT: f32 = 11.0;
 /// se termine à la frame finale exactement quand le boom se déclenche.
 const KAMIKAZE_COUNTDOWN_DURATION: f32 = KAMIKAZE_FRAME_DURATION * KAMIKAZE_EXPLODE_FRAME_COUNT;
 
-static KAMIKAZE_DROP_TABLE: [(ItemType, f32); 2] =
-    [(ItemType::Bomb, 0.10), (ItemType::BonusScore, 0.15)];
+static KAMIKAZE_DROP_TABLE: [(ItemType, f32); 3] = [
+    (ItemType::Bomb, 0.10),
+    (ItemType::BonusScore, 0.15),
+    (ItemType::Armor, 0.08),
+];
 
 /// Marqueur sur l'entité Kamikaze.
 #[derive(Component)]
