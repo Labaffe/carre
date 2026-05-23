@@ -4,7 +4,8 @@
 //! les probabilités configurées. L'item descend lentement et disparaît
 //! hors écran. Si le joueur le touche, l'effet se déclenche.
 //!
-//! Le joueur peut accumuler des bombes et les déclencher avec Espace.
+//! Le joueur peut accumuler des bombes et les déclencher avec LShift
+//! (Espace est désormais le dash).
 //! La bombe = solution de dernier recours qui nettoie tout :
 //! - inflige des dégâts à tous les astéroïdes et ennemis à l'écran
 //! - despawn tous les projectiles ennemis
@@ -240,9 +241,9 @@ fn setup_bomb_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                     }
                 });
 
-            // Texte clignotant "ESPACE"
+            // Texte clignotant "[LSHIFT]"
             parent.spawn((
-                Text::new("[ESPACE]"),
+                Text::new("[LSHIFT]"),
                 TextFont { font, font_size: 14.0, ..default() },
                 TextColor(Color::WHITE),
                 Node::default(),
