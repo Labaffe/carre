@@ -16,7 +16,10 @@ pub struct EnemyConfigData {
 
 impl EnemyConfigData {
     pub const fn new(radius: f32, sprite_size: f32) -> Self {
-        Self { radius, sprite_size }
+        Self {
+            radius,
+            sprite_size,
+        }
     }
 }
 
@@ -64,4 +67,14 @@ pub const OCTOPUS_GREEN: EnemyData = EnemyData {
     name: "OctopusGreen",
     config: EnemyConfigData::new(75.0, 192.0),
     total_hp: 70,
+};
+
+/// Tourelle gatling — ennemi statique qui vise le joueur et tire à cadence
+/// régulière. Conçu pour être utilisé standalone OU comme enfant d'un futur
+/// groupe (vaisseau, etc.) — dans ce dernier cas, sa position locale est
+/// héritée du parent via la hiérarchie Bevy.
+pub const TURRET: EnemyData = EnemyData {
+    name: "Turret",
+    config: EnemyConfigData::new(48.0, 140.0),
+    total_hp: 30,
 };
