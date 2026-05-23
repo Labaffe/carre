@@ -35,7 +35,7 @@ impl Plugin for MovementPlugin {
 
 pub fn movement_driver(
     time: Res<Time>,
-    windows: Query<&Window>,
+    window: Single<&Window>,
     mut query: Query<(
         Entity,
         &mut Movements,
@@ -44,16 +44,9 @@ pub fn movement_driver(
         Option<&mut TransitionMessages>,
         Option<&BoundingRadius>,
     )>,
-    query_player: Query<(&Player, &Transform), Without<Movements>>,
+    query_player: Single<(&Player, &Transform), Without<Movements>>,
 ) {
-    // Gracefully handle missing or multiple players
-    let Ok((_, player_transform)) = query_player.single() else {
-        return;
-    };
-    let Ok(window) = windows.single() else {
-        return;
-    };
-
+    let (_, player_transform) = *query_player;
     let player_pos = player_transform.translation.xy();
 
     for (_, mut movements, mut transform, zone, messages, bounding) in query.iter_mut() {

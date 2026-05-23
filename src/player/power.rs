@@ -240,11 +240,10 @@ fn setup_power_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 /// équipé. Un changement d'EquippedPower est répercuté à la frame suivante.
 fn update_power_ui(
     cooldowns: Res<PowerCooldowns>,
-    player_q: Query<&EquippedPower, With<Player>>,
+    equipped: Single<&EquippedPower, With<Player>>,
     mut label_q: Query<(&mut Text, &mut TextColor), With<PowerUILabel>>,
     mut bar_q: Query<(&mut Node, &mut BackgroundColor), With<PowerUIBar>>,
 ) {
-    let Ok(equipped) = player_q.single() else { return };
     let kind = equipped.0;
     let ready = cooldowns.is_ready(kind);
     let fraction = cooldowns.fraction(kind);

@@ -151,10 +151,9 @@ impl Plugin for PlayerPlugin {
 fn setup_player(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    windows: Query<&Window>,
+    window: Single<&Window>,
     config: Res<LevelConfig>,
 ) {
-    let window = windows.single().unwrap();
     let half_h = window.height() / 2.0;
     spawn_player(
         &mut commands,
@@ -200,14 +199,12 @@ pub fn spawn_player(
 fn movement(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut query: Query<&mut Transform, (With<Player>, Without<Dashing>)>,
-    windows: Query<&Window>,
+    mut transform: Single<&mut Transform, (With<Player>, Without<Dashing>)>,
+    window: Single<&Window>,
 ) {
-    let window = windows.single().unwrap();
     let half_w = window.width() / 2.0 - PLAYER_MARGIN;
     let half_h = window.height() / 2.0 - PLAYER_MARGIN;
 
-    let Ok(mut transform) = query.single_mut() else { return; };
     let mut direction = Vec3::ZERO;
 
     if keyboard.pressed(KeyCode::KeyW) { direction.y += 1.0; }
@@ -223,12 +220,9 @@ fn movement(
 // ─── Rotation vers le réticule ─────────────────────────────────────
 
 fn rotate_towards_crosshair(
-    crosshair_q: Query<&Transform, (With<Crosshair>, Without<Player>)>,
-    mut player_q: Query<&mut Transform, (With<Player>, Without<Crosshair>, Without<Dashing>)>,
+    crosshair_tf: Single<&Transform, (With<Crosshair>, Without<Player>)>,
+    mut player_transform: Single<&mut Transform, (With<Player>, Without<Crosshair>, Without<Dashing>)>,
 ) {
-    let Ok(crosshair_tf) = crosshair_q.single() else { return };
-    let Ok(mut player_transform) = player_q.single_mut() else { return };
-
     let direction = crosshair_tf.translation - player_transform.translation;
     let angle = direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2;
     player_transform.rotation = Quat::from_rotation_z(angle);
@@ -364,8 +358,8 @@ fn dash_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut cooldowns: ResMut<PowerCooldowns>,
     mut sfx: SfxPlayer,
-    crosshair_q: Query<&Transform, (With<Crosshair>, Without<Player>)>,
-    player_q: Query<
+    crosshair_tf: Single<&Transform, (With<Crosshair>, Without<Player>)>,
+    player_q: Single<
         (Entity, &Transform, &EquippedPower),
         (With<Player>, Without<Dashing>, Without<Crosshair>),
     >,
@@ -373,14 +367,13 @@ fn dash_input(
     if !keyboard.just_pressed(KeyCode::Space) {
         return;
     }
-    let Ok((player_e, player_tf, equipped)) = player_q.single() else { return };
+    let (player_e, player_tf, equipped) = *player_q;
     if equipped.0 != PowerKind::Dash {
         return;
     }
     if !cooldowns.is_ready(PowerKind::Dash) {
         return;
     }
-    let Ok(crosshair_tf) = crosshair_q.single() else { return };
 
     let start = player_tf.translation.truncate();
     let crosshair_pos = crosshair_tf.translation.truncate();

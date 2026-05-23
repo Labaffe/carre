@@ -489,10 +489,9 @@ fn move_droppables(time: Res<Time>, mut query: Query<&mut Transform, With<Droppa
 
 fn cleanup_offscreen_droppables(
     mut commands: Commands,
-    windows: Query<&Window>,
+    window: Single<&Window>,
     query: Query<(Entity, &Transform), With<Droppable>>,
 ) {
-    let window = windows.single().unwrap();
     let limit = -window.height() / 2.0 - 50.0;
     for (entity, transform) in query.iter() {
         if transform.translation.y < limit {

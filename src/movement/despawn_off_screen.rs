@@ -29,10 +29,9 @@ const MARGIN_Y: f32 = 0.25;
 
 fn despawn_off_screen(
     mut commands: Commands,
-    windows: Query<&Window>,
+    window: Single<&Window>,
     query: Query<(Entity, &Transform, Option<&BoundingRadius>), With<DespawnOffScreen>>,
 ) {
-    let Ok(window) = windows.single() else { return; };
     let w = window.physical_width() as f32;
     let h = window.physical_height() as f32;
 

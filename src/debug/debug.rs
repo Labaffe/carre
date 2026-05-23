@@ -614,7 +614,7 @@ fn draw_colliders(
 
 fn debug_mouse_coords(
     debug: Res<DebugMode>,
-    windows: Query<&Window>,
+    window: Single<&Window>,
     camera_q: Query<(&Camera, &GlobalTransform)>,
     mouse: Res<ButtonInput<MouseButton>>,
     mut mouse_pos: ResMut<DebugMousePos>,
@@ -623,8 +623,6 @@ fn debug_mouse_coords(
     if !debug.0 {
         return;
     }
-
-    let window = windows.single().unwrap();
     let Some(cursor_pos) = window.cursor_position() else {
         return;
     };
@@ -712,7 +710,7 @@ fn draw_hitboxes(
         Option<&crate::movement::bounding_radius::BoundingRadius>,
     )>,
     sprite_q: Query<(&Transform, &Sprite), Without<AreaOfEffect>>,
-    windows: Query<&Window>,
+    window: Single<&Window>,
     camera_q: Query<&Projection>,
 ) {
     if !debug.0 {
@@ -739,7 +737,6 @@ fn draw_hitboxes(
 
     // MovementZones : magenta = zone brute (centre clampé), rose = zone effective
     // (rétrécie par BoundingRadius, là où le bord du sprite vient s'arrêter).
-    let Ok(window) = windows.single() else { return; };
     let w = window.physical_width() as f32;
     let h = window.physical_height() as f32;
 

@@ -136,8 +136,7 @@ const PLANET_ANIM_DURATION: f32 = 10.0;
 /// Vitesse de rotation lente constante de la planète (rad/s).
 const PLANET_ROTATION_SPEED: f32 = 0.02;
 
-fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows: Query<&Window>) {
-    let window = windows.single().unwrap();
+fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<&Window>) {
     let half_h = window.height() / 2.0;
 
     commands.spawn((
@@ -157,7 +156,7 @@ fn spawn_planet(mut commands: Commands, asset_server: Res<AssetServer>, windows:
 
 fn animate_planet(
     mut difficulty: ResMut<Difficulty>,
-    windows: Query<&Window>,
+    window: Single<&Window>,
     mut planet_q: Query<&mut Transform, With<Planet>>,
     mut sfx: SfxPlayer,
 ) {
@@ -178,7 +177,6 @@ fn animate_planet(
         return;
     }
 
-    let window = windows.single().unwrap();
     let half_h = window.height() / 2.0;
 
     let progress =

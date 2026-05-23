@@ -146,12 +146,12 @@ fn shield_input(
     mut cooldowns: ResMut<PowerCooldowns>,
     mut sfx: SfxPlayer,
     shield_assets: Res<ShieldAssets>,
-    player_q: Query<(Entity, &EquippedPower), (With<Player>, Without<Shielding>)>,
+    player_q: Single<(Entity, &EquippedPower), (With<Player>, Without<Shielding>)>,
 ) {
     if !keyboard.just_pressed(KeyCode::Space) {
         return;
     }
-    let Ok((player_e, equipped)) = player_q.single() else { return };
+    let (player_e, equipped) = *player_q;
     if equipped.0 != PowerKind::Shield {
         return;
     }
@@ -212,10 +212,10 @@ fn shield_input(
 fn shield_tick(
     mut commands: Commands,
     time: Res<Time>,
-    mut player_q: Query<(Entity, &mut Shielding), With<Player>>,
+    player_q: Single<(Entity, &mut Shielding), With<Player>>,
     mut fill_q: Query<&mut Sprite, With<ShieldDurationFill>>,
 ) {
-    let Ok((player_e, mut shielding)) = player_q.single_mut() else { return };
+    let (player_e, mut shielding) = player_q.into_inner();
     shielding.timer.tick(time.delta());
 
     let remaining_ratio = 1.0 - shielding.timer.fraction();

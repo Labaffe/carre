@@ -494,9 +494,8 @@ pub fn octopus_setup_curve(
     mut sfx: SfxPlayer,
     octopus_q: Query<(Entity, &Transform), (With<Octopus>, Added<OctopusMoving>)>,
     player_q: Query<&Transform, (With<Player>, Without<Octopus>)>,
-    windows: Query<&Window>,
+    window: Single<&Window>,
 ) {
-    let Ok(window) = windows.single() else { return };
     let half_w = window.physical_width() as f32 / 2.0;
     let half_h = window.physical_height() as f32 / 2.0;
     let target_x_range = (half_w - TARGET_PICK_MARGIN).max(0.0);
@@ -553,11 +552,8 @@ pub fn octopus_fire_shots(
     asset_server: Res<AssetServer>,
     mut sfx: SfxPlayer,
     octopus_q: Query<&Transform, Added<OctopusFireShots>>,
-    player_q: Query<&Transform, (With<Player>, Without<Octopus>)>,
+    player_tf: Single<&Transform, (With<Player>, Without<Octopus>)>,
 ) {
-    let Ok(player_tf) = player_q.single() else {
-        return;
-    };
     let player_pos = player_tf.translation.truncate();
     let spread = OCTOPUS_SHOT_SPREAD_DEG.to_radians();
     let angles = [-spread, 0.0, spread];

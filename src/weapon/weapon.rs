@@ -116,12 +116,10 @@ fn setup_weapon_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 /// l'absence de joueur (entre la sortie du level et le respawn).
 fn update_weapon_ui(
     asset_server: Res<AssetServer>,
-    weapon_q: Query<&Weapon, With<Player>>,
+    weapon: Single<&Weapon, With<Player>>,
     mut icon_q: Query<&mut ImageNode, With<WeaponIcon>>,
     mut text_q: Query<&mut Text, With<WeaponNameText>>,
 ) {
-    let Ok(weapon) = weapon_q.single() else { return };
-
     if let Ok(mut icon) = icon_q.single_mut() {
         // `asset_server.load` est idempotent : même path → même handle (cache).
         icon.image = asset_server.load(weapon.0.texture_path());

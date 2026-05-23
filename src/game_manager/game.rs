@@ -294,7 +294,7 @@ fn intro_tick(
     pause: Res<PauseState>,
     intro_data: Option<ResMut<IntroData>>,
     mut player_q: Query<&mut Transform, With<Player>>,
-    windows: Query<&Window>,
+    window: Single<&Window>,
     intro_sound_q: Query<Entity, With<IntroSound>>,
     config: Res<LevelConfig>,
     mut sfx: crate::audio::SfxPlayer,
@@ -303,7 +303,6 @@ fn intro_tick(
     // Peut être absente en mode éditeur (enter_intro a court-circuité avant
     // qu'OnExit n'ait nettoyé). On no-op proprement.
     let Some(mut data) = intro_data else { return };
-    let window = windows.single().unwrap();
     let half_w = window.width() / 2.0;
     let half_h = window.height() / 2.0;
 

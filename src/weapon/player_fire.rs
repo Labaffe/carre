@@ -49,8 +49,8 @@ fn shoot(
     mouse: Res<ButtonInput<MouseButton>>,
     mut fire_timer: ResMut<FireRateTimer>,
     time: Res<Time>,
-    player_q: Query<(&Transform, &Weapon), (With<Player>, Without<crate::player::player::Dashing>)>,
-    crosshair_q: Query<&Transform, With<Crosshair>>,
+    player_q: Single<(&Transform, &Weapon), (With<Player>, Without<crate::player::player::Dashing>)>,
+    crosshair_transform: Single<&Transform, With<Crosshair>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut sfx: SfxPlayer,
@@ -59,12 +59,7 @@ fn shoot(
         return;
     }
 
-    let Ok((player_transform, weapon)) = player_q.single() else {
-        return;
-    };
-    let Ok(crosshair_transform) = crosshair_q.single() else {
-        return;
-    };
+    let (player_transform, weapon) = *player_q;
 
     let def = weapon.0.def();
     // Adapter la cadence de tir à l'arme actuelle

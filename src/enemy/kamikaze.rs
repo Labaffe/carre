@@ -246,7 +246,7 @@ impl EnemyBuilder for KamikazeBuilder {
 pub fn kamikaze_speed_ramp_system(
     time: Res<Time>,
     mut query: Query<(&mut Transform, &mut KamikazeSpeedRamp)>,
-    player_q: Query<
+    player_tf: Single<
         &Transform,
         (
             With<crate::player::player::Player>,
@@ -254,9 +254,6 @@ pub fn kamikaze_speed_ramp_system(
         ),
     >,
 ) {
-    let Ok(player_tf) = player_q.single() else {
-        return;
-    };
     let dt = time.delta_secs();
     let player_pos = player_tf.translation.xy();
 
