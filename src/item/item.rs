@@ -547,8 +547,14 @@ fn item_pickup_on_overlap(
     mut score: ResMut<Score>,
     mut armor_q: Query<&mut crate::player::player::Armor, With<crate::player::player::Player>>,
     mut sfx: SfxPlayer,
+    player_pos_q: Query<&Transform, With<Player>>,
+    threat_q: Query<&Transform, Or<(With<Enemy>, With<Asteroid>)>>,
+    enemy_proj_q: Query<(&Transform, &Projectile)>,
 ) {
     use crate::physic::collider::layers;
+    /// Rayon de détection d'une menace pour déclencher le slow-mo "clutch save"
+    /// au ramassage d'une bombe.
+    const CLUTCH_RADIUS: f32 = 180.0;
     for ev in events.read() {
         // pick(layer) retourne (entity_avec_ce_layer, autre). On veut l'item.
         let Some((item_e, _player_e)) = ev.pick(layers::ITEM) else { continue };
@@ -557,6 +563,20 @@ fn item_pickup_on_overlap(
         match droppable.item_type {
             ItemType::Bomb => {
                 bombs.count += 1;
+                if let Ok(player_tf) = player_pos_q.single() {
+                    let p = player_tf.translation.truncate();
+                    let r2 = CLUTCH_RADIUS * CLUTCH_RADIUS;
+                    let threat_near = threat_q
+                        .iter()
+                        .any(|tf| tf.translation.truncate().distance_squared(p) <= r2)
+                        || enemy_proj_q.iter().any(|(tf, proj)| {
+                            proj.team == Team::Enemy
+                                && tf.translation.truncate().distance_squared(p) <= r2
+                        });
+                    if threat_near {
+                        commands.trigger(crate::fx::time_fx::TimeFxEvent::SLOWMO_BOMB_CLUTCH);
+                    }
+                }
             }
             ItemType::BonusScore => {
                 score.add(BONUS_SCORE_VALUE);

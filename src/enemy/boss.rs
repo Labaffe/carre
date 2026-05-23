@@ -136,7 +136,7 @@ const TRANSITION_SHAKE: f32 = 12.0;
 
 // ─── Mort ───────────────────────────────────────────────────────────────
 /// Durée du shake de mort avant DespawnSelf (secondes).
-const DYING_DURATION: f32 = 4.0;
+const DYING_DURATION: f32 = 2.0;
 /// Amplitude max du shake de mort (px, atteinte en fin de phase).
 const DYING_SHAKE_MAX: f32 = 20.0;
 
@@ -390,6 +390,7 @@ pub fn boss_death_screen_shake(
     let ev = trigger.event();
     if boss_q.get(ev.entity).is_err() { return; }
     commands.trigger(crate::fx::screen_shake::ScreenShakeEvent::BOSS_DEATH);
+    commands.trigger(crate::fx::time_fx::TimeFxEvent::SLOWMO_BOSS_KILL);
 }
 
 pub fn boss_hp_threshold_check(

@@ -18,6 +18,7 @@ use crate::physic::harmless::Harmless;
 use crate::physic::health::{DamageEvent, Health, HitEvent};
 use crate::player::player::{INVINCIBLE_DURATION, Invincible, Player};
 use crate::fx::screen_shake::ScreenShakeEvent;
+use crate::fx::time_fx::TimeFxEvent;
 use crate::ui::score::{Combo, Score};
 
 pub struct CollisionPlugin;
@@ -121,11 +122,13 @@ fn player_post_hit(
     commands.trigger(ScreenShakeEvent::PLAYER_HIT);
 
     if health.is_dead() {
+        commands.trigger(TimeFxEvent::SLOWMO_PLAYER_DEATH);
         if let Ok(mut e) = commands.get_entity(ev.target) {
             e.try_despawn();
         }
         next_state.set(GameState::GameOver);
     } else {
+        commands.trigger(TimeFxEvent::HIT_STOP_PLAYER);
         if let Ok(mut e) = commands.get_entity(ev.target) {
             e.try_insert(Invincible(Timer::new(
                 Duration::from_secs_f32(INVINCIBLE_DURATION),

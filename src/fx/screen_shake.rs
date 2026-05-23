@@ -37,7 +37,7 @@ impl ScreenShakeEvent {
     pub const MINE: Self = Self { intensity: 12.0, duration: 0.4 };
     pub const KAMIKAZE: Self = Self { intensity: 14.0, duration: 0.4 };
     pub const BOMB: Self = Self { intensity: 22.0, duration: 0.7 };
-    pub const BOSS_DEATH: Self = Self { intensity: 28.0, duration: 2.5 };
+    pub const BOSS_DEATH: Self = Self { intensity: 28.0, duration: 1.4 };
 }
 
 #[derive(Component)]
