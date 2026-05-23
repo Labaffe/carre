@@ -46,7 +46,7 @@ use crate::behavior::behavior::BehaviorComponent;
 use crate::behavior::choice_list::TransitionMessages;
 use crate::enemy::anim_bank::Animation;
 use crate::enemy::death::{DespawnSelf, Dying};
-use crate::enemy::enemies::OCTOPUS;
+use crate::enemy::enemies::{EnemyData, OCTOPUS, OCTOPUS_GREEN};
 use crate::enemy::enemy::Enemy;
 use crate::enemy::enemy_builder::EnemyBuilder;
 use crate::game_manager::difficulty::{Difficulty, SpawnPosition};
@@ -56,7 +56,7 @@ use crate::movement::bounding_radius::BoundingRadius;
 use crate::movement::goto::Goto;
 use crate::movement::movement_zone::MovementZone;
 use crate::movement::movements::Movements;
-use crate::physic::collider::{collider, layers};
+use crate::physic::collider::{collider, layers, CollidesWith, CollisionLayer, Hitbox};
 use crate::physic::health::Health;
 use crate::player::player::Player;
 use crate::sprite_orient::FaceMovement;
@@ -82,6 +82,17 @@ const OCTOPUS_PROJECTILE_SPEED: f32 = 700.0;
 const OCTOPUS_PROJECTILE_SIZE: Vec2 = Vec2::new(12.0, 28.0);
 /// Demi-angle d'ouverture de l'éventail des 3 tirs (degrés).
 const OCTOPUS_SHOT_SPREAD_DEG: f32 = 22.0;
+/// Variante verte : nombre de projectiles tirés en éventail.
+const OCTOPUS_GREEN_SHOT_COUNT: usize = 4;
+/// Variante verte : demi-angle de l'éventail (plus large car 4 tirs).
+const OCTOPUS_GREEN_SHOT_SPREAD_DEG: f32 = 32.0;
+/// Variante verte : couleur des projectiles (vert vif).
+const OCTOPUS_GREEN_PROJECTILE_COLOR: Color = Color::srgb(0.2, 1.0, 0.4);
+/// Variante verte : teinte appliquée au sprite pendant le swoop (intangible).
+/// Multiplier RGB < 1.0 → assombrit le sprite (vs `ENTERING_OPACITY` qui ne
+/// touchait que l'alpha). Donne un signal visuel clair "tu ne peux pas
+/// me toucher" — l'octopus a l'air "en phase" / hors plan.
+const OCTOPUS_GREEN_SWOOP_TINT: Color = Color::srgba(0.35, 0.35, 0.35, 0.9);
 /// Marge intérieure (px) pour le clamp du point cible — évite qu'il colle
 /// au bord exact de l'écran.
 const TARGET_PICK_MARGIN: f32 = 80.0;
@@ -124,6 +135,17 @@ const PRE_SWOOP_SOUNDS_IN_PHASE: u8 = 1;
 /// Marker sur l'entité Octopus.
 #[derive(Component)]
 pub struct Octopus;
+
+/// Marker additionnel sur les octopus de la variante verte. Posé EN PLUS
+/// de `Octopus` (donc tous les systèmes `With<Octopus>` continuent de
+/// tourner pour le vert) ; permet de différencier le comportement spécifique
+/// via des filtres `With<OctopusGreen>` / `Without<OctopusGreen>`.
+///
+/// Différences vert vs base :
+/// - Swoop : cible aléatoire (vs miroir-joueur), intangible pendant le rush.
+/// - Tir : 4 projectiles verts (vs 3 roses).
+#[derive(Component, Clone)]
+pub struct OctopusGreen;
 
 /// Posé par la choice pendant la phase de déplacement. Consommé par
 /// `octopus_setup_curve` qui insère `Movements` avec une Bézier fraîche.
@@ -181,7 +203,208 @@ pub struct OctopusPreSwoop {
     pub sounds_played: u8,
 }
 
-// ─── Builder ───────────────────────────────────────────────────────
+// ─── Variantes (octopus standard + octopus vert) ───────────────────
+
+/// Set de noms d'animations + sprite de base d'une variante d'octopus.
+/// Les builders standard / vert n'en diffèrent QUE par ces 5 strings.
+struct OctopusAnims {
+    idle: &'static str,
+    rush: &'static str,
+    shoot: &'static str,
+    death: &'static str,
+    base_sprite: &'static str,
+}
+
+const ANIMS_STD: OctopusAnims = OctopusAnims {
+    idle: "octopus_idle",
+    rush: "octopus_rush",
+    shoot: "octopus_shoot",
+    death: "octopus_death",
+    base_sprite: "images/octopus/frame000.png",
+};
+
+const ANIMS_GREEN: OctopusAnims = OctopusAnims {
+    idle: "octopus_green_idle",
+    rush: "octopus_green_rush",
+    shoot: "octopus_green_shoot",
+    death: "octopus_green_death",
+    base_sprite: "images/octopus_green/frame000.png",
+};
+
+/// Construit l'arbre de comportement complet de l'octopus (entering → alive
+/// cycle → dying) pour une variante donnée. La structure est identique pour
+/// le standard et le vert ; seuls les noms d'anims diffèrent.
+fn build_octopus_behavior(
+    final_pos: Vec2,
+    anims: &OctopusAnims,
+) -> impl crate::behavior::behavior::Behavior + Send + Sync + 'static {
+    // ─── Entering : rush vers le spawn point puis idle ────────
+    let entering = BehaviorBuilder::first(
+        Duration::from_secs_f32(RUSH_IN_DURATION),
+        BehaviorBuilder::multiple()
+            .with(BehaviorBuilder::from_component(OctopusEnteringRush))
+            .with(BehaviorBuilder::from_component(Animation::new(
+                anims.rush,
+                Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
+            )))
+            .with(BehaviorBuilder::from_component(
+                Movements::new().with(Goto::new(final_pos, RUSH_IN_SPEED)),
+            )),
+    )
+    .then(
+        Duration::from_secs_f32(IDLE_PAUSE_DURATION),
+        BehaviorBuilder::multiple()
+            .with(BehaviorBuilder::from_component(OctopusEnteringIdle))
+            .with(BehaviorBuilder::from_component(Animation::new(
+                anims.idle,
+                Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
+            ))),
+    )
+    .on_complete("entering_done");
+
+    // ─── Cycle alive : choice à 3 états ─────────────────────
+    let telegraph = BehaviorBuilder::multiple()
+        .with(BehaviorBuilder::from_component(OctopusTelegraph::default()))
+        .with(BehaviorBuilder::from_component(Animation::new(
+            anims.idle,
+            Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
+        )));
+
+    let swoop = BehaviorBuilder::first(
+        Duration::from_secs_f32(PRE_SWOOP_DURATION),
+        BehaviorBuilder::multiple()
+            .with(BehaviorBuilder::from_component(OctopusPreSwoop::default()))
+            .with(BehaviorBuilder::from_component(Animation::new(
+                anims.idle,
+                Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
+            ))),
+    )
+    .then(
+        Duration::from_secs_f32(SWOOP_DURATION),
+        BehaviorBuilder::multiple()
+            .with(BehaviorBuilder::from_component(OctopusMoving))
+            .with(BehaviorBuilder::from_component(Animation::new(
+                anims.rush,
+                Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
+            ))),
+    )
+    .on_complete("back_to_telegraph");
+
+    let shoot = BehaviorBuilder::first(
+        Duration::from_secs_f32(SHOOT_WINDUP_DURATION),
+        BehaviorBuilder::multiple()
+            .with(BehaviorBuilder::from_component(OctopusShooting))
+            .with(BehaviorBuilder::from_component(
+                Animation::new(
+                    anims.shoot,
+                    Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
+                )
+                .one_shot(),
+            )),
+    )
+    .then(
+        Duration::from_secs_f32(FIRE_RELEASE_DURATION),
+        BehaviorBuilder::from_component(OctopusFireShots),
+    )
+    .on_complete("back_to_telegraph");
+
+    let alive_cycle = BehaviorBuilder::choice()
+        .with(telegraph) // 0
+        .with(swoop) // 1
+        .with(shoot) // 2
+        .add_transition(0, 1, "do_swoop")
+        .add_transition(0, 2, "do_shoot")
+        .add_transition(1, 0, "back_to_telegraph")
+        .add_transition(2, 0, "back_to_telegraph");
+
+    let alive = BehaviorBuilder::multiple()
+        .with(BehaviorBuilder::from_component(OctopusAlive))
+        .with(alive_cycle);
+
+    let dying = BehaviorBuilder::first(
+        Duration::from_secs_f32(OCTOPUS_DEATH_DURATION),
+        BehaviorBuilder::multiple()
+            .with(BehaviorBuilder::from_component(Movements::new()))
+            .with(BehaviorBuilder::from_component(
+                Animation::with_total_duration(
+                    anims.death,
+                    Duration::from_secs_f32(OCTOPUS_DEATH_DURATION),
+                )
+                .one_shot(),
+            )),
+    )
+    .then(
+        Duration::from_secs_f32(0.1),
+        BehaviorBuilder::from_component(DespawnSelf),
+    );
+
+    BehaviorBuilder::choice()
+        .with(entering) // 0
+        .with(alive) // 1
+        .with(dying) // 2
+        .add_transition(0, 1, "entering_done")
+        .add_transition(1, 2, "die")
+}
+
+/// Spawn un octopus de la variante donnée à `spawn_pos`. `extra_markers`
+/// permet aux variantes d'ajouter leurs propres composants (ex: `OctopusGreen`
+/// pour la variante verte) en plus du marker `Octopus` commun.
+fn spawn_octopus_variant<B: Bundle>(
+    commands: &mut Commands,
+    window: &Window,
+    spawn_pos: SpawnPosition,
+    asset_server: &Res<AssetServer>,
+    data: EnemyData,
+    anims: &OctopusAnims,
+    extra_markers: B,
+) {
+    let final_pos = spawn_pos.resolve(window, data.config.sprite_size / 2.0);
+
+    // Position d'entrée : hors écran à gauche ou à droite (random), à la
+    // même hauteur que le spawn point — trajectoire horizontale lisible.
+    let half_w = window.width() / 2.0;
+    let from_right = fastrand::bool();
+    let entry_x = if from_right {
+        half_w + ENTRY_OFFSCREEN_OFFSET
+    } else {
+        -(half_w + ENTRY_OFFSCREEN_OFFSET)
+    };
+    let entry_pos = Vec2::new(entry_x, final_pos.y);
+
+    let behavior = build_octopus_behavior(final_pos, anims);
+
+    commands.spawn((
+        Sprite {
+            image: asset_server.load(anims.base_sprite),
+            custom_size: Some(Vec2::splat(data.config.sprite_size)),
+            // Alpha réduit pendant entering — restauré à 1.0 par
+            // `octopus_become_alive` à l'entrée du state alive.
+            color: Color::srgba(1.0, 1.0, 1.0, ENTERING_OPACITY),
+            ..default()
+        },
+        Transform::from_xyz(entry_pos.x, entry_pos.y, 0.5),
+        TransitionMessages::new(),
+        Enemy::new(data),
+        Health::new(data.total_hp),
+        Octopus,
+        BoundingRadius(data.config.sprite_size / 2.0),
+        // MovementZone pleine écran (margin = 0). Pendant entering la
+        // position de départ est hors écran : le clamp ne s'applique pas
+        // au start (le tick suivant le `Goto` ramène l'octopus dans la
+        // zone, le clamp prend le relais à l'entrée à l'écran).
+        MovementZone::new(Vec2::ZERO),
+        BehaviorComponent::new(behavior),
+        // Pas de `DropTable` → l'octopus ne drop rien à la mort.
+        // Sprite naturel orienté à droite → flip quand l'octopus part
+        // vers la gauche.
+        FaceMovement::faces_right(),
+        extra_markers,
+        // PAS de collider ici : l'octopus est intangible pendant entering.
+        // `octopus_become_alive` (Added<OctopusAlive>) l'insère ensuite.
+    ));
+}
+
+// ─── Builder : octopus standard ───────────────────────────────────
 
 pub struct OctopusBuilder {
     timer: Timer,
@@ -218,175 +441,64 @@ impl EnemyBuilder for OctopusBuilder {
         spawn_pos: SpawnPosition,
         asset_server: &Res<AssetServer>,
     ) {
-        let final_pos = spawn_pos.resolve(window, OCTOPUS.config.sprite_size / 2.0);
-
-        // Position d'entrée : hors écran à gauche ou à droite (random), à la
-        // même hauteur que le spawn point — la trajectoire est ainsi purement
-        // horizontale, plus lisible que diagonale.
-        let half_w = window.width() / 2.0;
-        let from_right = fastrand::bool();
-        let entry_x = if from_right {
-            half_w + ENTRY_OFFSCREEN_OFFSET
-        } else {
-            -(half_w + ENTRY_OFFSCREEN_OFFSET)
-        };
-        let entry_pos = Vec2::new(entry_x, final_pos.y);
-
-        // ─── Sous-behavior "entering" ─────────────────────────────
-        // Phase A : rush rectiligne vers le spawn point.
-        // Phase B : petit idle stationnaire à destination.
-        // `on_complete` pousse "entering_done" → choice transite en alive.
-        let entering = BehaviorBuilder::first(
-            Duration::from_secs_f32(RUSH_IN_DURATION),
-            BehaviorBuilder::multiple()
-                .with(BehaviorBuilder::from_component(OctopusEnteringRush))
-                .with(BehaviorBuilder::from_component(Animation::new(
-                    "octopus_rush",
-                    Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
-                )))
-                .with(BehaviorBuilder::from_component(
-                    Movements::new().with(Goto::new(final_pos, RUSH_IN_SPEED)),
-                )),
-        )
-        .then(
-            Duration::from_secs_f32(IDLE_PAUSE_DURATION),
-            BehaviorBuilder::multiple()
-                .with(BehaviorBuilder::from_component(OctopusEnteringIdle))
-                .with(BehaviorBuilder::from_component(Animation::new(
-                    "octopus_idle",
-                    Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
-                ))),
-        )
-        .on_complete("entering_done");
-
-        // ─── Cycle alive : choice à 3 états ─────────────────────
-        // État 0 = telegraph (pas de durée fixée par le BT — le marker
-        // `OctopusTelegraph` est ticked par `octopus_telegraph_tick` qui
-        // pousse `"do_swoop"` ou `"do_shoot"` random après TELEGRAPH_DURATION).
-        let telegraph = BehaviorBuilder::multiple()
-            .with(BehaviorBuilder::from_component(OctopusTelegraph::default()))
-            .with(BehaviorBuilder::from_component(Animation::new(
-                "octopus_idle",
-                Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
-            )));
-
-        // État 1 = swoop. 2 sous-phases : pre-swoop (1.2s, idle + 2 sons
-        // OctopusRush), puis swoop réel (1.8s, anim rush). Le 3e son
-        // OctopusRush est joué au début du swoop réel par
-        // `octopus_setup_curve`. Sur completion → retour à telegraph.
-        let swoop = BehaviorBuilder::first(
-            Duration::from_secs_f32(PRE_SWOOP_DURATION),
-            BehaviorBuilder::multiple()
-                .with(BehaviorBuilder::from_component(OctopusPreSwoop::default()))
-                .with(BehaviorBuilder::from_component(Animation::new(
-                    "octopus_idle",
-                    Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
-                ))),
-        )
-        .then(
-            Duration::from_secs_f32(SWOOP_DURATION),
-            BehaviorBuilder::multiple()
-                .with(BehaviorBuilder::from_component(OctopusMoving))
-                .with(BehaviorBuilder::from_component(Animation::new(
-                    "octopus_rush",
-                    Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
-                ))),
-        )
-        .on_complete("back_to_telegraph");
-
-        // État 2 = shoot (windup + fire en .then). Sur completion → telegraph.
-        let shoot = BehaviorBuilder::first(
-            Duration::from_secs_f32(SHOOT_WINDUP_DURATION),
-            BehaviorBuilder::multiple()
-                .with(BehaviorBuilder::from_component(OctopusShooting))
-                .with(BehaviorBuilder::from_component(
-                    Animation::new(
-                        "octopus_shoot",
-                        Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
-                    )
-                    .one_shot(),
-                )),
-        )
-        .then(
-            Duration::from_secs_f32(FIRE_RELEASE_DURATION),
-            BehaviorBuilder::from_component(OctopusFireShots),
-        )
-        .on_complete("back_to_telegraph");
-
-        let alive_cycle = BehaviorBuilder::choice()
-            .with(telegraph) // 0
-            .with(swoop) // 1
-            .with(shoot) // 2
-            .add_transition(0, 1, "do_swoop")
-            .add_transition(0, 2, "do_shoot")
-            .add_transition(1, 0, "back_to_telegraph")
-            .add_transition(2, 0, "back_to_telegraph");
-
-        // Wrap dans un multiple avec `OctopusAlive` pour gating du collider.
-        // `Added<OctopusAlive>` → `octopus_become_alive` insère le collider
-        // et restaure l'alpha à 1.0 (sortie de la phase entering).
-        let alive = BehaviorBuilder::multiple()
-            .with(BehaviorBuilder::from_component(OctopusAlive))
-            .with(alive_cycle);
-
-        // Mort : stoppe le mouvement, joue l'animation de mort one-shot sur
-        // OCTOPUS_DEATH_DURATION (la durée par frame est recalculée auto à
-        // l'init selon le nombre de frames du dossier). Puis DespawnSelf.
-        let dying = BehaviorBuilder::first(
-            Duration::from_secs_f32(OCTOPUS_DEATH_DURATION),
-            BehaviorBuilder::multiple()
-                .with(BehaviorBuilder::from_component(Movements::new()))
-                .with(BehaviorBuilder::from_component(
-                    Animation::with_total_duration(
-                        "octopus_death",
-                        Duration::from_secs_f32(OCTOPUS_DEATH_DURATION),
-                    )
-                    .one_shot(),
-                )),
-        )
-        .then(
-            Duration::from_secs_f32(0.1),
-            BehaviorBuilder::from_component(DespawnSelf),
+        spawn_octopus_variant(
+            &mut commands,
+            window,
+            spawn_pos,
+            asset_server,
+            OCTOPUS,
+            &ANIMS_STD,
+            (),
         );
+    }
+}
 
-        // ─── Outer choice : entering → alive → dying ─────────────
-        // Pas de transition "die" depuis entering : sans collider, l'octopus
-        // ne peut pas prendre de dégâts pendant cette phase.
-        let behavior = BehaviorBuilder::choice()
-            .with(entering) // 0
-            .with(alive) // 1
-            .with(dying) // 2
-            .add_transition(0, 1, "entering_done")
-            .add_transition(1, 2, "die");
+// ─── Builder : octopus vert ────────────────────────────────────────
 
-        commands.spawn((
-            Sprite {
-                image: asset_server.load("images/octopus/frame000.png"),
-                custom_size: Some(Vec2::splat(OCTOPUS.config.sprite_size)),
-                // Alpha réduit pendant entering — restauré à 1.0 par
-                // `octopus_become_alive` à l'entrée du state alive.
-                color: Color::srgba(1.0, 1.0, 1.0, ENTERING_OPACITY),
-                ..default()
-            },
-            Transform::from_xyz(entry_pos.x, entry_pos.y, 0.5),
-            TransitionMessages::new(),
-            Enemy::new(OCTOPUS),
-            Health::new(OCTOPUS.total_hp),
-            Octopus,
-            BoundingRadius(OCTOPUS.config.sprite_size / 2.0),
-            // MovementZone pleine écran (margin = 0). Pendant entering la
-            // position de départ est hors écran : le clamp ne s'applique pas
-            // au start (le tick suivant le `Goto` ramène l'octopus dans la
-            // zone, le clamp prend le relais à l'entrée à l'écran).
-            MovementZone::new(Vec2::ZERO),
-            BehaviorComponent::new(behavior),
-            // Pas de `DropTable` → l'octopus ne drop rien à la mort.
-            // Sprite naturel orienté à droite → flip quand l'octopus part
-            // vers la gauche.
-            FaceMovement::faces_right(),
-            // PAS de collider ici : l'octopus est intangible pendant entering.
-            // `octopus_become_alive` (Added<OctopusAlive>) l'insère ensuite.
-        ));
+pub struct OctopusGreenBuilder {
+    timer: Timer,
+}
+
+impl OctopusGreenBuilder {
+    pub fn new() -> Self {
+        Self {
+            timer: Timer::new(Duration::ZERO, TimerMode::Once),
+        }
+    }
+}
+
+impl EnemyBuilder for OctopusGreenBuilder {
+    fn get_timer(&mut self) -> &mut Timer {
+        &mut self.timer
+    }
+    fn name(&self) -> &'static str {
+        "octopus_green"
+    }
+    fn preload_anim(&self) -> HashMap<&str, &str> {
+        HashMap::from([
+            ("octopus_green_idle", "images/octopus_green/idle"),
+            ("octopus_green_rush", "images/octopus_green/rush"),
+            ("octopus_green_shoot", "images/octopus_green/shoot"),
+            ("octopus_green_death", "images/octopus_green/death"),
+        ])
+    }
+    fn spawn(
+        &self,
+        mut commands: Commands,
+        window: &Window,
+        _difficulty: &ResMut<Difficulty>,
+        spawn_pos: SpawnPosition,
+        asset_server: &Res<AssetServer>,
+    ) {
+        spawn_octopus_variant(
+            &mut commands,
+            window,
+            spawn_pos,
+            asset_server,
+            OCTOPUS_GREEN,
+            &ANIMS_GREEN,
+            OctopusGreen,
+        );
     }
 }
 
@@ -497,7 +609,10 @@ pub fn octopus_become_alive(
 /// donc systématiquement la zone du joueur avec un arc visible.
 pub fn octopus_setup_curve(
     mut commands: Commands,
-    octopus_q: Query<(Entity, &Transform), (With<Octopus>, Added<OctopusMoving>)>,
+    octopus_q: Query<
+        (Entity, &Transform),
+        (With<Octopus>, Without<OctopusGreen>, Added<OctopusMoving>),
+    >,
     player_q: Query<&Transform, (With<Player>, Without<Octopus>)>,
     window: Single<&Window>,
 ) {
@@ -545,11 +660,12 @@ pub fn octopus_setup_curve(
 
 /// Sur `Added<OctopusFireShots>` : spawn 3 projectiles en éventail
 /// (-spread / 0 / +spread degrés) vers le joueur. Le son `OctopusShoot` est
-/// joué par le hook `on_insert` sur `OctopusFireShots`.
+/// joué par le hook `on_insert` sur `OctopusFireShots`. Filtre
+/// `Without<OctopusGreen>` car la variante verte a sa propre logique de tir.
 pub fn octopus_fire_shots(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    octopus_q: Query<&Transform, Added<OctopusFireShots>>,
+    octopus_q: Query<&Transform, (Added<OctopusFireShots>, Without<OctopusGreen>)>,
     player_tf: Single<&Transform, (With<Player>, Without<Octopus>)>,
 ) {
     let player_pos = player_tf.translation.truncate();
@@ -594,4 +710,147 @@ fn rotate(dir: Vec2, angle: f32) -> Vec2 {
     let cos = angle.cos();
     let sin = angle.sin();
     Vec2::new(dir.x * cos - dir.y * sin, dir.x * sin + dir.y * cos)
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Systèmes spécifiques à la variante verte
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Variante verte du swoop : cible aléatoire sur la map (pas de relation
+/// avec la position du joueur), ET intangibilité pendant le rush — collider
+/// retiré + sprite assombri (mêmes effets visuels que la phase entering).
+pub fn octopus_green_setup_curve(
+    mut commands: Commands,
+    mut octopus_q: Query<
+        (Entity, &Transform, &mut Sprite),
+        (With<OctopusGreen>, Added<OctopusMoving>),
+    >,
+    window: Single<&Window>,
+) {
+    let half_w = window.physical_width() as f32 / 2.0;
+    let half_h = window.physical_height() as f32 / 2.0;
+    let target_x_range = (half_w - TARGET_PICK_MARGIN).max(0.0);
+    let target_y_range = (half_h - TARGET_PICK_MARGIN).max(0.0);
+
+    for (entity, octopus_tf, mut sprite) in &mut octopus_q {
+        let start = octopus_tf.translation.truncate();
+
+        // Cible 100% aléatoire dans la zone jouable.
+        let target = Vec2::new(
+            (fastrand::f32() * 2.0 - 1.0) * target_x_range,
+            (fastrand::f32() * 2.0 - 1.0) * target_y_range,
+        );
+        // Pass-through légèrement bruité pour donner un arc non rectiligne.
+        let mid = (start + target) * 0.5;
+        let jitter = Vec2::new(
+            (fastrand::f32() * 2.0 - 1.0) * 100.0,
+            (fastrand::f32() * 2.0 - 1.0) * 100.0,
+        );
+        let pass_through = mid + jitter;
+
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.insert(Movements::new().with(Bezier::passing_through(
+                start,
+                pass_through,
+                target,
+                Duration::from_secs_f32(SWOOP_DURATION),
+            )));
+            // Intangibilité pendant le rush : retire les 3 composants du
+            // collider (cf. `physic/collider::collider`). Restauré au
+            // retrait du marker `OctopusMoving` par `octopus_green_swoop_end`.
+            e.try_remove::<Hitbox>();
+            e.try_remove::<CollisionLayer>();
+            e.try_remove::<CollidesWith>();
+        }
+        // Sprite assombri pour signaler visuellement l'immortalité.
+        sprite.color = OCTOPUS_GREEN_SWOOP_TINT;
+    }
+}
+
+/// Ré-applique la teinte sombre chaque frame tant que l'octopus vert est en
+/// swoop. **Nécessaire** car d'autres systèmes (notamment `animate_hit_flash`
+/// après expiration d'un `HitFlash` posé juste avant le swoop) peuvent
+/// remettre `sprite.color = WHITE` pendant le rush. À enregistrer **après**
+/// `animate_hit_flash` pour gagner la course "last-write-wins" du frame.
+pub fn octopus_green_swoop_tint(
+    mut q: Query<&mut Sprite, (With<OctopusGreen>, With<OctopusMoving>)>,
+) {
+    for mut sprite in &mut q {
+        sprite.color = OCTOPUS_GREEN_SWOOP_TINT;
+    }
+}
+
+/// Détecte la fin du swoop vert via `RemovedComponents<OctopusMoving>` :
+/// restaure collider + alpha sprite à 1.0. Filtré sur `OctopusGreen` car le
+/// standard n'a pas besoin de cette logique (jamais intangible pendant
+/// swoop). Fonctionne aussi si l'octopus meurt pendant le swoop (le BT
+/// retire `OctopusMoving` à la transition vers `dying`) — re-insérer un
+/// collider sur un mort est inoffensif (l'entité est despawn juste après).
+pub fn octopus_green_swoop_end(
+    mut commands: Commands,
+    mut removed: RemovedComponents<OctopusMoving>,
+    mut green_q: Query<&mut Sprite, With<OctopusGreen>>,
+) {
+    for entity in removed.read() {
+        let Ok(mut sprite) = green_q.get_mut(entity) else {
+            continue;
+        };
+        sprite.color = Color::WHITE;
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.insert(collider(
+                Shape::Circle(OCTOPUS.config.radius),
+                layers::ENEMY,
+                layers::PLAYER | layers::PLAYER_PROJECTILE,
+            ));
+        }
+    }
+}
+
+/// Variante verte du tir : 4 projectiles **verts** en éventail plus large
+/// (cf. `OCTOPUS_GREEN_SHOT_COUNT` + `OCTOPUS_GREEN_SHOT_SPREAD_DEG`). Le
+/// son est joué par le hook commun `on_insert` sur `OctopusFireShots`.
+pub fn octopus_green_fire_shots(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    octopus_q: Query<&Transform, (Added<OctopusFireShots>, With<OctopusGreen>)>,
+    player_tf: Single<&Transform, (With<Player>, Without<Octopus>)>,
+) {
+    let player_pos = player_tf.translation.truncate();
+    let spread = OCTOPUS_GREEN_SHOT_SPREAD_DEG.to_radians();
+    // 4 angles symétriques répartis sur `[-spread, +spread]`.
+    let step = (2.0 * spread) / (OCTOPUS_GREEN_SHOT_COUNT as f32 - 1.0);
+    let angles: Vec<f32> = (0..OCTOPUS_GREEN_SHOT_COUNT)
+        .map(|i| -spread + (i as f32) * step)
+        .collect();
+
+    for octopus_tf in &octopus_q {
+        let origin = octopus_tf.translation;
+        let base_dir = (player_pos - origin.truncate()).normalize_or_zero();
+        if base_dir == Vec2::ZERO {
+            continue;
+        }
+        for &angle in &angles {
+            let dir = rotate(base_dir, angle);
+            spawn_projectile(
+                &mut commands,
+                &*asset_server,
+                ProjectileSpawn {
+                    position: Vec3::new(origin.x, origin.y, 0.55),
+                    direction: dir,
+                    speed: OCTOPUS_PROJECTILE_SPEED,
+                    hitbox: Shape::Rect {
+                        half_length: OCTOPUS_PROJECTILE_SIZE.y / 2.0,
+                        half_width: OCTOPUS_PROJECTILE_SIZE.x / 2.0,
+                    },
+                    team: Team::Enemy,
+                    damage: 1,
+                    sprite: ProjectileSprite::Colored {
+                        color: OCTOPUS_GREEN_PROJECTILE_COLOR,
+                        size: OCTOPUS_PROJECTILE_SIZE,
+                    },
+                    death_folder: None,
+                },
+            );
+        }
+    }
 }

@@ -31,8 +31,10 @@ use crate::enemy::kamikaze::{
 };
 use crate::enemy::mine::{blink_red_system, mine_countdown_audio, mine_explode_system, MineBuilder};
 use crate::enemy::octopus::{
-    octopus_become_alive, octopus_die_sound, octopus_fire_shots, octopus_pre_swoop_tick,
-    octopus_setup_curve, octopus_telegraph_tick, OctopusBuilder,
+    octopus_become_alive, octopus_die_sound, octopus_fire_shots, octopus_green_fire_shots,
+    octopus_green_setup_curve, octopus_green_swoop_end, octopus_green_swoop_tint,
+    octopus_pre_swoop_tick, octopus_setup_curve, octopus_telegraph_tick, OctopusBuilder,
+    OctopusGreenBuilder,
 };
 use crate::GameState;
 use crate::menu::pause::not_paused;
@@ -49,6 +51,7 @@ impl Plugin for EnemyPlugin {
                 .with(MineBuilder::new())
                 .with(KamikazeBuilder::new())
                 .with(OctopusBuilder::new())
+                .with(OctopusGreenBuilder::new())
             )
             .insert_resource(AnimBank::new())
             .add_systems(Startup, preload_frames)
@@ -108,7 +111,24 @@ impl Plugin for EnemyPlugin {
                     octopus_die_sound,
                     octopus_telegraph_tick,
                     octopus_pre_swoop_tick,
+                    // Systèmes spécifiques à la variante verte. Ils filtrent
+                    // sur `With<OctopusGreen>` ; pour les standards, les
+                    // systèmes ci-dessus filtrent `Without<OctopusGreen>`.
+                    octopus_green_setup_curve,
+                    octopus_green_swoop_end,
+                    octopus_green_fire_shots,
                 )
+                    .run_if(in_state(GameState::Playing))
+                    .run_if(not_paused),
+            )
+            // `octopus_green_swoop_tint` doit tourner APRÈS `animate_hit_flash`
+            // pour ré-écrire `sprite.color` chaque frame : sinon un HitFlash
+            // qui expire pendant le swoop remet le sprite à blanc et casse le
+            // signal visuel d'intangibilité.
+            .add_systems(
+                Update,
+                octopus_green_swoop_tint
+                    .after(animate_hit_flash)
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),
             )

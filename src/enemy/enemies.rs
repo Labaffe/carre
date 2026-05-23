@@ -1,12 +1,14 @@
 //! Registre central — config statique (sprite, radius) de chaque type
 //! d'ennemi. Les machines à état vivent dans les fichiers d'ennemis.
 
+#[derive(Clone, Copy)]
 pub struct EnemyData {
     pub name: &'static str,
     pub config: EnemyConfigData,
     pub total_hp: i32,
 }
 
+#[derive(Clone, Copy)]
 pub struct EnemyConfigData {
     pub radius: f32,
     pub sprite_size: f32,
@@ -50,6 +52,16 @@ pub const KAMIKAZE: EnemyData = EnemyData {
 
 pub const OCTOPUS: EnemyData = EnemyData {
     name: "Octopus",
+    config: EnemyConfigData::new(75.0, 192.0),
+    total_hp: 70,
+};
+
+/// Variante verte de l'octopus — mêmes stats de base que `OCTOPUS` (taille,
+/// hitbox, HP) ; les différences vivent dans le builder et les systèmes
+/// `octopus_green_*` (cf. `octopus.rs`) : rush aléatoire + intangible,
+/// tir éventail à 4 projectiles verts.
+pub const OCTOPUS_GREEN: EnemyData = EnemyData {
+    name: "OctopusGreen",
     config: EnemyConfigData::new(75.0, 192.0),
     total_hp: 70,
 };
