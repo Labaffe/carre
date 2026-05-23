@@ -27,7 +27,7 @@ use crate::enemy::hit_flash::*;
 use crate::enemy::green_ufo::*;
 use crate::enemy::kamikaze::{
     kamikaze_boom_system, kamikaze_force_boom_system, kamikaze_laugh_start_system,
-    kamikaze_laugh_stop_system, kamikaze_speed_ramp_system, KamikazeBuilder,
+    kamikaze_speed_ramp_system, KamikazeBuilder,
 };
 use crate::enemy::mine::{blink_red_system, mine_countdown_audio, mine_explode_system, MineBuilder};
 use crate::enemy::octopus::{
@@ -80,9 +80,10 @@ impl Plugin for EnemyPlugin {
                     blink_red_system,
                     kamikaze_force_boom_system,
                     kamikaze_boom_system,
-                    // kamikaze_scream_system retiré : hook `on_insert` sur `KamikazeArmed`.
+                    // Kamikaze : plus de scream/armed — chase + boom direct
+                    // sur contact ou HP=0. Le laugh est attaché en child du
+                    // kamikaze au spawn (cascade despawn auto).
                     kamikaze_laugh_start_system,
-                    kamikaze_laugh_stop_system,
                     kamikaze_speed_ramp_system,
                     asteroid_death_fx_system,
                 )
