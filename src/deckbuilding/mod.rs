@@ -4,13 +4,14 @@
 pub mod card_hand;
 pub mod card_played;
 mod card_deck;
-mod cards;
+pub mod cards;
 mod card_ui;
 mod layout;
 
 pub use crate::deckbuilding::card_hand::{CardHandPlugin};
 pub use crate::deckbuilding::card_played::{CardPlayedPlugin};
 pub use crate::deckbuilding::card_deck::{CardDeckPlugin};
+pub use crate::deckbuilding::cards::{Card, CardEffect, CardType, card_pool};
 
 
 use crate::game_manager::state::GameState;

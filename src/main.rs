@@ -25,6 +25,7 @@ mod geometry;
 use game_manager::state::GameState;
 use game_manager::game::GamePlugin;
 use game_manager::difficulty::DifficultyPlugin;
+use game_manager::level_up::LevelUpPlugin;
 
 use editor::EditorPlugin;
 use behavior::BehaviorPlugin;
@@ -52,6 +53,7 @@ use menu::levelselect::LevelSelectPlugin;
 use ui::crosshair::CrosshairPlugin;
 use ui::score::ScorePlugin;
 use ui::countdown::CountdownPlugin;
+use ui::stats::StatsUiPlugin;
 
 use environment::background::BackgroundPlugin;
 use physic::collider::ColliderPlugin;
@@ -133,6 +135,8 @@ fn main() {
             CountdownPlugin,
             ScorePlugin,
             UiTweenPlugin,
+            LevelUpPlugin,
+            StatsUiPlugin,
         ))
         // Rendu & debug
         .add_plugins((
