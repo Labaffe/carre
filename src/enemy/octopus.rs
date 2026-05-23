@@ -1,14 +1,12 @@
 //! Octopus — telegraph + action aléatoire (swoop ou shoot) à chaque cycle.
 //!
 //! Phase **entering** (intangible) : spawn sans collider, sprite à
-//! `OCTOPUS_INTANGIBLE_TINT`. Deux sous-phases :
+//! `OCTOPUS_INTANGIBLE_TINT`. Une seule sous-phase :
 //! - `entering_rush` (RUSH_IN_DURATION) : `OctopusEnteringRush` + anim `rush`
 //!   + `Goto` rectiligne depuis le bord G/D (random) vers le spawn point.
 //!   `Added<OctopusEnteringRush>` joue `Sfx::OctopusRush`.
-//! - `entering_idle` (IDLE_PAUSE_DURATION) : `OctopusEnteringIdle` + anim `idle`,
-//!   immobile à destination. `Added<OctopusEnteringIdle>` joue `Sfx::OctopusSound`.
-//! À la fin → état `alive`. `Added<OctopusAlive>` insère le collider et
-//! restaure l'alpha à 1.0.
+//! Dès que le `Goto` se termine → état `alive`. `Added<OctopusAlive>` insère
+//! le collider et restaure l'alpha à 1.0.
 //!
 //! Phase **alive** : `ChoiceNodeList` à 3 états cyclant indéfiniment :
 //! 1. **telegraph** : `OctopusTelegraph` + anim `idle`, stationnaire. Le
@@ -126,8 +124,6 @@ const SWOOP_BULGE_OFFSET: f32 = 60.0;
 const RUSH_IN_DURATION: f32 = 1.0;
 /// Vitesse du rush d'apparition (px/s). Rapide — l'octopus déboule.
 const RUSH_IN_SPEED: f32 = 900.0;
-/// Petit idle à l'arrivée avant de basculer en alive (s).
-const IDLE_PAUSE_DURATION: f32 = 0.5;
 /// Offset (px) au-delà du bord pour la position d'entrée. L'octopus part
 /// hors écran et glisse vers son spawn.
 const ENTRY_OFFSCREEN_OFFSET: f32 = 80.0;
@@ -206,12 +202,6 @@ pub struct OctopusFireShots;
 #[component(on_insert = play_octopus_rush)]
 pub struct OctopusEnteringRush;
 
-/// Sous-phase 2 de l'apparition : petit idle à destination.
-/// Le hook `on_insert` joue `Sfx::OctopusSound` (annonce d'arrivée).
-#[derive(Component, Clone)]
-#[component(on_insert = play_octopus_sound)]
-pub struct OctopusEnteringIdle;
-
 /// Posé quand l'octopus quitte `entering` et devient tangible.
 /// `Added<OctopusAlive>` attache le collider et restaure l'alpha à 1.0.
 #[derive(Component, Clone)]
@@ -272,7 +262,9 @@ fn build_octopus_behavior(
     final_pos: Vec2,
     anims: &OctopusAnims,
 ) -> impl crate::behavior::behavior::Behavior + Send + Sync + 'static {
-    // ─── Entering : rush vers le spawn point puis idle ────────
+    // ─── Entering : rush vers le spawn point puis bascule alive ──
+    // Pas de pause idle d'arrivée : dès que le Goto se termine, le BT
+    // pousse "entering_done" → le cycle alive démarre directement.
     let entering = BehaviorBuilder::first(
         Duration::from_secs_f32(RUSH_IN_DURATION),
         BehaviorBuilder::multiple()
@@ -284,15 +276,6 @@ fn build_octopus_behavior(
             .with(BehaviorBuilder::from_component(
                 Movements::new().with(Goto::new(final_pos, RUSH_IN_SPEED)),
             )),
-    )
-    .then(
-        Duration::from_secs_f32(IDLE_PAUSE_DURATION),
-        BehaviorBuilder::multiple()
-            .with(BehaviorBuilder::from_component(OctopusEnteringIdle))
-            .with(BehaviorBuilder::from_component(Animation::new(
-                anims.idle,
-                Duration::from_secs_f32(OCTOPUS_FRAME_DURATION),
-            ))),
     )
     .on_complete("entering_done");
 
@@ -547,7 +530,7 @@ fn play_octopus_rush(mut world: DeferredWorld, _: HookContext) {
     spawn_sfx(&mut world, Sfx::OctopusRush);
 }
 
-/// Hook commun joué à l'insertion de `OctopusShooting` et `OctopusEnteringIdle`.
+/// Hook joué à l'insertion de `OctopusShooting`.
 fn play_octopus_sound(mut world: DeferredWorld, _: HookContext) {
     spawn_sfx(&mut world, Sfx::OctopusSound);
 }
