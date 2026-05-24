@@ -109,6 +109,7 @@ impl Plugin for LevelPlugin {
                 (
                     crate::level::waves::waves_spawner_system,
                     crate::level::waves::update_waves_ui,
+                    crate::level::arena::update_arena,
                 )
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused)
@@ -642,8 +643,10 @@ fn setup_level(
             }
             4 => {
                 // Niveau Vagues : pool partagé avec Chaos, mais déversé en
-                // pouls homogènes (1 type d'ennemi par vague).
+                // pouls homogènes (1 type d'ennemi par vague). Arena de murs
+                // qui change toutes les 3 vagues.
                 commands.insert_resource(crate::level::waves::WavesConfig::default());
+                commands.insert_resource(crate::level::arena::ArenaState::default());
                 build_level_waves()
             }
             _ => build_level_1(), // fallback
@@ -834,4 +837,5 @@ fn cleanup_level(mut commands: Commands) {
     commands.remove_resource::<crate::level::chaos::ChaosConfig>();
     commands.remove_resource::<crate::level::chaos::ChaosMusicState>();
     commands.remove_resource::<crate::level::waves::WavesConfig>();
+    commands.remove_resource::<crate::level::arena::ArenaState>();
 }

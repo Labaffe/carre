@@ -32,6 +32,7 @@ impl Plugin for CollisionPlugin {
                     player_damage_on_overlap,
                     aoe_damage_enemies_on_overlap,
                     aoe_lifecycle,
+                    crate::physic::wall::wall_destroy_projectiles_system,
                 )
                     .run_if(in_state(GameState::Playing)),
             )

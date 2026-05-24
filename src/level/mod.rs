@@ -1,3 +1,4 @@
+pub mod arena;
 pub mod chaos;
 pub mod enemy_pool;
 pub mod level;

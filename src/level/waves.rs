@@ -84,7 +84,6 @@ const WAVE_TEMPLATES: &[WaveTemplate] = &[
     WaveTemplate { name: "Triple horde", members: &[("simple_ufo_wave", 3)] }, // 24
     WaveTemplate { name: "Quad shooter", members: &[("simple_ufo_shooter", 4)] }, // 24
     WaveTemplate { name: "Harcèlement", members: &[("kamikaze", 3), ("green_ufo", 2), ("asteroid", 2)] }, // 25
-    WaveTemplate { name: "Vaisseau", members: &[("vaisseau", 1)] }, // 25
     WaveTemplate { name: "Mines + ufos", members: &[("mine", 4), ("simple_ufo_wave", 1), ("kamikaze", 1)] }, // 25
     WaveTemplate { name: "Mixte lourd", members: &[("kamikaze", 3), ("green_ufo", 2), ("simple_ufo_shooter", 1)] }, // 29
     WaveTemplate { name: "Octopus + escorte", members: &[("octopus", 1), ("kamikaze", 3)] }, // 30
@@ -92,14 +91,13 @@ const WAVE_TEMPLATES: &[WaveTemplate] = &[
     // ─── Lourd (31-40) ───────────────────────────────────
     WaveTemplate { name: "Octopus + horde", members: &[("octopus", 1), ("simple_ufo_wave", 2)] }, // 31
     WaveTemplate { name: "Hordes massives", members: &[("simple_ufo_wave", 4)] }, // 32
-    WaveTemplate { name: "Vaisseau + ufos", members: &[("vaisseau", 1), ("simple_ufo_wave", 1)] }, // 33
     WaveTemplate { name: "Duo d'octopus", members: &[("octopus", 1), ("octopus_green", 1)] }, // 33
     WaveTemplate { name: "Massive mix", members: &[("simple_ufo_shooter", 2), ("kamikaze", 3), ("green_ufo", 3)] }, // 39
 
     // ─── Très lourd (40+) ────────────────────────────────
     WaveTemplate { name: "Salve finale", members: &[("simple_ufo_shooter", 3), ("kamikaze", 4), ("green_ufo", 2)] }, // 46
     WaveTemplate { name: "Apocalypse", members: &[("octopus_green", 1), ("simple_ufo_wave", 3), ("kamikaze", 3)] }, // 57
-    WaveTemplate { name: "Boss prep", members: &[("vaisseau", 1), ("octopus", 1), ("simple_ufo_shooter", 2)] }, // 52
+    WaveTemplate { name: "Triple octopus", members: &[("octopus", 2), ("octopus_green", 1)] }, // 48
 ];
 
 /// Poids total d'un template = somme des `count × cost` de ses membres

@@ -225,6 +225,10 @@ pub fn spawn_player(
         Armor::new(PLAYER_MAX_ARMOR),
         PlayerStats::default(),
         Weapon::default(),
+        // Anti-overlap : permet aux Walls (statiques) de repousser le joueur.
+        // Pas de NoOverlapStatic → le joueur est mobile, peut donc être poussé.
+        crate::movement::bounding_radius::BoundingRadius(PLAYER_HITBOX_RADIUS),
+        crate::physic::no_overlap::NoOverlap,
         // Pouvoir Espace équipé. Single source of truth via enum. Swap
         // depuis le deckbuilding = mutation directe de `equipped.0`.
         EquippedPower(PowerKind::Shield),

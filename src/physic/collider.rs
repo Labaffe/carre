@@ -53,6 +53,9 @@ pub mod layers {
     pub const ASTEROID: u32 = 1 << 4;
     pub const ITEM: u32 = 1 << 5;
     pub const AOE: u32 = 1 << 6;
+    /// Obstacle solide statique (cf. `physic::wall`). Détecte les projectiles
+    /// pour les despawn au contact.
+    pub const WALL: u32 = 1 << 7;
 }
 
 // ─── Composants ──────────────────────────────────────────────────────

@@ -4,4 +4,6 @@ pub mod collision;
 pub mod harmless;
 pub mod health;
 pub mod invulnerable;
+pub mod no_overlap;
 pub mod player_detection;
+pub mod wall;

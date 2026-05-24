@@ -112,6 +112,7 @@ fn main() {
             CollisionPlugin,
             ColliderPlugin,
             physic::health::HealthPlugin,
+            physic::no_overlap::NoOverlapPlugin,
             PlayerDetectionPlugin,
         ))
         // Ennemis

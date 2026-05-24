@@ -199,6 +199,7 @@ impl EnemyBuilder for GreenUFOBuilder {
                 Duration::from_secs_f32(1.0 / GREEN_UFO_ANIM_FPS),
             ),
             BoundingRadius(GREEN_UFO.config.sprite_size / 2.0),
+            crate::physic::no_overlap::NoOverlap,
             MovementZone::new(Vec2::ZERO)
                 .with_left("wall_left")
                 .with_right("wall_right")

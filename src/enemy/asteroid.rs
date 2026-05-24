@@ -12,6 +12,7 @@ use crate::behavior::*;
 use crate::behavior::behavior::{Behavior, BehaviorComponent};
 use crate::enemy::anim_bank::Animation;
 use crate::enemy::death::DespawnSelf;
+use crate::movement::bounding_radius::BoundingRadius;
 use crate::movement::despawn_off_screen::DespawnOffScreen;
 use crate::enemy::enemy::Enemy;
 use crate::enemy::enemy_builder::EnemyBuilder;
@@ -153,6 +154,8 @@ impl EnemyBuilder for AsteroidBuilder {
             },
             TransitionMessages::new(),
             DespawnOffScreen,
+            BoundingRadius(radius),
+            crate::physic::no_overlap::NoOverlap,
             AsteroidDeathFx {
                 texture_index: pick,
                 size,

@@ -249,6 +249,7 @@ impl EnemyBuilder for SimpleUfoShooterBuilder {
             Enemy::new(SIMPLE_UFO_SHOOTER),
             Health::new(SIMPLE_UFO_SHOOTER.total_hp),
             BoundingRadius(SIMPLE_UFO_SHOOTER.config.sprite_size / 2.0),
+            crate::physic::no_overlap::NoOverlap,
             MovementZone::new(Vec2::ZERO)
                 .with_left("wall_left")
                 .with_right("wall_right")
