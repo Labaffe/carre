@@ -180,6 +180,7 @@ pub fn asteroid_death_fx_system(
     trigger: On<crate::enemy::enemy::EnemyDeathEvent>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut cache: ResMut<crate::fx::explosion::ExplosionFramesCache>,
     asteroid_q: Query<(&Transform, &AsteroidDeathFx)>,
 ) {
     let ev = trigger.event();
@@ -187,6 +188,7 @@ pub fn asteroid_death_fx_system(
     crate::fx::explosion::spawn_explosion(
         &mut commands,
         &asset_server,
+        &mut cache,
         tf.translation,
         fx.size,
         fx.texture_index,

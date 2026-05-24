@@ -15,7 +15,33 @@ pub struct ExplosionPlugin;
 
 impl Plugin for ExplosionPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (animate_explosions, move_explosions));
+        app.init_resource::<ExplosionFramesCache>()
+            .add_systems(Update, (animate_explosions, move_explosions));
+    }
+}
+
+/// Cache de frames d'explosion par dossier. Évite un `fs::read_dir` par
+/// spawn d'explosion (hot path : chaque mort d'ennemi/projectile).
+/// Le premier appel pour un dossier scanne le disque ; les suivants
+/// retournent les handles déjà chargés (Bevy gère le cache des handles
+/// natif, mais c'est le `read_dir` qui était coûteux).
+#[derive(Resource, Default)]
+pub struct ExplosionFramesCache {
+    by_folder: bevy::platform::collections::HashMap<String, Vec<Handle<Image>>>,
+}
+
+impl ExplosionFramesCache {
+    pub fn get_or_load(
+        &mut self,
+        asset_server: &AssetServer,
+        folder: &str,
+    ) -> Option<Vec<Handle<Image>>> {
+        if let Some(f) = self.by_folder.get(folder) {
+            return Some(f.clone());
+        }
+        let frames = load_frames_from_folder_uncached(asset_server, folder)?;
+        self.by_folder.insert(folder.to_string(), frames.clone());
+        Some(frames)
     }
 }
 
@@ -30,12 +56,10 @@ pub struct Explosion {
 
 // ─── Utilitaire ──────────────────────────────────────────────────────
 
-/// Scanne un dossier pour trouver tous les fichiers `frameNNN.png`,
-/// les trie par index croissant, et retourne les handles.
-/// Supporte les trous dans la numérotation (ex: frame000, frame004, frame008).
-/// Retourne `None` si le dossier n'existe pas ou ne contient aucune frame.
-pub fn load_frames_from_folder(
-    asset_server: &Res<AssetServer>,
+/// Variante interne sans cache : scanne le disque (fs::read_dir + load).
+/// Utiliser `ExplosionFramesCache::get_or_load` dans le hot path.
+fn load_frames_from_folder_uncached(
+    asset_server: &AssetServer,
     folder: &str,
 ) -> Option<Vec<Handle<Image>>> {
     let dir_path = std::path::Path::new("assets").join(folder);
@@ -46,7 +70,6 @@ pub fn load_frames_from_folder(
     for entry in read_dir.flatten() {
         let name = entry.file_name();
         let name = name.to_string_lossy().to_string();
-        // Cherche les fichiers frameNNN.png (peu importe le nombre de chiffres)
         if let Some(rest) = name.strip_prefix("frame") {
             if let Some(num_str) = rest.strip_suffix(".png") {
                 if let Ok(index) = num_str.parse::<usize>() {
@@ -60,7 +83,6 @@ pub fn load_frames_from_folder(
         return None;
     }
 
-    // Tri par index croissant pour jouer les frames dans l'ordre
     entries.sort_by_key(|(i, _)| *i);
 
     let frames = entries
@@ -69,6 +91,17 @@ pub fn load_frames_from_folder(
         .collect();
 
     Some(frames)
+}
+
+/// Scanne un dossier (fs::read_dir + load) pour trouver les `frameNNN.png`.
+/// **Pas adapté au hot path** : appelle `ExplosionFramesCache::get_or_load`
+/// si tu spawn des explosions à la volée. Conservé public pour les
+/// préchargements one-shot (cf. `preload_item_frames`).
+pub fn load_frames_from_folder(
+    asset_server: &Res<AssetServer>,
+    folder: &str,
+) -> Option<Vec<Handle<Image>>> {
+    load_frames_from_folder_uncached(asset_server, folder)
 }
 
 /// Durée totale fixe d'une animation de mort (en secondes).
@@ -121,17 +154,18 @@ pub fn spawn_custom_anim(
 // ─── Explosion astéroïde ─────────────────────────────────────────────
 
 /// Charge les frames par défaut (explosion générique).
-fn load_default_frames(asset_server: &Res<AssetServer>) -> Vec<Handle<Image>> {
+fn load_default_frames(asset_server: &AssetServer) -> Vec<Handle<Image>> {
     (1..=4)
         .map(|i| asset_server.load(format!("images/explosion/explosion_{}.png", i)))
         .collect()
 }
 
-/// Spawn une explosion pour un astéroïde.
-/// `velocity` : vélocité de l'astéroïde au moment de sa mort (conservée par l'animation).
+/// Spawn une explosion pour un astéroïde, en passant par le cache pour
+/// éviter un `fs::read_dir` par mort.
 pub fn spawn_explosion(
     commands: &mut Commands,
-    asset_server: &Res<AssetServer>,
+    asset_server: &AssetServer,
+    cache: &mut ExplosionFramesCache,
     position: Vec3,
     size: Vec2,
     texture_index: usize,
@@ -139,7 +173,8 @@ pub fn spawn_explosion(
     rotation: Quat,
 ) {
     let folder = format!("images/asteroids/death_x{:03}", texture_index);
-    let frames = load_frames_from_folder(asset_server, &folder)
+    let frames = cache
+        .get_or_load(asset_server, &folder)
         .unwrap_or_else(|| load_default_frames(asset_server));
 
     spawn_anim(commands, frames, position, size, velocity, rotation);
@@ -147,19 +182,18 @@ pub fn spawn_explosion(
 
 // ─── Mort projectile ─────────────────────────────────────────────────
 
-/// Spawn une animation de mort pour un projectile.
-/// Si `death_folder` contient des frames, l'animation est jouée.
-/// Sinon, le projectile disparaît sans effet visuel.
+/// Spawn une animation de mort pour un projectile, via le cache.
 pub fn spawn_projectile_death(
     commands: &mut Commands,
-    asset_server: &Res<AssetServer>,
+    asset_server: &AssetServer,
+    cache: &mut ExplosionFramesCache,
     position: Vec3,
     death_folder: Option<&str>,
 ) {
     let Some(folder) = death_folder else {
         return;
     };
-    let Some(frames) = load_frames_from_folder(asset_server, folder) else {
+    let Some(frames) = cache.get_or_load(asset_server, folder) else {
         return;
     };
 

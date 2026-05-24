@@ -20,10 +20,6 @@ pub fn update_behavior(
     mut query:Query<(Entity,&mut BehaviorComponent,&mut TransitionMessages)>
 ) {
     for (entity,mut behavior_component,mut transition_messages) in query.iter_mut() {
-        if transition_messages.messages.len() >0 {
-            println!("{:?}",transition_messages);
-        }
-        
         behavior_component.behavior.update(
             time.delta(),
             command.entity(entity),

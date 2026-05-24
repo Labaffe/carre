@@ -102,6 +102,7 @@ const HIT_FLASH_DURATION: f32 = 0.06;
 pub fn projectile_damage_on_overlap(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut cache: ResMut<crate::fx::explosion::ExplosionFramesCache>,
     mut events: MessageReader<OverlapEvent>,
     projectile_q: Query<(&Transform, &Projectile)>,
     mut damage_events: MessageWriter<DamageEvent>,
@@ -123,6 +124,7 @@ pub fn projectile_damage_on_overlap(
         spawn_projectile_death(
             &mut commands,
             &asset_server,
+            &mut cache,
             proj_tf.translation,
             projectile.death_folder,
         );
