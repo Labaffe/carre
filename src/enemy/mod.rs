@@ -14,6 +14,7 @@ pub mod turret;
 pub mod enemy_group;
 pub mod vaisseau;
 pub mod simple_ufo;
+pub mod simple_ufo_shooter;
 pub mod death;
 use bevy::prelude::*;
 use crate::enemy::anim_bank::*;
@@ -43,6 +44,10 @@ use crate::enemy::turret::{turret_aim_and_fire, TurretBuilder};
 use crate::enemy::enemy_group::despawn_empty_groups;
 use crate::enemy::vaisseau::VaisseauBuilder;
 use crate::enemy::simple_ufo::{simple_ufo_wave_spawn_system, SimpleUfoBuilder};
+use crate::enemy::simple_ufo_shooter::{
+    face_player_system, shooter_burst_tick, simple_ufo_shooter_fire_system,
+    SimpleUfoShooterBuilder,
+};
 use crate::GameState;
 use crate::menu::pause::not_paused;
 pub struct EnemyPlugin;
@@ -63,6 +68,7 @@ impl Plugin for EnemyPlugin {
                 .with(TurretBuilder::new())
                 .with(VaisseauBuilder::new())
                 .with(SimpleUfoBuilder::new())
+                .with(SimpleUfoShooterBuilder::new())
             )
             .insert_resource(AnimBank::new())
             .add_systems(Startup, preload_frames)
@@ -138,6 +144,9 @@ impl Plugin for EnemyPlugin {
                     turret_aim_and_fire,
                     despawn_empty_groups,
                     simple_ufo_wave_spawn_system,
+                    simple_ufo_shooter_fire_system,
+                    shooter_burst_tick,
+                    face_player_system,
                 )
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),

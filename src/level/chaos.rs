@@ -88,15 +88,16 @@ fn tier_budget(tier: u32) -> (u32, u32) {
 /// - `boss` (cost 60, weight 1) : ne peut spawn qu'à partir de tier 5, très rare
 fn default_tunings() -> Vec<EnemyTuning> {
     vec![
-        EnemyTuning { name: "asteroid",        cost: 1,  weight: 50, kind: SpawnKind::Single },
-        EnemyTuning { name: "kamikaze",        cost: 5,  weight: 25, kind: SpawnKind::Single },
-        EnemyTuning { name: "green_ufo",       cost: 4,  weight: 12, kind: SpawnKind::Single },
-        EnemyTuning { name: "mine",            cost: 3,  weight: 12, kind: SpawnKind::Single },
-        EnemyTuning { name: "simple_ufo_wave", cost: 8,  weight: 8,  kind: SpawnKind::SimpleUfoWave { count: 5, interval: 0.2 } },
-        EnemyTuning { name: "octopus",         cost: 15, weight: 5,  kind: SpawnKind::Single },
-        EnemyTuning { name: "octopus_green",   cost: 18, weight: 4,  kind: SpawnKind::Single },
-        EnemyTuning { name: "vaisseau",        cost: 25, weight: 3,  kind: SpawnKind::Single },
-        EnemyTuning { name: "boss",            cost: 60, weight: 1,  kind: SpawnKind::Single },
+        EnemyTuning { name: "asteroid",           cost: 1,  weight: 50, kind: SpawnKind::Single },
+        EnemyTuning { name: "kamikaze",           cost: 5,  weight: 25, kind: SpawnKind::Single },
+        EnemyTuning { name: "green_ufo",          cost: 4,  weight: 12, kind: SpawnKind::Single },
+        EnemyTuning { name: "mine",               cost: 3,  weight: 12, kind: SpawnKind::Single },
+        EnemyTuning { name: "simple_ufo_shooter", cost: 6,  weight: 10, kind: SpawnKind::Single },
+        EnemyTuning { name: "simple_ufo_wave",    cost: 8,  weight: 8,  kind: SpawnKind::SimpleUfoWave { count: 5, interval: 0.2 } },
+        EnemyTuning { name: "octopus",            cost: 15, weight: 5,  kind: SpawnKind::Single },
+        EnemyTuning { name: "octopus_green",      cost: 18, weight: 4,  kind: SpawnKind::Single },
+        EnemyTuning { name: "vaisseau",           cost: 25, weight: 3,  kind: SpawnKind::Single },
+        EnemyTuning { name: "boss",               cost: 60, weight: 1,  kind: SpawnKind::Single },
     ]
 }
 

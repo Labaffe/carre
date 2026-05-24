@@ -88,3 +88,13 @@ pub const SIMPLE_UFO: EnemyData = EnemyData {
     config: EnemyConfigData::new(24.0, 56.0),
     total_hp: 4,
 };
+
+/// UFO "shooter" — alterne idle et rush dans une direction **aléatoire**
+/// (≠ green_ufo qui rush vers le joueur). À chaque entrée en phase rush,
+/// envoie une salve de 3 projectiles **vers le joueur** (éventail léger).
+/// Mort instantanée à PV=0, pas d'anim.
+pub const SIMPLE_UFO_SHOOTER: EnemyData = EnemyData {
+    name: "SimpleUfoShooter",
+    config: EnemyConfigData::new(28.0, 64.0),
+    total_hp: 5,
+};
