@@ -45,6 +45,7 @@ pub enum Sfx {
     ItemAppear,
     ItemPickup,
     ScoreMilestone,
+    LevelUp,
     // ─── Ennemis spécifiques ───
     KamikazeScream,
     KamikazeLaugh,
@@ -90,6 +91,7 @@ const SFX_PATHS: &[(Sfx, &str)] = &[
     (Sfx::ItemAppear,       "audio/sfx/level_up.ogg"),
     (Sfx::ItemPickup,       "audio/sfx/pickup.wav"),
     (Sfx::ScoreMilestone,   "audio/sfx/level_up.ogg"),
+    (Sfx::LevelUp,          "audio/sfx/level_up.wav"),
     // Ennemis
     (Sfx::KamikazeScream,   "audio/sfx/kamikaze_scream.wav"),
     (Sfx::KamikazeLaugh,    "audio/sfx/kamikaze_laugh.wav"),

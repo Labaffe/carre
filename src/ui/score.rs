@@ -89,9 +89,10 @@ const COMBO_RESET_SECS: f32 = 3.0;
 const COMBO_TIERS: [i32; 5] = [0, 10, 25, 50, 100];
 
 impl Combo {
-    /// Appelée à chaque kill d'ennemi/asteroid. Met à jour `Score.multiplier`
-    /// pour que les calls suivants à `score.add(...)` bénéficient du combo.
-    pub fn on_kill(&mut self, score: &mut Score) {
+    /// Incrémente le compteur de kills consécutifs et signale un palier
+    /// franchi via `just_leveled_up` pour le juice UI. Ne touche plus au
+    /// score — le combo sert maintenant à multiplier l'XP gagnée au kill.
+    pub fn on_kill(&mut self) {
         let old_mult = self.multiplier();
         self.count += 1;
         self.time_since_last_kill = 0.0;
@@ -99,17 +100,15 @@ impl Combo {
             self.max_this_run = self.count;
         }
         let new_mult = self.multiplier();
-        score.multiplier = new_mult;
         if new_mult > old_mult {
             self.just_leveled_up = true;
         }
     }
 
     /// Reset à 0 (hit joueur, ou timeout).
-    pub fn reset(&mut self, score: &mut Score) {
+    pub fn reset(&mut self) {
         self.count = 0;
         self.time_since_last_kill = 0.0;
-        score.multiplier = 1;
     }
 
     pub fn multiplier(&self) -> i32 {
@@ -176,7 +175,7 @@ fn setup_score_ui(
         });
 }
 
-fn combo_tick(time: Res<Time>, mut combo: ResMut<Combo>, mut score: ResMut<Score>) {
+fn combo_tick(time: Res<Time>, mut combo: ResMut<Combo>) {
     // Reset du flag de palier (consommé par l'UI à la frame précédente).
     combo.just_leveled_up = false;
     if combo.count == 0 {
@@ -184,7 +183,7 @@ fn combo_tick(time: Res<Time>, mut combo: ResMut<Combo>, mut score: ResMut<Score
     }
     combo.time_since_last_kill += time.delta_secs();
     if combo.time_since_last_kill >= COMBO_RESET_SECS {
-        combo.reset(&mut score);
+        combo.reset();
     }
 }
 

@@ -54,6 +54,7 @@ use ui::crosshair::CrosshairPlugin;
 use ui::score::ScorePlugin;
 use ui::countdown::CountdownPlugin;
 use ui::stats::StatsUiPlugin;
+use ui::xp_bar::XpBarPlugin;
 
 use environment::background::BackgroundPlugin;
 use physic::collider::ColliderPlugin;
@@ -137,6 +138,7 @@ fn main() {
             UiTweenPlugin,
             LevelUpPlugin,
             StatsUiPlugin,
+            XpBarPlugin,
         ))
         // Rendu & debug
         .add_plugins((

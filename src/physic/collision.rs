@@ -19,7 +19,7 @@ use crate::physic::health::{DamageEvent, Health, HitEvent};
 use crate::player::player::{INVINCIBLE_DURATION, Invincible, Player};
 use crate::fx::screen_shake::ScreenShakeEvent;
 use crate::fx::time_fx::TimeFxEvent;
-use crate::ui::score::{Combo, Score};
+use crate::ui::score::Combo;
 
 pub struct CollisionPlugin;
 
@@ -111,14 +111,13 @@ fn player_post_hit(
     mut commands: Commands,
     health_q: Query<&Health, With<Player>>,
     mut next_state: ResMut<NextState<GameState>>,
-    mut score: ResMut<Score>,
     mut combo: ResMut<Combo>,
 ) {
     let ev = trigger.event();
     if ev.target_layer & layers::PLAYER == 0 { return; }
     let Ok(health) = health_q.get(ev.target) else { return };
 
-    combo.reset(&mut score);
+    combo.reset();
     commands.trigger(ScreenShakeEvent::PLAYER_HIT);
 
     if health.is_dead() {

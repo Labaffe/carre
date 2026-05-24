@@ -1,34 +1,40 @@
-//! Level-up via paliers de score → choix de carte.
+//! Level-up via paliers d'XP → choix de carte.
 //!
-//! Quand le score franchit un palier (`threshold_for_level(current_level + 1)`),
-//! le jeu est mis en pause via `Time<Virtual>::pause()` et un modal s'affiche
-//! avec 3 cartes piochées aléatoirement dans le pool de
-//! [crate::deckbuilding::cards]. Le clic sur l'une applique son `CardEffect`
-//! au joueur, le modal se ferme, le jeu reprend.
+//! ## Pipeline
+//! 1. Tuer un ennemi → observer `xp_on_enemy_death` (réactif à `EnemyDeathEvent`)
+//!    incrémente le `Combo` et ajoute `max_hp * combo_multiplier()` à l'`Experience`.
+//! 2. Quand `Experience.total` franchit `threshold_for_level(level + 1)`,
+//!    `watch_experience` met le jeu en pause (`Time<Virtual>::pause()`) et spawn
+//!    un modal avec 3 cartes piochées dans [crate::deckbuilding::cards].
+//! 3. Clic sur une carte → `handle_card_click` applique son `CardEffect`,
+//!    despawn le modal, reprend le temps.
 //!
 //! Paliers croissants : `25 * n * (n+1)` → 50, 150, 300, 500, 750, 1050…
-//! Les premiers paliers sont rapides à atteindre puis la fréquence diminue.
 
 use bevy::prelude::*;
 
+use crate::audio::{Sfx, SfxPlayer};
 use crate::deckbuilding::cards::{card_pool, Card, CardEffect, CardType};
+use crate::enemy::enemy::EnemyDeathEvent;
 use crate::game_manager::state::GameState;
+use crate::physic::health::Health;
 use crate::player::player::{Armor, Player, PlayerStats};
 use crate::player::power::{EquippedPower, PowerKind};
-use crate::ui::score::Score;
+use crate::ui::score::Combo;
 use crate::weapon::weapon::{Weapon, WeaponKind};
 
 pub struct LevelUpPlugin;
 
 impl Plugin for LevelUpPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<LevelUpTracker>()
+        app.init_resource::<Experience>()
             .init_resource::<CardSelectState>()
-            .add_systems(OnEnter(GameState::Playing), reset_tracker)
+            .add_systems(OnEnter(GameState::Playing), reset_experience)
+            .add_observer(xp_on_enemy_death)
             .add_systems(
                 Update,
                 (
-                    watch_score.run_if(in_state(GameState::Playing)),
+                    watch_experience.run_if(in_state(GameState::Playing)),
                     handle_card_click.run_if(in_state(GameState::Playing)),
                     update_card_hover.run_if(in_state(GameState::Playing)),
                 ),
@@ -36,10 +42,43 @@ impl Plugin for LevelUpPlugin {
     }
 }
 
+/// Progression du joueur. `total` est l'XP cumulative gagnée sur la run,
+/// `level` est le nombre de paliers franchis (= nb de cartes choisies).
 #[derive(Resource, Default)]
-pub struct LevelUpTracker {
-    /// Nombre de paliers déjà franchis (= nb de cartes choisies dans la run).
-    pub current_level: i32,
+pub struct Experience {
+    pub total: i32,
+    pub level: i32,
+}
+
+impl Experience {
+    pub fn add(&mut self, amount: i32) {
+        self.total += amount;
+    }
+
+    /// XP requise pour atteindre le niveau `n` (depuis 0).
+    pub fn threshold_for(n: i32) -> i32 {
+        25 * n * (n + 1)
+    }
+
+    /// XP cumulée nécessaire pour le palier du niveau en cours.
+    pub fn current_threshold(&self) -> i32 {
+        Self::threshold_for(self.level)
+    }
+
+    /// XP cumulée nécessaire pour atteindre le prochain niveau.
+    pub fn next_threshold(&self) -> i32 {
+        Self::threshold_for(self.level + 1)
+    }
+
+    /// Progression dans le niveau courant (0.0 → 1.0).
+    pub fn progress_in_level(&self) -> f32 {
+        let lo = self.current_threshold();
+        let hi = self.next_threshold();
+        if hi <= lo {
+            return 1.0;
+        }
+        ((self.total - lo) as f32 / (hi - lo) as f32).clamp(0.0, 1.0)
+    }
 }
 
 #[derive(Resource, Default)]
@@ -47,43 +86,52 @@ pub struct CardSelectState {
     pub active: bool,
 }
 
-/// Palier de score à atteindre pour passer du niveau (n-1) au niveau n.
-/// Formule : `25 * n * (n+1)` → 50, 150, 300, 500, 750, 1050, 1400…
-fn threshold_for_level(n: i32) -> i32 {
-    25 * n * (n + 1)
-}
-
-fn reset_tracker(
-    mut tracker: ResMut<LevelUpTracker>,
+fn reset_experience(
+    mut experience: ResMut<Experience>,
     mut state: ResMut<CardSelectState>,
 ) {
-    *tracker = LevelUpTracker::default();
+    *experience = Experience::default();
     *state = CardSelectState::default();
 }
 
-fn watch_score(
-    score: Res<Score>,
-    mut tracker: ResMut<LevelUpTracker>,
+/// Observer : à chaque mort d'ennemi, incrémente le combo et crédite
+/// `max_hp × combo_multiplier` à l'expérience du joueur. Lit `Health.max`
+/// AVANT que l'entité soit despawn (l'observer fire synchrone avec le
+/// trigger dans `detect_death`, l'entité existe encore à ce moment).
+pub fn xp_on_enemy_death(
+    trigger: On<EnemyDeathEvent>,
+    health_q: Query<&Health>,
+    mut combo: ResMut<Combo>,
+    mut experience: ResMut<Experience>,
+) {
+    let ev = trigger.event();
+    let max_hp = health_q.get(ev.entity).map(|h| h.max).unwrap_or(1);
+    combo.on_kill();
+    let xp = max_hp.max(1) * combo.multiplier();
+    experience.add(xp);
+}
+
+fn watch_experience(
+    mut experience: ResMut<Experience>,
     mut state: ResMut<CardSelectState>,
     mut time: ResMut<Time<Virtual>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut sfx: SfxPlayer,
     player_q: Query<(&Weapon, &EquippedPower), With<Player>>,
 ) {
     if state.active {
         return;
     }
-    let next_threshold = threshold_for_level(tracker.current_level + 1);
-    if score.value() >= next_threshold {
-        // Récupère l'arme et le pouvoir équipés pour exclure les "swap vers
-        // ce que tu as déjà" du pool de propositions.
+    if experience.total >= experience.next_threshold() {
         let (current_weapon, current_power) = match player_q.single() {
             Ok((w, p)) => (Some(w.0), Some(p.0)),
             Err(_) => (None, None),
         };
-        tracker.current_level += 1;
+        experience.level += 1;
         state.active = true;
         time.pause();
+        sfx.play(Sfx::LevelUp);
         let cards = sample_three_cards(current_weapon, current_power);
         spawn_card_modal(&mut commands, &asset_server, &cards);
     }

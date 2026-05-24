@@ -125,6 +125,25 @@ pub fn player_dash() -> Sfx {
         .volume(0.35)
 }
 
+/// Fanfare 8-bit joyeuse pour le level-up : arpège ascendant en do majeur
+/// sur 2 octaves (C-E-G-C-E-G). Square wave pour le grain rétro classique,
+/// attaque sèche et release moyenne pour une fanfare claire.
+pub fn level_up() -> Sfx {
+    Sfx::new("level_up")
+        .wave(Wave::Square)
+        .freq_arpeggio(&[
+            523.25,  // C5
+            659.25,  // E5
+            783.99,  // G5
+            1046.50, // C6
+            1318.51, // E6
+            1567.98, // G6
+        ])
+        .duration(0.55)
+        .envelope(0.0, 0.02, 0.8, 0.18)
+        .volume(0.45)
+}
+
 /// Cri de mort — sweep descendant grave, triangle bit-crushé filtré lowpass
 /// pour un "gloup" agonisant. Volume soutenu, dure ~0.6s pour couvrir
 /// l'animation de mort.
@@ -152,6 +171,7 @@ pub fn all() -> Vec<Sfx> {
         octopus_rush(),
         octopus_die(),
         player_dash(),
+        level_up(),
     ]
 }
 
@@ -168,6 +188,7 @@ pub fn by_name(name: &str) -> Option<Sfx> {
         "octopus_rush" => Some(octopus_rush()),
         "octopus_die" => Some(octopus_die()),
         "player_dash" => Some(player_dash()),
+        "level_up" => Some(level_up()),
         _ => None,
     }
 }
