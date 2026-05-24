@@ -52,7 +52,9 @@ pub enum ProjectileSprite {
         /// Taille custom (None = taille naturelle de la texture).
         size: Option<Vec2>,
     },
-    /// Rectangle coloré (forme pilule si hauteur > largeur).
+    /// Boule colorée : rendue automatiquement avec l'image circulaire
+    /// (`RoundSpriteHandle`, généré au Startup dans `weapon.rs`) tintée
+    /// par `color`. Tout projo sans texture PNG passe par ici.
     Colored { color: Color, size: Vec2 },
 }
 
@@ -83,6 +85,7 @@ pub struct ProjectileSpawn {
 pub fn spawn_projectile(
     commands: &mut Commands,
     asset_server: &AssetServer,
+    round_sprite: &crate::weapon::weapon::RoundSpriteHandle,
     spec: ProjectileSpawn,
 ) -> Entity {
     let dir = spec.direction.normalize_or_zero();
@@ -97,7 +100,10 @@ pub fn spawn_projectile(
             custom_size: size,
             ..default()
         },
+        // Pas de texture explicite → boule circulaire via le handle
+        // procédural `RoundSpriteHandle`, tintée par `color`.
         ProjectileSprite::Colored { color, size } => Sprite {
+            image: round_sprite.0.clone(),
             color,
             custom_size: Some(size),
             ..default()

@@ -197,6 +197,7 @@ pub fn turret_aim_and_fire(
     mut commands: Commands,
     time: Res<Time>,
     asset_server: Res<AssetServer>,
+    round_sprite: Res<crate::weapon::weapon::RoundSpriteHandle>,
     mut sfx: SfxPlayer,
     player_tf: Single<&GlobalTransform, (With<Player>, Without<Turret>)>,
     mut turret_q: Query<
@@ -225,6 +226,7 @@ pub fn turret_aim_and_fire(
             spawn_projectile(
                 &mut commands,
                 &*asset_server,
+                &round_sprite,
                 ProjectileSpawn {
                     position: turret_pos.extend(0.55),
                     direction: dir,

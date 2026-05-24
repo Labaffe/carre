@@ -43,10 +43,13 @@ use crate::enemy::octopus::{
 use crate::enemy::turret::{turret_aim_and_fire, TurretBuilder};
 use crate::enemy::enemy_group::despawn_empty_groups;
 use crate::enemy::vaisseau::VaisseauBuilder;
-use crate::enemy::simple_ufo::{simple_ufo_wave_spawn_system, SimpleUfoBuilder};
+use crate::enemy::simple_ufo::{
+    simple_ufo_death_sound, simple_ufo_spawn_sound, simple_ufo_wave_spawn_system,
+    SimpleUfoBuilder,
+};
 use crate::enemy::simple_ufo_shooter::{
-    face_player_system, shooter_burst_tick, simple_ufo_shooter_fire_system,
-    SimpleUfoShooterBuilder,
+    face_player_system, shooter_burst_tick, simple_ufo_shooter_become_alive,
+    simple_ufo_shooter_fire_system, SimpleUfoShooterBuilder,
 };
 use crate::GameState;
 use crate::menu::pause::not_paused;
@@ -116,6 +119,7 @@ impl Plugin for EnemyPlugin {
             // Observer global sur `EnemyDeathEvent` (trigger par `detect_death`).
             .add_observer(asteroid_death_fx_system)
             .add_observer(crate::enemy::boss::boss_death_screen_shake)
+            .add_observer(simple_ufo_death_sound)
             // Systèmes Octopus dans leur propre tuple : la limite de `.chain()`
             // (15 systèmes) est atteinte sur le bloc enemy générique au-dessus.
             // Ces systèmes sont tous des réactifs sur `Added<…>` indépendants
@@ -143,10 +147,25 @@ impl Plugin for EnemyPlugin {
                     octopus_green_bomb_explode,
                     turret_aim_and_fire,
                     despawn_empty_groups,
+                )
+                    .run_if(in_state(GameState::Playing))
+                    .run_if(not_paused),
+            )
+            // 2e bloc — limite de 20 systèmes par tuple Bevy → split.
+            // Tous les `become_alive` / spawn-sound / fire-systems des
+            // ennemis ajoutés après l'octopus (simple_ufo, shooter, green_ufo,
+            // boss).
+            .add_systems(
+                Update,
+                (
                     simple_ufo_wave_spawn_system,
+                    simple_ufo_spawn_sound,
                     simple_ufo_shooter_fire_system,
+                    simple_ufo_shooter_become_alive,
                     shooter_burst_tick,
                     face_player_system,
+                    green_ufo_become_alive,
+                    crate::enemy::boss::boss_become_alive,
                 )
                     .run_if(in_state(GameState::Playing))
                     .run_if(not_paused),

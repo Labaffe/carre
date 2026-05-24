@@ -63,6 +63,12 @@ use crate::tweening::{Ease, Scale, Tween, TweenSequence};
 #[derive(Component)]
 pub struct BossMarker;
 
+/// Marker inséré à la fin de l'entering (spirale + flexing) au moment où le
+/// boss bascule dans `life`. `boss_become_alive` détecte `Added<_>` pour
+/// insérer le collider et restaurer l'alpha — le boss devient tangible.
+#[derive(Component, Clone)]
+pub struct BossAlive;
+
 /// Marqueur sur l'entité audio qui joue la musique du boss.
 #[derive(Component)]
 #[require(crate::GameplayEntity)]
@@ -137,6 +143,10 @@ const TRANSITION_SHAKE: f32 = 12.0;
 // ─── Mort ───────────────────────────────────────────────────────────────
 /// Durée du shake de mort avant DespawnSelf (secondes).
 const DYING_DURATION: f32 = 2.0;
+
+/// Teinte d'intangibilité pendant l'entering (spirale + flexing) — pas de
+/// collider, sprite sombre. Restauré à `Color::WHITE` par `boss_become_alive`.
+const INTANGIBLE_TINT: Color = Color::srgba(0.35, 0.35, 0.35, 0.9);
 /// Amplitude max du shake de mort (px, atteinte en fin de phase).
 const DYING_SHAKE_MAX: f32 = 20.0;
 
@@ -195,7 +205,17 @@ impl EnemyBuilder for BossBuilder {
         )
         .then(
             Duration::from_secs_f32(INTRO_FLEXING_DURATION),
-            BehaviorBuilder::from_component(Animation::new("boss_flexing", flexing_frame_duration)),
+            // Flexing : on insère `BossAlive` ici → `Added<BossAlive>`
+            // déclenche `boss_become_alive` qui pose le collider et restaure
+            // l'opacité. `Invulnerable` reste actif (wrapper `entering`
+            // au-dessus) → les projos touchent visuellement le boss mais ne
+            // font pas de dégâts. La fenêtre dure `INTRO_FLEXING_DURATION`.
+            BehaviorBuilder::multiple()
+                .with(BehaviorBuilder::from_component(Animation::new(
+                    "boss_flexing",
+                    flexing_frame_duration,
+                )))
+                .with(BehaviorBuilder::from_component(BossAlive)),
         );
         // Pendant toute la durée d'entering (spirale + flexing), le boss est
         // invulnérable ET inoffensif au contact. Les deux markers sont insérés
@@ -314,6 +334,10 @@ impl EnemyBuilder for BossBuilder {
             Duration::from_secs_f32(1.0),
             BehaviorBuilder::from_component(DespawnSelf),
         );
+        // `BossAlive` est déjà posé au DÉBUT du flexing (cf. plus haut), donc
+        // au moment où on entre dans `life`, le collider et l'opacité sont
+        // restaurés depuis ~INTRO_FLEXING_DURATION secondes. Pas besoin de
+        // re-wrapper ici.
         let life = BehaviorBuilder::choice()
             .with(alive)
             .with(dying)
@@ -331,7 +355,9 @@ impl EnemyBuilder for BossBuilder {
             Sprite {
                 image: asset_server.load("images/boss/idle/frame000.png"),
                 custom_size: Some(Vec2::splat(BOSS.config.sprite_size)),
-                color: Color::WHITE,
+                // Teinte sombre pendant l'entering (spirale + flexing).
+                // Restaurée par `boss_become_alive` à l'entrée de `life`.
+                color: INTANGIBLE_TINT,
                 ..default()
             },
             Transform {
@@ -360,11 +386,9 @@ impl EnemyBuilder for BossBuilder {
                 cooldown_remaining: 0.0,
             },
             BehaviorComponent::new(behavior),
-            collider(
-                Shape::Circle(BOSS.config.radius),
-                layers::ENEMY,
-                layers::PLAYER | layers::PLAYER_PROJECTILE,
-            ),
+            // PAS de collider ici : intangible pendant entering.
+            // `boss_become_alive` (Added<BossAlive>) l'insère à la fin de
+            // la spirale + flexing.
         ));
     }
 
@@ -391,6 +415,25 @@ pub fn boss_death_screen_shake(
     if boss_q.get(ev.entity).is_err() { return; }
     commands.trigger(crate::fx::screen_shake::ScreenShakeEvent::BOSS_DEATH);
     commands.trigger(crate::fx::time_fx::TimeFxEvent::SLOWMO_BOSS_KILL);
+}
+
+/// `Added<BossAlive>` : fin de la phase entering (spirale + flexing).
+/// Restaure l'alpha du sprite et insère le collider — le boss devient
+/// tangible.
+pub fn boss_become_alive(
+    mut commands: Commands,
+    mut q: Query<(Entity, &mut Sprite), Added<BossAlive>>,
+) {
+    for (entity, mut sprite) in &mut q {
+        sprite.color = Color::WHITE;
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_insert(collider(
+                Shape::Circle(BOSS.config.radius),
+                layers::ENEMY,
+                layers::PLAYER | layers::PLAYER_PROJECTILE,
+            ));
+        }
+    }
 }
 
 pub fn boss_hp_threshold_check(

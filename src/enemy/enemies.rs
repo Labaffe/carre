@@ -86,7 +86,7 @@ pub const TURRET: EnemyData = EnemyData {
 pub const SIMPLE_UFO: EnemyData = EnemyData {
     name: "SimpleUFO",
     config: EnemyConfigData::new(24.0, 56.0),
-    total_hp: 4,
+    total_hp: 1,
 };
 
 /// UFO "shooter" — alterne idle et rush dans une direction **aléatoire**
@@ -95,6 +95,6 @@ pub const SIMPLE_UFO: EnemyData = EnemyData {
 /// Mort instantanée à PV=0, pas d'anim.
 pub const SIMPLE_UFO_SHOOTER: EnemyData = EnemyData {
     name: "SimpleUfoShooter",
-    config: EnemyConfigData::new(28.0, 64.0),
-    total_hp: 5,
+    config: EnemyConfigData::new(42.0, 96.0),
+    total_hp: 10,
 };

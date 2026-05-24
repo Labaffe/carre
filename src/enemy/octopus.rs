@@ -687,6 +687,7 @@ pub fn octopus_setup_curve(
 pub fn octopus_fire_shots(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    round_sprite: Res<crate::weapon::weapon::RoundSpriteHandle>,
     octopus_q: Query<&Transform, (Added<OctopusFireShots>, Without<OctopusGreen>)>,
     player_tf: Single<&Transform, (With<Player>, Without<Octopus>)>,
 ) {
@@ -705,6 +706,7 @@ pub fn octopus_fire_shots(
             spawn_projectile(
                 &mut commands,
                 &*asset_server,
+                &round_sprite,
                 ProjectileSpawn {
                     position: Vec3::new(origin.x, origin.y, 0.55),
                     direction: dir,
@@ -846,6 +848,7 @@ pub fn octopus_green_swoop_end(
 pub fn octopus_green_fire_shots(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    round_sprite: Res<crate::weapon::weapon::RoundSpriteHandle>,
     octopus_q: Query<&Transform, (Added<OctopusFireShots>, With<OctopusGreen>)>,
     player_tf: Single<&Transform, (With<Player>, Without<Octopus>)>,
 ) {
@@ -868,6 +871,7 @@ pub fn octopus_green_fire_shots(
             spawn_projectile(
                 &mut commands,
                 &*asset_server,
+                &round_sprite,
                 ProjectileSpawn {
                     position: Vec3::new(origin.x, origin.y, 0.55),
                     direction: dir,

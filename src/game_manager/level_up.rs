@@ -119,6 +119,7 @@ fn watch_experience(
     asset_server: Res<AssetServer>,
     mut sfx: SfxPlayer,
     player_q: Query<(&Weapon, &EquippedPower), With<Player>>,
+    mut cursor_q: Query<&mut bevy::window::CursorOptions>,
 ) {
     if state.active {
         return;
@@ -131,6 +132,12 @@ fn watch_experience(
         experience.level += 1;
         state.active = true;
         time.pause();
+        // Affiche le curseur OS pour permettre de cliquer sur les cartes.
+        // Le crosshair custom (in-game) est caché par défaut pendant Playing
+        // via `CrosshairPlugin` ; on le ré-active ici le temps du modal.
+        if let Ok(mut cursor) = cursor_q.single_mut() {
+            cursor.visible = true;
+        }
         sfx.play(Sfx::LevelUp);
         let cards = sample_three_cards(current_weapon, current_power);
         spawn_card_modal(&mut commands, &asset_server, &cards);
@@ -292,6 +299,7 @@ fn handle_card_click(
     mut weapon_q: Query<&mut Weapon, With<Player>>,
     mut power_q: Query<&mut EquippedPower, With<Player>>,
     mut armor_q: Query<&mut Armor, With<Player>>,
+    mut cursor_q: Query<&mut bevy::window::CursorOptions>,
 ) {
     if !state.active {
         return;
@@ -314,6 +322,10 @@ fn handle_card_click(
         }
         state.active = false;
         time.unpause();
+        // Re-cache le curseur OS — retour au gameplay normal avec crosshair custom.
+        if let Ok(mut cursor) = cursor_q.single_mut() {
+            cursor.visible = false;
+        }
         return;
     }
 }

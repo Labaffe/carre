@@ -125,6 +125,29 @@ pub fn player_dash() -> Sfx {
         .volume(0.35)
 }
 
+/// Spawn d'un simple_ufo : court blip ascendant triangle, signale clairement
+/// l'apparition d'une wave sans saturer l'oreille (joué N fois en rafale).
+pub fn simple_ufo_spawn() -> Sfx {
+    Sfx::new("simple_ufo_spawn")
+        .wave(Wave::Triangle)
+        .freq_sweep(800.0, 1400.0)
+        .duration(0.10)
+        .envelope(0.0, 0.005, 0.5, 0.08)
+        .volume(0.25)
+}
+
+/// Mort d'un simple_ufo : petit "pop" noise descendant, plus léger que les
+/// explosions standard pour rester lisible en wave.
+pub fn simple_ufo_die() -> Sfx {
+    Sfx::new("simple_ufo_die")
+        .wave(Wave::Noise)
+        .freq_sweep(700.0, 120.0)
+        .duration(0.18)
+        .envelope(0.0, 0.02, 0.45, 0.14)
+        .lowpass(1500.0)
+        .volume(0.35)
+}
+
 /// Fanfare 8-bit joyeuse pour le level-up : arpège ascendant en do majeur
 /// sur 2 octaves (C-E-G-C-E-G). Square wave pour le grain rétro classique,
 /// attaque sèche et release moyenne pour une fanfare claire.
@@ -172,6 +195,8 @@ pub fn all() -> Vec<Sfx> {
         octopus_die(),
         player_dash(),
         level_up(),
+        simple_ufo_spawn(),
+        simple_ufo_die(),
     ]
 }
 
@@ -189,6 +214,8 @@ pub fn by_name(name: &str) -> Option<Sfx> {
         "octopus_die" => Some(octopus_die()),
         "player_dash" => Some(player_dash()),
         "level_up" => Some(level_up()),
+        "simple_ufo_spawn" => Some(simple_ufo_spawn()),
+        "simple_ufo_die" => Some(simple_ufo_die()),
         _ => None,
     }
 }

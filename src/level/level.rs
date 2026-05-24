@@ -105,6 +105,22 @@ impl Plugin for LevelPlugin {
                     .run_if(resource_exists::<crate::level::chaos::ChaosConfig>),
             )
             .add_systems(
+                Update,
+                (
+                    crate::level::waves::waves_spawner_system,
+                    crate::level::waves::update_waves_ui,
+                )
+                    .run_if(in_state(GameState::Playing))
+                    .run_if(not_paused)
+                    .run_if(resource_exists::<crate::level::waves::WavesConfig>),
+            )
+            .add_systems(
+                OnEnter(GameState::Playing),
+                crate::level::waves::setup_waves_ui
+                    .after(LevelSetupSet)
+                    .run_if(resource_exists::<crate::level::waves::WavesConfig>),
+            )
+            .add_systems(
                 OnExit(GameState::Playing),
                 cleanup_level,
             );
@@ -549,6 +565,17 @@ pub fn build_level_chaos() -> Vec<LevelStep> {
     ]
 }
 
+/// Timeline du niveau Vagues : difficulté de base + log. Toute la mécanique
+/// vit dans le système `waves_spawner_system` piloté par `WavesConfig`.
+pub fn build_level_waves() -> Vec<LevelStep> {
+    vec![
+        LevelStep::at(0.0, "waves_start")
+            .with(Action::StartMusic("audio/music/gradius.ogg"))
+            .with(Action::SetDifficulty(2.0))
+            .with(Action::Log("Niveau Vagues — pouls successifs d\u{e9}marr\u{e9}s")),
+    ]
+}
+
 /// Ressource d'éditeur : si présente au moment de `setup_level`, override
 /// le niveau normal par une timeline minimale qui spawn juste cet ennemi.
 #[derive(Resource)]
@@ -612,6 +639,12 @@ fn setup_level(
                 // gradius → boss → gradius → … tant que la ressource existe.
                 commands.insert_resource(crate::level::chaos::ChaosMusicState::default());
                 build_level_chaos()
+            }
+            4 => {
+                // Niveau Vagues : pool partagé avec Chaos, mais déversé en
+                // pouls homogènes (1 type d'ennemi par vague).
+                commands.insert_resource(crate::level::waves::WavesConfig::default());
+                build_level_waves()
             }
             _ => build_level_1(), // fallback
         }
@@ -800,4 +833,5 @@ fn cleanup_level(mut commands: Commands) {
     commands.remove_resource::<EditorTestEnemy>();
     commands.remove_resource::<crate::level::chaos::ChaosConfig>();
     commands.remove_resource::<crate::level::chaos::ChaosMusicState>();
+    commands.remove_resource::<crate::level::waves::WavesConfig>();
 }

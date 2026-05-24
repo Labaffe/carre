@@ -23,27 +23,8 @@
 //! ```
 
 use crate::game_manager::difficulty::{Difficulty, SpawnPosition};
+use crate::level::enemy_pool::{default_tunings, pick_enemy, spawn_picked, EnemyTuning};
 use bevy::prelude::*;
-
-/// Type de spawn associé à un tuning : ennemi unique standard, ou wave
-/// composée (cf. `SimpleUfoWaveSpawner` qui spawn N ufos en queue le long
-/// d'un chemin Bézier).
-#[derive(Clone, Copy)]
-pub enum SpawnKind {
-    Single,
-    SimpleUfoWave { count: usize, interval: f32 },
-}
-
-/// Réglage par ennemi : `cost` consommé au spawn, `weight` pondère la prob
-/// de sélection parmi les ennemis affordables au moment du spawn.
-/// `kind` détermine la mécanique de spawn (single ou wave Bézier).
-#[derive(Clone)]
-pub struct EnemyTuning {
-    pub name: &'static str,
-    pub cost: u32,
-    pub weight: u32,
-    pub kind: SpawnKind,
-}
 
 /// Intervalle entre 2 tentatives de spawn — décroît exponentiellement avec
 /// le tier pour augmenter la vitesse de dépense du budget. Tier 1 = 0.7s,
@@ -73,32 +54,6 @@ fn tier_budget(tier: u32) -> (u32, u32) {
         6 => (180, 350),
         _ => (tier * 40, tier * 60),
     }
-}
-
-/// Tunings par défaut.
-/// - `asteroid` (cost 1, weight 50) : remplisseur ultra-courant
-/// - `kamikaze` (cost 5, weight 25) : threat mid, fréquent dès tier 1
-/// - `green_ufo` / `mine` (cost 3-4, weight 12 chacun) : variété
-/// - `simple_ufo_wave` (cost 8, weight 8) : wave Bézier de 5 UFOs ; le nom
-///   logique du tuning n'est pas un EnemyBuilder — c'est le `SpawnKind` qui
-///   gouverne le spawn (un `SimpleUfoWaveSpawner` est inséré directement).
-/// - `octopus` (cost 15, weight 5) : ne peut spawn qu'à partir de tier 3
-/// - `octopus_green` (cost 18, weight 4) : variante intangible-rush, rare
-/// - `vaisseau` (cost 25, weight 3) : groupe parent + 4 tourelles, rare
-/// - `boss` (cost 60, weight 1) : ne peut spawn qu'à partir de tier 5, très rare
-fn default_tunings() -> Vec<EnemyTuning> {
-    vec![
-        EnemyTuning { name: "asteroid",           cost: 1,  weight: 50, kind: SpawnKind::Single },
-        EnemyTuning { name: "kamikaze",           cost: 5,  weight: 25, kind: SpawnKind::Single },
-        EnemyTuning { name: "green_ufo",          cost: 4,  weight: 12, kind: SpawnKind::Single },
-        EnemyTuning { name: "mine",               cost: 3,  weight: 12, kind: SpawnKind::Single },
-        EnemyTuning { name: "simple_ufo_shooter", cost: 6,  weight: 10, kind: SpawnKind::Single },
-        EnemyTuning { name: "simple_ufo_wave",    cost: 8,  weight: 8,  kind: SpawnKind::SimpleUfoWave { count: 5, interval: 0.2 } },
-        EnemyTuning { name: "octopus",            cost: 15, weight: 5,  kind: SpawnKind::Single },
-        EnemyTuning { name: "octopus_green",      cost: 18, weight: 4,  kind: SpawnKind::Single },
-        EnemyTuning { name: "vaisseau",           cost: 25, weight: 3,  kind: SpawnKind::Single },
-        EnemyTuning { name: "boss",               cost: 60, weight: 1,  kind: SpawnKind::Single },
-    ]
 }
 
 /// État courant du chaos spawner — machine binaire : palier actif (spawn
@@ -194,20 +149,7 @@ pub fn chaos_spawner_system(
                 spawn_timer.tick(dt);
                 if spawn_timer.just_finished() {
                     if let Some(pick) = pick_enemy(&enemies_snapshot, *budget) {
-                        match pick.kind {
-                            SpawnKind::Single => {
-                                difficulty
-                                    .spawn_requests
-                                    .push((pick.name, 1, spawn_position));
-                            }
-                            SpawnKind::SimpleUfoWave { count, interval } => {
-                                commands.spawn(
-                                    crate::enemy::simple_ufo::SimpleUfoWaveSpawner::new(
-                                        count, interval,
-                                    ),
-                                );
-                            }
-                        }
+                        spawn_picked(&mut commands, &mut difficulty, pick, spawn_position);
                         *budget -= pick.cost as i32;
                     }
                     // Si aucun ennemi affordable, on attend l'expiration du
@@ -380,29 +322,6 @@ pub fn update_chaos_ui(
 
 // `cleanup_chaos_ui` retiré — cleanup auto via `cleanup_playing` (main.rs)
 // grâce à `#[require(GameplayEntity)]` sur `ChaosLevelUI`.
-
-// ─── Logique de spawn ───────────────────────────────────────────────
-
-/// Tirage pondéré d'un ennemi parmi ceux affordables. Renvoie `None` si
-/// le budget est inférieur au plus petit cost (=> on attend la fin du tier).
-fn pick_enemy<'a>(enemies: &'a [EnemyTuning], budget: i32) -> Option<&'a EnemyTuning> {
-    let affordable: Vec<&EnemyTuning> = enemies
-        .iter()
-        .filter(|e| (e.cost as i32) <= budget)
-        .collect();
-    if affordable.is_empty() {
-        return None;
-    }
-    let total_weight: u32 = affordable.iter().map(|e| e.weight).sum();
-    if total_weight == 0 {
-        return None;
-    }
-    let mut roll = fastrand::u32(0..total_weight);
-    for e in affordable {
-        if roll < e.weight {
-            return Some(e);
-        }
-        roll -= e.weight;
-    }
-    None
-}
+//
+// `pick_enemy` et la définition de `EnemyTuning`/`SpawnKind` ont été déplacés
+// dans [`crate::level::enemy_pool`] pour être partagés avec le mode Vagues.

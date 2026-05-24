@@ -69,15 +69,17 @@ impl EnemyBuilder for VaisseauBuilder {
     fn spawn(
         &self,
         mut commands: Commands,
-        window: &Window,
+        _window: &Window,
         _difficulty: &ResMut<Difficulty>,
-        spawn_pos: SpawnPosition,
+        _spawn_pos: SpawnPosition,
         asset_server: &Res<AssetServer>,
     ) {
-        // On garde le X du `SpawnPosition` (permet de varier le côté
-        // d'entrée) mais on force le Y dans la partie haute de l'écran.
-        let xy = spawn_pos.resolve(window, 0.0);
-        let origin = Vec2::new(xy.x, VAISSEAU_Y_ANCHOR);
+        // Spawn fixe au centre-haut : la formation est large (3× TURRET_SPACING
+        // = 900px) plus l'amplitude d'oscillation horizontale (±260px). Avec
+        // un point d'ancrage random, les bords du vaisseau peuvent sortir
+        // de l'écran sur les côtés. Forçant X=0, le vaisseau reste lisible
+        // et tous les tourelles sont accessibles au joueur.
+        let origin = Vec2::new(0.0, VAISSEAU_Y_ANCHOR);
 
         // Parent : marker group + cleanup + flottement (X et Y combinés) +
         // visibility (requis quand pas de Sprite, sinon les enfants ne sont

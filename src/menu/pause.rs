@@ -97,7 +97,13 @@ fn handle_pause_input(
     play_mode: Option<Res<PlayMode>>,
     mut confirm_params: ConfirmParams,
     mut sfx: SfxPlayer,
+    card_select: Option<Res<crate::game_manager::level_up::CardSelectState>>,
 ) {
+    // Bloquer toute interaction pause pendant un choix de carte — le modal
+    // a son propre flow et ESC pourrait être ambigu.
+    if card_select.as_ref().map(|s| s.active).unwrap_or(false) {
+        return;
+    }
     let confirm = confirm_params.state.as_mut();
     let confirm_ui_q = &confirm_params.ui_q;
     let confirm_text_q = &mut confirm_params.text_q;

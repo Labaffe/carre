@@ -10,7 +10,7 @@ use crate::game_manager::state::GameState;
 use crate::player::player::{Player, PlayerStats};
 use crate::ui::crosshair::Crosshair;
 use crate::weapon::projectile::{spawn_projectile, ProjectileSpawn, ProjectileSprite, Team};
-use crate::weapon::weapon::Weapon;
+use crate::weapon::weapon::{RoundSpriteHandle, Weapon};
 use bevy::prelude::*;
 
 pub struct PlayerFirePlugin;
@@ -53,6 +53,7 @@ fn shoot(
     crosshair_transform: Single<&Transform, With<Crosshair>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    round_sprite: Res<RoundSpriteHandle>,
     mut sfx: SfxPlayer,
 ) {
     if !mouse.pressed(MouseButton::Left) {
@@ -83,13 +84,26 @@ fn shoot(
     // `def` réutilisé d'au-dessus (déjà obtenu via weapon.0.def()).
     let origin = Vec3::new(player_pos.x, player_pos.y, 0.6); // au-dessus du mothership (0.4)
 
-    // Spawn un projectile par angle dans le pattern
+    // Si l'arme déclare `projectile_color`, on rend une boule circulaire
+    // (la branche `Colored` charge auto le `RoundSpriteHandle` dans
+    // `spawn_projectile`). Sinon → texture PNG via `texture_path`.
+    let sprite_spec = match def.projectile_color {
+        Some(color) => ProjectileSprite::Colored {
+            color,
+            size: def.projectile_size.unwrap_or(Vec2::splat(32.0)),
+        },
+        None => ProjectileSprite::Texture {
+            path: def.texture_path,
+            size: def.projectile_size,
+        },
+    };
     for shot in def.pattern.iter() {
         let dir = rotate_direction(base_dir, shot.0);
 
         spawn_projectile(
             &mut commands,
             &*asset_server,
+            &round_sprite,
             ProjectileSpawn {
                 position: origin,
                 direction: dir,
@@ -97,10 +111,7 @@ fn shoot(
                 hitbox: def.hitbox.clone(),
                 team: Team::Player,
                 damage: 1,
-                sprite: ProjectileSprite::Texture {
-                    path: def.texture_path,
-                    size: None,
-                },
+                sprite: sprite_spec.clone(),
                 death_folder: def.death_folder,
             },
         );

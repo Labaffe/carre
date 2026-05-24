@@ -29,6 +29,7 @@ use crate::game_manager::difficulty::{Difficulty, SpawnPosition};
 use crate::geometry::shape::Shape;
 use crate::item::item::{DropTable, ItemType};
 use crate::movement::bounding_radius::BoundingRadius;
+use crate::movement::goto::Goto;
 use crate::movement::movement::Movement;
 use crate::movement::movement_zone::MovementZone;
 use crate::movement::movements::Movements;
@@ -42,6 +43,16 @@ use crate::weapon::projectile::{spawn_projectile, ProjectileSpawn, ProjectileSpr
 const RUSH_SPEED: f32 = 550.0;
 const RUSH_DURATION: f32 = 0.8;
 const IDLE_DURATION: f32 = 1.5;
+
+/// Entrée rectiligne depuis le haut de l'écran : descente intangible, sprite
+/// teinté, pas de collider — pattern emprunté à l'octopus.
+const ENTERING_DURATION: f32 = 0.9;
+const ENTERING_SPEED: f32 = 700.0;
+/// Distance verticale parcourue pendant l'entering (depuis le spawn off-screen
+/// vers le point de bascule en `alive`).
+const ENTERING_DESCENT: f32 = 320.0;
+/// Teinte d'intangibilité (sombre + alpha réduit) pendant l'entering.
+const INTANGIBLE_TINT: Color = Color::srgba(0.35, 0.35, 0.35, 0.9);
 
 const PROJECTILE_COUNT: i32 = 3;
 /// Intervalle entre 2 projectiles de la rafale (s). Total burst ≈ 0.3s.
@@ -101,6 +112,16 @@ impl Movement for RandomRush {
 #[derive(Component)]
 pub struct FacePlayer;
 
+/// Marker présent pendant la phase entering (descente intangible).
+#[derive(Component, Clone)]
+pub struct SimpleUfoShooterEntering;
+
+/// Marker inséré quand l'UFO Tireur devient tangible. Le système
+/// `simple_ufo_shooter_become_alive` détecte `Added<_>` pour insérer le
+/// collider et restaurer l'alpha du sprite à 1.0.
+#[derive(Component, Clone)]
+pub struct SimpleUfoShooterAlive;
+
 /// Inséré par le BT au début du rush, retiré à sa sortie.
 /// Le système `simple_ufo_shooter_fire_system` détecte `Added<_>` et amorce
 /// un `ShooterBurst` indépendant (qui survit même si le rush se termine
@@ -148,11 +169,25 @@ impl EnemyBuilder for SimpleUfoShooterBuilder {
         spawn_pos: SpawnPosition,
         asset_server: &Res<AssetServer>,
     ) {
-        let pos = spawn_pos.resolve(window, 60.0);
+        let entry_pos = spawn_pos.resolve(window, 60.0);
+        // Cible de l'entering : descente verticale depuis le spawn off-screen.
+        let final_pos = Vec2::new(entry_pos.x, entry_pos.y - ENTERING_DESCENT);
+
+        // Entering : descente Goto vers `final_pos`, sans collider, sprite
+        // teinté. À la fin du timer → "entering_done" → état `alive`.
+        let entering = BehaviorBuilder::first(
+            Duration::from_secs_f32(ENTERING_DURATION),
+            BehaviorBuilder::multiple()
+                .with(BehaviorBuilder::from_component(SimpleUfoShooterEntering))
+                .with(BehaviorBuilder::from_component(
+                    Movements::new().with(Goto::new(final_pos, ENTERING_SPEED)),
+                )),
+        )
+        .on_complete("entering_done");
 
         // Idle : insère le marker `SimpleUfoShooterFire` → la rafale de 3
         // tirs vers le joueur part au DÉBUT de l'idle (ennemi immobile,
-        // facilement lisible). Le marker est retiré à la sortie d'idle.
+        // facilement lisible).
         let idle = BehaviorBuilder::first(
             Duration::from_secs_f32(IDLE_DURATION),
             BehaviorBuilder::from_component(SimpleUfoShooterFire),
@@ -168,7 +203,7 @@ impl EnemyBuilder for SimpleUfoShooterBuilder {
         )
         .on_complete("idle_ready");
 
-        let alive = BehaviorBuilder::choice()
+        let alive_cycle = BehaviorBuilder::choice()
             .with(idle) // 0
             .with(rush) // 1
             .add_transition(0, 1, "rush_ready")
@@ -177,6 +212,12 @@ impl EnemyBuilder for SimpleUfoShooterBuilder {
             .add_transition(1, 0, "wall_right")
             .add_transition(1, 0, "wall_top")
             .add_transition(1, 0, "wall_bottom");
+
+        // `multiple` pour insérer `SimpleUfoShooterAlive` une seule fois à
+        // l'entrée de l'état alive (déclenche `become_alive` → collider).
+        let alive = BehaviorBuilder::multiple()
+            .with(BehaviorBuilder::from_component(SimpleUfoShooterAlive))
+            .with(alive_cycle);
 
         let dying = BehaviorBuilder::first(
             Duration::from_secs_f32(0.05),
@@ -188,17 +229,22 @@ impl EnemyBuilder for SimpleUfoShooterBuilder {
         );
 
         let behavior = BehaviorBuilder::choice()
-            .with(alive)
-            .with(dying)
-            .add_transition(0, 1, "die");
+            .with(entering) // 0
+            .with(alive) // 1
+            .with(dying) // 2
+            .add_transition(0, 1, "entering_done")
+            .add_transition(1, 2, "die");
 
         commands.spawn((
             Sprite {
                 image: asset_server.load("images/simple_ufo_shooter.png"),
                 custom_size: Some(Vec2::splat(SIMPLE_UFO_SHOOTER.config.sprite_size)),
+                // Teinte sombre pendant entering — restaurée à `Color::WHITE`
+                // par `simple_ufo_shooter_become_alive`.
+                color: INTANGIBLE_TINT,
                 ..default()
             },
-            Transform::from_xyz(pos.x, pos.y, 0.5),
+            Transform::from_xyz(entry_pos.x, entry_pos.y, 0.5),
             TransitionMessages::new(),
             Enemy::new(SIMPLE_UFO_SHOOTER),
             Health::new(SIMPLE_UFO_SHOOTER.total_hp),
@@ -211,16 +257,32 @@ impl EnemyBuilder for SimpleUfoShooterBuilder {
             BehaviorComponent::new(behavior),
             DropTable { drops: &SIMPLE_UFO_SHOOTER_DROP_TABLE },
             FacePlayer,
-            collider(
-                Shape::Circle(SIMPLE_UFO_SHOOTER.config.radius),
-                layers::ENEMY,
-                layers::PLAYER | layers::PLAYER_PROJECTILE,
-            ),
+            // PAS de collider ici : intangible pendant entering.
+            // `simple_ufo_shooter_become_alive` (Added<SimpleUfoShooterAlive>)
+            // l'insère à l'entrée du state alive.
         ));
     }
 }
 
 // ─── Systèmes ────────────────────────────────────────────────────────
+
+/// `Added<SimpleUfoShooterAlive>` : fin de l'entering. Restaure l'alpha à 1.0
+/// et insère le collider — l'ennemi devient tangible.
+pub fn simple_ufo_shooter_become_alive(
+    mut commands: Commands,
+    mut q: Query<(Entity, &mut Sprite), Added<SimpleUfoShooterAlive>>,
+) {
+    for (entity, mut sprite) in &mut q {
+        sprite.color = Color::WHITE;
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_insert(collider(
+                Shape::Circle(SIMPLE_UFO_SHOOTER.config.radius),
+                layers::ENEMY,
+                layers::PLAYER | layers::PLAYER_PROJECTILE,
+            ));
+        }
+    }
+}
 
 /// Aligne `Transform.rotation` pour que +Y local pointe vers le joueur.
 /// Convention identique à `spawn_projectile` (sprite "vers le haut" → angle
@@ -277,6 +339,7 @@ pub fn shooter_burst_tick(
     time: Res<Time>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    round_sprite: Res<crate::weapon::weapon::RoundSpriteHandle>,
     mut q: Query<(Entity, &Transform, &mut ShooterBurst)>,
 ) {
     for (entity, tf, mut burst) in q.iter_mut() {
@@ -289,6 +352,7 @@ pub fn shooter_burst_tick(
         spawn_projectile(
             &mut commands,
             &*asset_server,
+            &round_sprite,
             ProjectileSpawn {
                 position: Vec3::new(origin.x, origin.y, 0.55),
                 direction: dir,

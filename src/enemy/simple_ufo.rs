@@ -44,12 +44,109 @@ use crate::enemy::enemy::Enemy;
 use crate::enemy::enemy_builder::EnemyBuilder;
 use crate::game_manager::difficulty::{Difficulty, SpawnPosition};
 use crate::geometry::shape::Shape;
-use crate::movement::bezier::Bezier;
 use crate::movement::despawn_off_screen::DespawnOffScreen;
+use crate::movement::movement::Movement;
 use crate::movement::movements::Movements;
 use crate::physic::collider::{collider, layers};
 use crate::physic::health::Health;
 use crate::sprite_orient::RotateToMovement;
+use crate::audio::{Sfx, SfxPlayer};
+
+/// Marker sur l'entité Simple UFO. Sert au filtrage de queries (sons spawn/mort).
+#[derive(Component, Clone)]
+pub struct SimpleUfo;
+
+// ─── Movement : Bézier paramétré par arc-length (vitesse constante) ─────
+
+/// Mouvement le long d'une Bézier quadratique parcourue à **vitesse
+/// constante** (en magnitude). Contrairement à `Bezier` qui paramètre par
+/// `t` linéaire, ici on précalcule une LUT d'arc lengths cumulées puis on
+/// mappe `time → distance → t` pour que la position avance de `speed`
+/// pixels par seconde quel que soit l'endroit de la courbe.
+///
+/// Conséquence : plusieurs UFOs spawnés en queue le long d'une même courbe
+/// à intervalle régulier `dt` conservent un **espacement constant** de
+/// `speed × dt` sur toute la trajectoire, même dans les virages.
+#[derive(Clone)]
+pub struct BezierConstSpeed {
+    start: Vec2,
+    control: Vec2,
+    end: Vec2,
+    speed: f32,
+    /// LUT : `arc_lengths[i]` = distance cumulée depuis `start` au point `t = i/N`.
+    arc_lengths: Vec<f32>,
+}
+
+impl BezierConstSpeed {
+    /// Crée la courbe paramétrée pour parcourir `start → control → end`
+    /// en `target_duration` secondes. La vitesse est dérivée de la longueur
+    /// totale échantillonnée (`N = 32` segments).
+    pub fn from_duration(start: Vec2, control: Vec2, end: Vec2, target_duration: f32) -> Self {
+        const N: usize = 32;
+        let mut arc_lengths = Vec::with_capacity(N + 1);
+        arc_lengths.push(0.0);
+        let mut total = 0.0_f32;
+        let mut prev = start;
+        for i in 1..=N {
+            let t = i as f32 / N as f32;
+            let omt = 1.0 - t;
+            let pos = start * (omt * omt) + control * (2.0 * omt * t) + end * (t * t);
+            total += (pos - prev).length();
+            arc_lengths.push(total);
+            prev = pos;
+        }
+        let speed = if target_duration > 0.0 { total / target_duration } else { 0.0 };
+        Self { start, control, end, speed, arc_lengths }
+    }
+
+    /// Mappe une distance cumulée le long de la courbe → `t` ∈ [0, 1] via
+    /// binary search dans la LUT + interpolation linéaire entre 2 samples.
+    fn t_for_distance(&self, distance: f32) -> f32 {
+        let n = self.arc_lengths.len() - 1;
+        let total = self.arc_lengths[n];
+        if distance <= 0.0 {
+            return 0.0;
+        }
+        if distance >= total {
+            return 1.0;
+        }
+        let (mut lo, mut hi) = (0_usize, n);
+        while hi - lo > 1 {
+            let mid = (lo + hi) / 2;
+            if self.arc_lengths[mid] < distance {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        let l0 = self.arc_lengths[lo];
+        let l1 = self.arc_lengths[hi];
+        let frac = if l1 > l0 { (distance - l0) / (l1 - l0) } else { 0.0 };
+        (lo as f32 + frac) / n as f32
+    }
+}
+
+impl Movement for BezierConstSpeed {
+    fn evaluate(
+        &mut self,
+        at: Duration,
+        _deltatime: Duration,
+        current_position: Vec2,
+        _velocity: Vec2,
+        _player_pos: Vec2,
+    ) -> Vec2 {
+        let distance = at.as_secs_f32() * self.speed;
+        let t = self.t_for_distance(distance);
+        let omt = 1.0 - t;
+        let pos = self.start * (omt * omt)
+            + self.control * (2.0 * omt * t)
+            + self.end * (t * t);
+        pos - current_position
+    }
+    fn clone_box(&self) -> Box<dyn Movement + Send + Sync> {
+        Box::new(self.clone())
+    }
+}
 
 /// Marge (px) au-delà du bord d'écran pour les points d'entrée/sortie —
 /// garantit qu'un UFO commence et finit hors champ (DespawnOffScreen
@@ -70,18 +167,29 @@ fn simple_ufo_bundle(
     end: Vec2,
     duration: f32,
 ) -> impl Bundle {
-    // BT minimal : `alive` injecte animation + bézier ; sur HP=0,
-    // `detect_death` pousse "die" → transition vers `dying` qui insère
-    // `DespawnSelf`. **Indispensable** : `detect_death` exige
-    // `TransitionMessages` dans son query — sans BT le UFO ne meurt pas.
-    let alive = BehaviorBuilder::multiple()
-        .with(BehaviorBuilder::from_component(Animation::new(
-            "simple_ufo",
-            Duration::from_secs_f32(SIMPLE_UFO_ANIM_FRAME_DURATION),
-        )))
-        .with(BehaviorBuilder::from_component(Movements::new().with(
-            Bezier::passing_through(start, mid, end, Duration::from_secs_f32(duration)),
-        )));
+    // BT : `alive` est gated par un `first(duration)` qui pousse "die" à
+    // l'expiration. Sans ça, à la fin de la Bézier, le UFO reste statique
+    // à `end` (Bezier::evaluate retourne 0 quand t≥1) — `DespawnOffScreen`
+    // ne s'active pas toujours car `end` peut être dans la marge despawn,
+    // et le UFO bloque la wave en attendant la mort.
+    // Sur HP=0 (kill), `detect_death` pousse aussi "die" → même transition.
+    // BezierConstSpeed : parcours arc-length-paramétré → vitesse constante.
+    // Tous les ufos d'une wave partagent `start/mid/end/duration`, donc
+    // partagent la même `speed` interne (= length / duration) → espacement
+    // entre ufos consécutifs reste constant sur toute la trajectoire,
+    // même dans les virages serrés.
+    let alive = BehaviorBuilder::first(
+        Duration::from_secs_f32(duration),
+        BehaviorBuilder::multiple()
+            .with(BehaviorBuilder::from_component(Animation::new(
+                "simple_ufo",
+                Duration::from_secs_f32(SIMPLE_UFO_ANIM_FRAME_DURATION),
+            )))
+            .with(BehaviorBuilder::from_component(Movements::new().with(
+                BezierConstSpeed::from_duration(start, mid, end, duration),
+            ))),
+    )
+    .on_complete("die");
     let dying = BehaviorBuilder::from_component(DespawnSelf);
     let behavior = BehaviorBuilder::choice()
         .with(alive)
@@ -97,6 +205,7 @@ fn simple_ufo_bundle(
         Transform::from_xyz(start.x, start.y, 0.5),
         Enemy::new(SIMPLE_UFO),
         Health::new(SIMPLE_UFO.total_hp),
+        SimpleUfo,
         DespawnOffScreen,
         // Rotation continue vers la tangente de la trajectoire Bézier.
         RotateToMovement::facing_up(),
@@ -108,6 +217,29 @@ fn simple_ufo_bundle(
         TransitionMessages::new(),
         BehaviorComponent::new(behavior),
     )
+}
+
+/// Joue `Sfx::SimpleUfoSpawn` à chaque apparition d'un Simple UFO.
+pub fn simple_ufo_spawn_sound(
+    q: Query<(), Added<SimpleUfo>>,
+    mut sfx: SfxPlayer,
+) {
+    for _ in &q {
+        sfx.play(Sfx::SimpleUfoSpawn);
+    }
+}
+
+/// Observer : à chaque `EnemyDeathEvent` trigger sur un Simple UFO, joue
+/// `Sfx::SimpleUfoDie`.
+pub fn simple_ufo_death_sound(
+    trigger: On<crate::enemy::enemy::EnemyDeathEvent>,
+    ufo_q: Query<(), With<SimpleUfo>>,
+    mut sfx: SfxPlayer,
+) {
+    let ev = trigger.event();
+    if ufo_q.get(ev.entity).is_ok() {
+        sfx.play(Sfx::SimpleUfoDie);
+    }
 }
 
 // ─── Wave spawner ──────────────────────────────────────────────────

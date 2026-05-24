@@ -22,6 +22,7 @@ use crate::enemy::enemy::Enemy;
 use crate::enemy::enemy_builder::EnemyBuilder;
 use crate::game_manager::difficulty::{Difficulty, SpawnPosition};
 use crate::item::item::{DropTable, ItemType};
+use crate::movement::bezier::Bezier;
 use crate::movement::bounding_radius::BoundingRadius;
 use crate::movement::movement_zone::MovementZone;
 use crate::movement::movements::Movements;
@@ -45,11 +46,28 @@ const GREEN_UFO_ANIM_FPS: f32 = 12.0;
 /// auto via `with_total_duration`.
 const GREEN_UFO_DEATH_DURATION: f32 = 0.45;
 
+/// Entrée intangible le long d'une Bézier (depuis off-screen vers
+/// l'intérieur de l'écran). Sprite teinté, pas de collider.
+const ENTERING_DURATION: f32 = 1.0;
+/// Distance verticale parcourue pendant l'entering.
+const ENTERING_DESCENT: f32 = 350.0;
+/// Teinte d'intangibilité (sombre + alpha réduit) pendant l'entering.
+const INTANGIBLE_TINT: Color = Color::srgba(0.35, 0.35, 0.35, 0.9);
+
 static GREEN_UFO_DROP_TABLE: [(ItemType, f32); 3] = [
     (ItemType::Bomb, 0.10),
     (ItemType::BonusScore, 0.15),
     (ItemType::Armor, 0.08),
 ];
+
+/// Marker présent pendant l'entering (descente Bézier intangible).
+#[derive(Component, Clone)]
+pub struct GreenUfoEntering;
+
+/// Marker inséré à la fin de l'entering. `green_ufo_become_alive` détecte
+/// `Added<_>` pour insérer le collider et restaurer l'alpha.
+#[derive(Component, Clone)]
+pub struct GreenUfoAlive;
 
 // ─── Composants ─────────────────────────────────────────────────────
 
@@ -84,28 +102,48 @@ impl EnemyBuilder for GreenUFOBuilder {
         spawn_pos: SpawnPosition,
         asset_server: &Res<AssetServer>,
     ) {
-        let pos = spawn_pos.resolve(window, 60.0);
+        let entry_pos = spawn_pos.resolve(window, 60.0);
+        // Cible : descente d'`ENTERING_DESCENT` depuis le spawn off-screen,
+        // X aléatoire dans le tiers central → varie chaque spawn.
+        let half_w = window.width() / 2.0;
+        let target_x = (fastrand::f32() - 0.5) * 2.0 * (half_w * 0.4);
+        let final_pos = Vec2::new(target_x, entry_pos.y - ENTERING_DESCENT);
+        // Point de passage à mi-chemin, fortement décalé latéralement pour
+        // créer une courbe visible (passing_through impose t=0.5 par ce point).
+        let swerve_x = (fastrand::f32() - 0.5) * window.width() * 0.6;
+        let mid_pos = Vec2::new(swerve_x, (entry_pos.y + final_pos.y) * 0.5);
 
-        // Sub-behavior idle : ne fait rien pendant IDLE_DURATION, puis push
-        // "rush_ready" via on_complete → choice transitionne en rush.
+        // Entering : Bézier (entry → mid → final), sans collider, sprite
+        // teinté. Aucun message à pousser pendant — le `first` timer expiré
+        // déclenche "entering_done".
+        let entering = BehaviorBuilder::first(
+            Duration::from_secs_f32(ENTERING_DURATION),
+            BehaviorBuilder::multiple()
+                .with(BehaviorBuilder::from_component(GreenUfoEntering))
+                .with(BehaviorBuilder::from_component(
+                    Movements::new().with(Bezier::passing_through(
+                        entry_pos,
+                        mid_pos,
+                        final_pos,
+                        Duration::from_secs_f32(ENTERING_DURATION),
+                    )),
+                )),
+        )
+        .on_complete("entering_done");
+
         let idle = BehaviorBuilder::first(
             Duration::from_secs_f32(IDLE_DURATION),
             BehaviorBuilder::nothing(),
         )
         .on_complete("rush_ready");
 
-        // Sub-behavior rush : insère Movements(Rush) pendant RUSH_DURATION max.
-        // Le Rush fige sa direction (vers le joueur) à la 1re frame. À la fin
-        // du timer, on_complete pousse "idle_ready" → retour idle. Si le
-        // green_ufo touche un bord avant la fin, MovementZone push "wall_*"
-        // → choice interrompt le rush et retourne en idle.
         let rush = BehaviorBuilder::first(
             Duration::from_secs_f32(RUSH_DURATION),
             BehaviorBuilder::from_component(Movements::new().with(Rush::new(RUSH_SPEED))),
         )
         .on_complete("idle_ready");
 
-        let alive = BehaviorBuilder::choice()
+        let alive_cycle = BehaviorBuilder::choice()
             .with(idle) // 0
             .with(rush) // 1
             .add_transition(0, 1, "rush_ready")
@@ -115,9 +153,10 @@ impl EnemyBuilder for GreenUFOBuilder {
             .add_transition(1, 0, "wall_top")
             .add_transition(1, 0, "wall_bottom");
 
-        // Mort : anim death one-shot sur GREEN_UFO_DEATH_DURATION (durée
-        // par frame recalculée auto), puis DespawnSelf. `Movements::new()`
-        // pour stopper le rush en cours.
+        let alive = BehaviorBuilder::multiple()
+            .with(BehaviorBuilder::from_component(GreenUfoAlive))
+            .with(alive_cycle);
+
         let dying = BehaviorBuilder::first(
             Duration::from_secs_f32(GREEN_UFO_DEATH_DURATION),
             BehaviorBuilder::multiple()
@@ -136,17 +175,22 @@ impl EnemyBuilder for GreenUFOBuilder {
         );
 
         let behavior = BehaviorBuilder::choice()
-            .with(alive)
-            .with(dying)
-            .add_transition(0, 1, "die");
+            .with(entering) // 0
+            .with(alive) // 1
+            .with(dying) // 2
+            .add_transition(0, 1, "entering_done")
+            .add_transition(1, 2, "die");
 
         commands.spawn((
             Sprite {
                 image: asset_server.load("images/green_ufo/frame000.png"),
                 custom_size: Some(Vec2::splat(GREEN_UFO.config.sprite_size)),
+                // Teinte sombre pendant entering — restaurée par
+                // `green_ufo_become_alive` à l'entrée du state alive.
+                color: INTANGIBLE_TINT,
                 ..default()
             },
-            Transform::from_xyz(pos.x, pos.y, 0.5),
+            Transform::from_xyz(entry_pos.x, entry_pos.y, 0.5),
             TransitionMessages::new(),
             Enemy::new(GREEN_UFO),
             Health::new(GREEN_UFO.total_hp),
@@ -165,11 +209,27 @@ impl EnemyBuilder for GreenUFOBuilder {
                 drops: &GREEN_UFO_DROP_TABLE,
             },
             FaceMovement::faces_left(),
-            collider(
+            // PAS de collider ici : intangible pendant entering.
+            // `green_ufo_become_alive` (Added<GreenUfoAlive>) l'insère à
+            // la fin de l'entering.
+        ));
+    }
+}
+
+/// `Added<GreenUfoAlive>` : fin de l'entering Bézier. Restaure l'alpha
+/// du sprite et insère le collider — l'ennemi devient tangible.
+pub fn green_ufo_become_alive(
+    mut commands: Commands,
+    mut q: Query<(Entity, &mut Sprite), Added<GreenUfoAlive>>,
+) {
+    for (entity, mut sprite) in &mut q {
+        sprite.color = Color::WHITE;
+        if let Ok(mut e) = commands.get_entity(entity) {
+            e.try_insert(collider(
                 Shape::Circle(GREEN_UFO.config.radius),
                 layers::ENEMY,
                 layers::PLAYER | layers::PLAYER_PROJECTILE,
-            ),
-        ));
+            ));
+        }
     }
 }

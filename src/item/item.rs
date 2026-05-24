@@ -61,7 +61,7 @@ impl Plugin for ItemPlugin {
 
 // ─── Constantes ─────────────────────────────────────────────────────
 
-const ITEM_FALL_SPEED: f32 = 300.0;
+const ITEM_FALL_SPEED: f32 = 160.0;
 const ITEM_PICKUP_RADIUS: f32 = 30.0;
 const ITEM_SPRITE_SIZE: f32 = 72.0;
 

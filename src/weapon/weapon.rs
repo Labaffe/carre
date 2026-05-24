@@ -20,13 +20,17 @@
 use crate::game_manager::state::GameState;
 use crate::geometry::shape::Shape;
 use crate::player::player::Player;
+use bevy::asset::RenderAssetUsages;
+use bevy::image::Image;
 use bevy::prelude::*;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
 pub struct WeaponPlugin;
 
 impl Plugin for WeaponPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(GameState::Playing), setup_weapon_ui)
+        app.add_systems(Startup, init_round_sprite)
+            .add_systems(OnEnter(GameState::Playing), setup_weapon_ui)
             // Cleanup UI : géré centralement par `cleanup_playing` (main.rs)
             // via `#[require(GameplayEntity)]` sur `WeaponUI`.
             .add_systems(
@@ -34,6 +38,48 @@ impl Plugin for WeaponPlugin {
                 update_weapon_ui.run_if(in_state(GameState::Playing)),
             );
     }
+}
+
+/// Handle vers une image circulaire blanche opaque (disque centré, fond
+/// transparent) générée procéduralement au démarrage. Tintée via `Sprite.color`
+/// pour obtenir n'importe quelle "boule colorée".
+#[derive(Resource, Clone)]
+pub struct RoundSpriteHandle(pub Handle<Image>);
+
+/// Système Startup : génère une image RGBA 64×64 contenant un disque blanc
+/// opaque centré (rayon = 31px). Le reste est entièrement transparent. Le
+/// handle résultant est stocké dans la Resource `RoundSpriteHandle` pour
+/// que `ProjectileSprite::Round` puisse l'utiliser dans n'importe quel
+/// système.
+fn init_round_sprite(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+    const SIZE: u32 = 64;
+    let center = SIZE as f32 / 2.0;
+    // -1 pour antialias minimal (le bord est légèrement à l'intérieur du
+    // dernier pixel pour éviter une silhouette dentelée).
+    let radius_sq = (center - 1.0).powi(2);
+    let mut data = vec![0u8; (SIZE * SIZE * 4) as usize];
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let dx = x as f32 + 0.5 - center;
+            let dy = y as f32 + 0.5 - center;
+            if dx * dx + dy * dy <= radius_sq {
+                let i = ((y * SIZE + x) * 4) as usize;
+                data[i] = 255;
+                data[i + 1] = 255;
+                data[i + 2] = 255;
+                data[i + 3] = 255;
+            }
+        }
+    }
+    let image = Image::new(
+        Extent3d { width: SIZE, height: SIZE, depth_or_array_layers: 1 },
+        TextureDimension::D2,
+        data,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::default(),
+    );
+    let handle = images.add(image);
+    commands.insert_resource(RoundSpriteHandle(handle));
 }
 
 // ─── UI de l'arme ────────────────────────────────────────────────────
@@ -156,18 +202,30 @@ pub struct WeaponDef {
     pub pattern: &'static [ShotAngle],
     /// Dossier optionnel contenant les frames de mort du projectile.
     pub death_folder: Option<&'static str>,
+    /// Si `Some`, le projectile est rendu en quad coloré (sans texture) avec
+    /// `projectile_size`. Sinon il utilise `texture_path` (comportement par
+    /// défaut). `texture_path` reste utilisé pour l'icône UI dans les 2 cas.
+    pub projectile_color: Option<Color>,
+    /// Taille personnalisée du projectile (px monde). Si None + Texture →
+    /// taille native du sprite. Obligatoire si `projectile_color` est Some.
+    pub projectile_size: Option<Vec2>,
 }
 
 // ─── Palette d'armes ─────────────────────────────────────────────────
 
+/// Arme de base : grosse boule bleue, à peu près de la taille du joueur,
+/// faible cadence. Pas de texture → quad coloré bleu vif. Hitbox généreuse
+/// pour compenser le single shot.
 pub const STANDARD_MISSILE: WeaponDef = WeaponDef {
     name: "Standard Missile",
     texture_path: "images/projectiles/missile.png",
-    hitbox: Shape::Circle(6.0),
+    hitbox: Shape::Circle(20.0),
     speed: 900.0,
-    fire_rate: 0.2,
+    fire_rate: 0.28,
     pattern: &[ShotAngle(0.0)],
     death_folder: None,
+    projectile_color: Some(Color::srgb(0.3, 0.65, 1.0)),
+    projectile_size: Some(Vec2::splat(50.0)),
 };
 
 pub const RED_PROJECTILE: WeaponDef = WeaponDef {
@@ -185,6 +243,8 @@ pub const RED_PROJECTILE: WeaponDef = WeaponDef {
         ShotAngle(-0.18),
     ],
     death_folder: None,
+    projectile_color: None,
+    projectile_size: None,
 };
 
 pub const BLUE_PROJECTILE: WeaponDef = WeaponDef {
@@ -204,6 +264,8 @@ pub const BLUE_PROJECTILE: WeaponDef = WeaponDef {
         ShotAngle(-0.24),
     ],
     death_folder: None,
+    projectile_color: None,
+    projectile_size: None,
 };
 
 // ─── WeaponKind enum (palette swappable) ──────────────────────────
@@ -256,6 +318,6 @@ pub struct Weapon(pub WeaponKind);
 
 impl Default for Weapon {
     fn default() -> Self {
-        Self(WeaponKind::RedProjectile)
+        Self(WeaponKind::StandardMissile)
     }
 }
